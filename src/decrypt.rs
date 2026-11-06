@@ -1,4 +1,7 @@
-use crate::{Entry, Error, Store};
+use crate::{
+    Entry, Error, OperationProgress, Store,
+    gpg_status::{CHECK_KEY, StatusReader, UNLOCKING},
+};
 use std::{
     fmt,
     fs::File,
@@ -51,6 +54,7 @@ impl Cancellation {
 pub struct Gpg {
     executable: PathBuf,
     timeout: Duration,
+    helper_delay: Duration,
 }
 
 impl Gpg {
@@ -62,6 +66,7 @@ impl Gpg {
         Ok(Self {
             executable: executable.to_owned(),
             timeout: Duration::from_secs(120),
+            helper_delay: Duration::from_secs(2),
         })
     }
 
@@ -71,14 +76,30 @@ impl Gpg {
         entry: &Entry,
         cancel: &Cancellation,
     ) -> Result<Secret, Error> {
+        self.decrypt_with_progress(store, entry, cancel, &OperationProgress::new(UNLOCKING))
+    }
+
+    pub fn decrypt_with_progress(
+        &self,
+        store: &Store,
+        entry: &Entry,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<Secret, Error> {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
-        self.decrypt_file(store.open_entry(entry)?, cancel)
+        progress.update(UNLOCKING);
+        self.decrypt_file(store.open_entry(entry)?, cancel, progress)
     }
 
     #[cfg(unix)]
-    fn decrypt_file(&self, encrypted: File, cancel: &Cancellation) -> Result<Secret, Error> {
+    fn decrypt_file(
+        &self,
+        encrypted: File,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<Secret, Error> {
         use rustix::fs::{OFlags, fcntl_setfl};
         // No shell, entry arguments, plaintext files, inherited stdin, or raw diagnostics.
         // Ignore gpg.conf (which could redirect plaintext); agent/scdaemon configuration
@@ -97,16 +118,22 @@ impl Gpg {
                     "-",
                     "--max-output",
                     "1048576",
+                    "--status-fd",
+                    "2",
+                    "--enable-progress-filter",
                     "--decrypt",
                 ])
                 .stdin(Stdio::from(encrypted))
                 .stdout(Stdio::piped())
-                .stderr(Stdio::null())
+                .stderr(Stdio::piped())
                 .spawn()
                 .map_err(|_| Error::DecryptionFailed)?,
         );
         let mut stdout = child.0.stdout.take().ok_or(Error::DecryptionFailed)?;
+        let mut stderr = child.0.stderr.take().ok_or(Error::DecryptionFailed)?;
         fcntl_setfl(&stdout, OFlags::NONBLOCK).map_err(|_| Error::DecryptionFailed)?;
+        fcntl_setfl(&stderr, OFlags::NONBLOCK).map_err(|_| Error::DecryptionFailed)?;
+        let mut statuses = StatusReader::new();
         // Fixed capacity prevents reallocations leaving old plaintext allocations behind.
         let mut bytes = Zeroizing::new(vec![0_u8; MAX_SECRET_BYTES + 1]);
         let mut used = 0;
@@ -118,6 +145,14 @@ impl Gpg {
             }
             if started.elapsed() >= self.timeout {
                 return Err(Error::TimedOut);
+            }
+            statuses
+                .drain(&mut stderr, progress)
+                .map_err(|_| Error::DecryptionFailed)?;
+            // Some GnuPG/card backends do not forward busy/touch progress during decryption.
+            // This is an explicitly conditional helper, never a claim that touch is required.
+            if started.elapsed() >= self.helper_delay && progress.snapshot() == UNLOCKING {
+                progress.update(CHECK_KEY);
             }
             if !eof {
                 match stdout.read(&mut bytes[used..]) {
@@ -153,7 +188,12 @@ impl Gpg {
     }
 
     #[cfg(not(unix))]
-    fn decrypt_file(&self, _: File, _: &Cancellation) -> Result<Secret, Error> {
+    fn decrypt_file(
+        &self,
+        _: File,
+        _: &Cancellation,
+        _: &OperationProgress,
+    ) -> Result<Secret, Error> {
         Err(Error::UnsupportedPlatform)
     }
 }
@@ -193,6 +233,90 @@ mod tests {
             store,
             Entry::from_relative_file("entry.gpg").unwrap(),
         )
+    }
+
+    fn wait_for_status(progress: &OperationProgress, title: &str) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while progress.snapshot().title != title {
+            assert!(Instant::now() < deadline, "operation hint was not received");
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn reports_card_wait_before_completion_but_still_rejects_failed_plaintext() {
+        let (dir, mut gpg, store, entry) = fake_gpg(
+            "from pathlib import Path\nsys.stdout.write('untrusted plaintext')\nsys.stdout.flush()\nsys.stderr.write('private diagnostic to discard\\n[GNUPG:] PROGRESS card_busy w 0 0\\n')\nsys.stderr.flush()\nwhile not Path(__file__).with_name('finish').exists(): time.sleep(0.005)\nsys.exit(2)",
+        );
+        gpg.timeout = Duration::from_secs(3);
+        let progress = OperationProgress::new(UNLOCKING);
+        let worker_progress = progress.clone();
+        let worker = thread::spawn(move || {
+            gpg.decrypt_with_progress(&store, &entry, &Cancellation::default(), &worker_progress)
+        });
+        wait_for_status(&progress, "Check your YubiKey");
+        assert!(
+            progress
+                .snapshot()
+                .detail
+                .contains("If your YubiKey is blinking")
+        );
+        assert!(!worker.is_finished());
+        fs::write(dir.path().join("finish"), b"").unwrap();
+        assert!(matches!(
+            worker.join().unwrap(),
+            Err(Error::DecryptionFailed)
+        ));
+    }
+
+    #[test]
+    fn older_gpg_without_status_gets_a_conditional_helper() {
+        let (dir, mut gpg, store, entry) = fake_gpg(
+            "from pathlib import Path\nwhile not Path(__file__).with_name('finish').exists(): time.sleep(0.005)\nprint('fixture password')",
+        );
+        gpg.timeout = Duration::from_secs(3);
+        gpg.helper_delay = Duration::from_millis(30);
+        let progress = OperationProgress::new(UNLOCKING);
+        let worker_progress = progress.clone();
+        let worker = thread::spawn(move || {
+            gpg.decrypt_with_progress(&store, &entry, &Cancellation::default(), &worker_progress)
+        });
+        wait_for_status(&progress, CHECK_KEY.title);
+        assert_eq!(progress.snapshot(), CHECK_KEY);
+        fs::write(dir.path().join("finish"), b"").unwrap();
+        assert_eq!(
+            worker.join().unwrap().unwrap().expose(),
+            "fixture password\n"
+        );
+    }
+
+    #[test]
+    fn drains_diagnostic_floods_without_deadlocking_the_child() {
+        let (_dir, mut gpg, store, entry) = fake_gpg(
+            "sys.stderr.buffer.write(b'x' * 131072 + b'\\n')\nsys.stderr.flush()\nprint('fixture password')",
+        );
+        gpg.timeout = Duration::from_secs(3);
+        let progress = OperationProgress::new(UNLOCKING);
+        assert_eq!(
+            gpg.decrypt_with_progress(&store, &entry, &Cancellation::default(), &progress)
+                .unwrap()
+                .expose(),
+            "fixture password\n"
+        );
+        assert_eq!(progress.snapshot(), UNLOCKING);
+    }
+
+    #[test]
+    fn diagnostic_floods_do_not_starve_cancellation() {
+        let (_dir, mut gpg, store, entry) =
+            fake_gpg("while True:\n sys.stderr.buffer.write(b'x' * 65536)\n sys.stderr.flush()");
+        gpg.timeout = Duration::from_secs(3);
+        let cancel = Cancellation::default();
+        let worker_cancel = cancel.clone();
+        let worker = thread::spawn(move || gpg.decrypt(&store, &entry, &worker_cancel));
+        thread::sleep(Duration::from_millis(50));
+        cancel.cancel();
+        assert!(matches!(worker.join().unwrap(), Err(Error::Cancelled)));
     }
 
     #[test]

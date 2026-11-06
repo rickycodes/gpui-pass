@@ -2,7 +2,7 @@
 
 A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
-**Status: implementation in progress.** The backend builds and its 15 automated tests pass. The GPUI desktop passes `cargo check`, links successfully, and runs `--help` on Linux. This environment has the X11 runtime library but lacks its development linker alias; linking was verified with a temporary local alias. A normal Ubuntu/Debian build requires `libxkbcommon-x11-dev`. GUI runtime behavior remains unverified. The real `pass` integration fixture is also blocked because this environment cannot start a disposable `gpg-agent`.
+**Status: implementation in progress.** The backend's 22 automated tests pass. The GPUI desktop builds and runs `--help` on Linux. GUI and YubiKey hardware behavior still require desktop verification. The real `pass` integration fixture is also blocked because this environment cannot start a disposable `gpg-agent`.
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
@@ -88,7 +88,9 @@ Before calling the desktop working: build, run `--demo`, check keyboard/mouse/IM
 
 YubiKey support uses the same chain as an existing GnuPG-backed `pass` setup: `gpg → gpg-agent → scdaemon → OpenPGP card`. The client inherits `GNUPGHOME` and uses the existing keyring and card key stubs. It does not move, import, export, or recreate your private key, or start a separate managed agent.
 
-PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. The pending-reveal message reminds you to check the PIN prompt or touch the key. The 30-second display timer begins after successful decryption, not while unlocking the card.
+PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. A compact status block with a subtle background gives PIN and security-key guidance during reveal. The 30-second display timer begins after successful decryption, not while unlocking the card.
+
+The helper follows allowlisted `--status-fd` events for pinentry launch, card insertion, card-busy progress, agent contention, and decryption. Only fixed application messages reach the UI; raw diagnostics and key/card metadata are discarded. GnuPG does not supply a universal touch-required event, and some versions/backends do not forward card-busy progress during private-key decryption. If no actionable status arrives after two seconds, the helper gives conditional guidance: **if your YubiKey is blinking, touch its gold contact**, and complete any open system prompt first. Card-busy guidance is conditional too; a busy card does not prove a touch is required. No competing card probes or global touch-detector service are used. See [GnuPG status documentation](https://raw.githubusercontent.com/gpg/gnupg/master/doc/DETAILS).
 
 Your current `pass` setup is the intended prerequisite. A terminal-only pinentry may need a graphical equivalent for the desktop launcher. Ignoring `gpg.conf` does **not** ignore `gpg-agent.conf` or `scdaemon.conf`. [GnuPG smartcard documentation](https://www.gnupg.org/documentation/manuals/gnupg/gpg_002dcard.html)
 
@@ -99,12 +101,15 @@ Hardware behavior remains unverified here. On Linux, use a disposable entry encr
 3. Cancel pinentry, cancel the app request, and switch entries during a request; no plaintext should appear afterward.
 4. Remove the card before a new request, then reconnect and retry. Failure must remain hidden and retry must recover.
 5. Verify Escape, deactivation, and the 30-second timeout after hardware decryption.
+6. Verify the helper is visible while waiting for PIN/touch and disappears on success, failure, cancellation, or entry changes. Test both cached-PIN and fresh-PIN cases.
 
 The app follows your existing agent/card policy; it does not force a fresh PIN or touch for every reveal. Removing a card does not currently hide an entry already revealed in memory; normal hide/focus/timeout rules apply.
 
 ## Compatibility and future platforms
 
 `src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.
+
+The shared status helper lives in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`) and `desktop/src/operation_status.rs` (the compact status block). Each operation receives a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Reveal is its first consumer. Later generation/export/sync operations can use the same reporter and view without adding GnuPG-specific rendering. Obsolete reveal workers cannot replace a newer operation's status.
 
 Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
 

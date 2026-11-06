@@ -2,12 +2,15 @@
 #![forbid(unsafe_code)]
 
 mod decrypt;
+mod gpg_status;
 mod hardening;
+mod operation;
 mod session;
 mod store;
 
 pub use decrypt::{Cancellation, Gpg, Secret};
 pub use hardening::harden_process;
+pub use operation::{OperationProgress, OperationStatus, StatusKind};
 pub use session::{RevealRequest, Session};
 pub use store::{Entry, Store, default_store_path};
 

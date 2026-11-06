@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod operation_status;
 mod search;
 mod theme;
 
@@ -9,7 +10,8 @@ use gpui::{
     WindowOptions, actions, div, prelude::*, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    Entry, Error, Gpg, RevealRequest, Secret, Session, Store, default_store_path, harden_process,
+    Entry, Error, Gpg, OperationStatus, RevealRequest, Secret, Session, Store, default_store_path,
+    harden_process,
 };
 use std::{
     ops::Range,
@@ -105,7 +107,9 @@ pub(crate) struct PassApp {
     load: Option<Receiver<LoadedStore>>,
     reveal: Option<(RevealRequest, Receiver<Result<Secret, Error>>)>,
     message: Option<String>,
+    message_until: Option<Instant>,
     seconds: u64,
+    last_operation_status: Option<OperationStatus>,
     _activation: Subscription,
 }
 
@@ -140,7 +144,9 @@ impl PassApp {
             load: None,
             reveal: None,
             message: None,
+            message_until: None,
             seconds: 0,
+            last_operation_status: None,
             _activation: subscription,
         };
         app.refresh(cx);
@@ -164,7 +170,7 @@ impl PassApp {
         }
         self.session.select(None);
         self.reveal = None;
-        self.message = None;
+        self.clear_message();
         self.store = None;
         self.entries.clear();
         self.filtered.clear();
@@ -192,7 +198,7 @@ impl PassApp {
                 let _ = sender.send(result);
             });
         } else {
-            self.message = Some(Error::MissingHome.to_string());
+            self.set_message(Error::MissingHome.to_string());
         }
         cx.notify();
     }
@@ -210,7 +216,7 @@ impl PassApp {
                     self.entries = entries;
                     self.filter();
                 }
-                Err(error) => self.message = Some(error.to_string()),
+                Err(error) => self.set_message(error.to_string()),
             }
             cx.notify();
         }
@@ -226,17 +232,25 @@ impl PassApp {
                         .session
                         .finish_reveal(&request, secret, self.active, Instant::now())
                     {
-                        self.message = Some(
+                        self.set_message(
                             "Entry stayed hidden. Return to this window and reveal again.".into(),
                         );
                     }
                 }
                 Err(error) => {
                     if self.session.fail_reveal(&request) {
-                        self.message = Some(error.to_string());
+                        self.set_message(error.to_string());
                     }
                 }
             }
+            cx.notify();
+        }
+        if self
+            .message_until
+            .is_some_and(|until| Instant::now() >= until)
+        {
+            self.message = None;
+            self.message_until = None;
             cx.notify();
         }
         if self.session.expire(Instant::now()) {
@@ -247,12 +261,27 @@ impl PassApp {
             self.seconds = seconds;
             cx.notify();
         }
+        let status = self.session.pending_status();
+        if self.last_operation_status != status {
+            self.last_operation_status = status;
+            cx.notify();
+        }
+    }
+
+    fn set_message(&mut self, message: String) {
+        self.message = Some(message);
+        self.message_until = Some(Instant::now() + Duration::from_secs(6));
+    }
+
+    fn clear_message(&mut self) {
+        self.message = None;
+        self.message_until = None;
     }
 
     fn filter(&mut self) {
         self.session.hide();
         self.reveal = None;
-        self.message = None;
+        self.clear_message();
         self.filtered = self
             .entries
             .iter()
@@ -270,7 +299,7 @@ impl PassApp {
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
-        self.message = None;
+        self.clear_message();
         cx.notify();
     }
 
@@ -292,7 +321,7 @@ impl PassApp {
     fn hide(&mut self, cx: &mut Context<Self>) {
         self.session.hide();
         self.reveal = None;
-        self.message = None;
+        self.clear_message();
         cx.notify();
     }
 
@@ -308,7 +337,7 @@ impl PassApp {
         let Some(request) = self.session.begin_reveal() else {
             return;
         };
-        self.message = None;
+        self.clear_message();
         let result = if self.demo {
             let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
             let (sender, receiver) = mpsc::sync_channel(1);
@@ -319,7 +348,7 @@ impl PassApp {
                 Ok(gpg) => gpg,
                 Err(error) => {
                     self.session.fail_reveal(&request);
-                    self.message = Some(error.to_string());
+                    self.set_message(error.to_string());
                     cx.notify();
                     return;
                 }
@@ -330,9 +359,10 @@ impl PassApp {
             };
             let entry = request.entry.clone();
             let cancel = request.cancellation.clone();
+            let progress = request.progress.clone();
             let (sender, receiver) = mpsc::sync_channel(1);
             std::thread::spawn(move || {
-                let _ = sender.send(gpg.decrypt(&store, &entry, &cancel));
+                let _ = sender.send(gpg.decrypt_with_progress(&store, &entry, &cancel, &progress));
             });
             receiver
         };
@@ -645,6 +675,8 @@ impl PassApp {
                             .text_color(rgb(if revealed.is_some() { GREEN } else { MUTED }))
                             .child(if revealed.is_some() {
                                 format!("HIDES IN {:02}s", self.seconds)
+                            } else if pending {
+                                "UNLOCKING".into()
                             } else {
                                 "HIDDEN".into()
                             }),
@@ -689,42 +721,45 @@ impl PassApp {
                         ),
                 );
             }
-            body = body.child(password).child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(18.))
-                    .child(
-                        button(
-                            "reveal",
-                            if pending {
-                                "Cancel reveal"
-                            } else if revealed.is_some() {
-                                "Hide password"
-                            } else {
-                                "Reveal password  ↗"
-                            },
-                            true,
-                        )
-                        .on_click(cx.listener(|app, _, window, cx| {
-                            if app.session.is_pending() {
-                                app.hide(cx);
-                            } else {
-                                app.reveal(window, cx);
-                            }
-                        })),
+            body = body.child(password);
+            let controls = div()
+                .flex()
+                .items_center()
+                .gap(px(18.))
+                .child(
+                    button(
+                        "reveal",
+                        if pending {
+                            "Cancel reveal"
+                        } else if revealed.is_some() {
+                            "Hide password"
+                        } else {
+                            "Reveal password  ↗"
+                        },
+                        true,
                     )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(rgb(MUTED))
-                            .child(if pending {
-                                "Check PIN prompt / touch your YubiKey"
-                            } else {
-                                "Enter to reveal · Esc to hide"
-                            }),
-                    ),
-            );
+                    .on_click(cx.listener(|app, _, window, cx| {
+                        if app.session.is_pending() {
+                            app.hide(cx);
+                        } else {
+                            app.reveal(window, cx);
+                        }
+                    })),
+                )
+                .child(
+                    div()
+                        .text_size(px(11.))
+                        .text_color(rgb(MUTED))
+                        .child(if pending {
+                            "Esc to cancel"
+                        } else {
+                            "Enter to reveal · Esc to hide"
+                        }),
+                );
+            body = body.child(controls);
+            if let Some(status) = self.session.pending_status() {
+                body = body.child(operation_status::panel(status));
+            }
 
             if let Some(secret) = revealed {
                 if let Some((_, notes)) = secret
@@ -759,7 +794,7 @@ impl PassApp {
                             .child("Long content is truncated in this preview."),
                     );
                 }
-            } else {
+            } else if !pending {
                 body = body.child(div().mt(px(16.)).pt(px(24.)).border_t_1().border_color(rgb(LINE)).flex().flex_col().gap(px(10.))
                     .child(label("ONLY WHEN YOU NEED IT"))
                     .child(div().max_w(px(385.)).text_size(px(13.)).line_height(px(23.)).text_color(rgb(MUTED))
@@ -774,20 +809,6 @@ impl PassApp {
                     .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
                 .child(button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx)))));
         }
-        if let Some(message) = &self.message {
-            detail = detail.child(
-                div()
-                    .mx(px(46.))
-                    .mb(px(20.))
-                    .border_l_2()
-                    .border_color(rgb(ERROR))
-                    .pl(px(14.))
-                    .text_size(px(12.))
-                    .line_height(px(20.))
-                    .text_color(rgb(ERROR))
-                    .child(message.clone()),
-            );
-        }
         detail
             .child(
                 div()
@@ -797,17 +818,19 @@ impl PassApp {
                     .border_color(rgb(LINE))
                     .flex()
                     .justify_between()
-                    .child(label(if self.demo {
-                        "FICTIONAL DATA"
-                    } else {
-                        "LOCAL STORE"
-                    }))
-                    .child(
+                    .child(if let Some(message) = &self.message {
                         div()
-                            .text_size(px(10.))
-                            .text_color(rgb(MUTED))
-                            .child("Nothing decrypted until you ask."),
-                    ),
+                            .max_w(px(560.))
+                            .text_size(px(11.))
+                            .text_color(rgb(ERROR))
+                            .child(message.clone())
+                    } else {
+                        label(if self.demo {
+                            "FICTIONAL DATA"
+                        } else {
+                            "LOCAL STORE"
+                        })
+                    }),
             )
             .into_any_element()
     }
@@ -904,13 +927,6 @@ impl Render for PassApp {
                                     .font_weight(FontWeight::MEDIUM)
                                     .text_color(rgb(WHITE))
                                     .child("pass"),
-                            )
-                            .child(
-                                div()
-                                    .ml(px(18.))
-                                    .text_size(px(11.))
-                                    .text_color(rgb(0xaebbb0))
-                                    .child("A quiet place for your passwords."),
                             ),
                     )
                     .child(
@@ -961,13 +977,6 @@ impl Render for PassApp {
                         div().text_size(px(10.)).text_color(rgb(MUTED)).child(
                             "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Esc  Hide",
                         ),
-                    )
-                    .child(
-                        div()
-                            .font_family(MONO)
-                            .text_size(px(9.))
-                            .text_color(rgb(MUTED))
-                            .child("GPUI PASS  /  PROTOTYPE"),
                     ),
             )
     }

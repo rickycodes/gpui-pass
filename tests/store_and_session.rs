@@ -1,4 +1,4 @@
-use gpui_pass_core::{Entry, Error, Secret, Session, Store};
+use gpui_pass_core::{Entry, Error, OperationStatus, Secret, Session, Store};
 use std::{
     fs,
     time::{Duration, Instant},
@@ -149,4 +149,33 @@ fn secrets_are_redacted_and_invalid_utf8_is_rejected() {
         Secret::from_bytes(Zeroizing::new(vec![0xff])),
         Err(Error::InvalidText)
     ));
+}
+
+#[test]
+fn operation_status_is_scoped_to_the_pending_request_and_clears_on_completion() {
+    let mut session = Session::default();
+    session.select(Some(entry("first.gpg")));
+    let old = session.begin_reveal().unwrap();
+    let attention = OperationStatus::attention("Check key", "Touch it if blinking.");
+    old.progress.update(attention);
+    assert_eq!(session.pending_status(), Some(attention));
+
+    session.select(Some(entry("second.gpg")));
+    assert!(session.pending_status().is_none());
+    let current = session.begin_reveal().unwrap();
+    let initial = session.pending_status();
+    old.progress.update(OperationStatus::attention(
+        "Old worker",
+        "Must not replace current status.",
+    ));
+    assert_eq!(session.pending_status(), initial);
+
+    assert!(session.finish_reveal(&current, secret(), true, Instant::now()));
+    assert!(session.pending_status().is_none());
+    let failed = session.begin_reveal().unwrap();
+    assert!(session.fail_reveal(&failed));
+    assert!(session.pending_status().is_none());
+    session.begin_reveal().unwrap();
+    session.hide();
+    assert!(session.pending_status().is_none());
 }

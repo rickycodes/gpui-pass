@@ -1,4 +1,4 @@
-use crate::{Cancellation, Entry, Secret};
+use crate::{Cancellation, Entry, OperationProgress, OperationStatus, Secret};
 use std::time::{Duration, Instant};
 
 pub const REVEAL_DURATION: Duration = Duration::from_secs(30);
@@ -8,13 +8,19 @@ pub struct RevealRequest {
     id: u64,
     pub entry: Entry,
     pub cancellation: Cancellation,
+    pub progress: OperationProgress,
+}
+
+struct PendingReveal {
+    cancellation: Cancellation,
+    progress: OperationProgress,
 }
 
 #[derive(Default)]
 pub struct Session {
     selected: Option<Entry>,
     generation: u64,
-    pending: Option<Cancellation>,
+    pending: Option<PendingReveal>,
     visible: Option<(Secret, Instant)>,
 }
 
@@ -25,14 +31,19 @@ impl Session {
     pub fn is_pending(&self) -> bool {
         self.pending.is_some()
     }
+    pub fn pending_status(&self) -> Option<OperationStatus> {
+        self.pending
+            .as_ref()
+            .map(|pending| pending.progress.snapshot())
+    }
     pub fn select(&mut self, entry: Option<Entry>) {
         self.hide();
         self.selected = entry;
     }
     pub fn hide(&mut self) {
         self.generation = self.generation.wrapping_add(1);
-        if let Some(cancel) = self.pending.take() {
-            cancel.cancel();
+        if let Some(pending) = self.pending.take() {
+            pending.cancellation.cancel();
         }
         self.visible = None;
     }
@@ -40,11 +51,16 @@ impl Session {
         let entry = self.selected.clone()?;
         self.hide();
         let cancellation = Cancellation::default();
-        self.pending = Some(cancellation.clone());
+        let progress = OperationProgress::new(crate::gpg_status::UNLOCKING);
+        self.pending = Some(PendingReveal {
+            cancellation: cancellation.clone(),
+            progress: progress.clone(),
+        });
         Some(RevealRequest {
             id: self.generation,
             entry,
             cancellation,
+            progress,
         })
     }
     pub fn finish_reveal(
