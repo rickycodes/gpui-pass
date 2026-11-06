@@ -1,0 +1,63 @@
+//! Read-only access to standard pass stores. No UI, key management, or network code.
+#![forbid(unsafe_code)]
+
+mod decrypt;
+mod hardening;
+mod session;
+mod store;
+
+pub use decrypt::{Cancellation, Gpg, Secret};
+pub use hardening::harden_process;
+pub use session::{RevealRequest, Session};
+pub use store::{Entry, Store, default_store_path};
+
+use std::{fmt, io};
+
+/// Deliberately excludes subprocess output and plaintext from diagnostics.
+#[derive(Debug)]
+pub enum Error {
+    Io(io::Error),
+    InvalidEntry,
+    StoreTooLarge,
+    UnsupportedPlatform,
+    InvalidExecutable,
+    DecryptionFailed,
+    Cancelled,
+    TimedOut,
+    SecretTooLarge,
+    InvalidText,
+    MissingHome,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Io(_) => "Could not read the store. Check its path and permissions.",
+            Self::InvalidEntry => {
+                "The entry changed or contains an unsupported path or link. Refresh the store."
+            }
+            Self::StoreTooLarge => "The store exceeds the prototype's directory or entry limits.",
+            Self::UnsupportedPlatform => {
+                "Secure file access is not implemented for this platform yet."
+            }
+            Self::InvalidExecutable => {
+                "GnuPG was not found. Supply an absolute executable path with --gpg."
+            }
+            Self::DecryptionFailed => {
+                "GnuPG could not decrypt this entry. Check your key or YubiKey, and your system PIN prompt."
+            }
+            Self::Cancelled => "Reveal cancelled.",
+            Self::TimedOut => "Unlock timed out. Check the PIN prompt or YubiKey touch request, then reveal again.",
+            Self::SecretTooLarge => "This entry exceeds the 1 MiB reveal limit.",
+            Self::InvalidText => "This entry is not UTF-8 text and cannot be displayed safely.",
+            Self::MissingHome => "Set PASSWORD_STORE_DIR or supply a store path with --store.",
+        })
+    }
+}
+
+impl std::error::Error for Error {}
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
+}

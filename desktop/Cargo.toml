@@ -1,0 +1,22 @@
+[package]
+name = "gpui-pass"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+# Keep the security backend independently buildable without resolving GPUI.
+[workspace]
+
+[dependencies]
+gpui = "=0.2.2"
+gpui-pass-core = { path = ".." }
+zeroize = "=1.8.2"
+
+[patch.crates-io]
+# GPUI's zed-async-tar still requires xattr 0.2; adapt its Linux errno to current libc.
+xattr = { path = "../vendor/xattr" }
+
+[profile.release]
+panic = "abort"
+strip = true

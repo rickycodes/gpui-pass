@@ -1,0 +1,8 @@
+/target/
+/desktop/target/
+/.build/
+*.core
+core
+__pycache__/
+/vendor/xattr/target/
+/vendor/xattr/Cargo.lock

@@ -1,0 +1,16 @@
+[package]
+name = "gpui-pass-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+description = "Read-only pass store backend, independent of the desktop UI"
+
+[dependencies]
+zeroize = "=1.8.2"
+
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.4", features = ["fs", "process"] }
+
+[dev-dependencies]
+tempfile = "=3.27.0"

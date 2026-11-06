@@ -1,0 +1,115 @@
+# gpui-pass
+
+A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
+
+**Status: implementation in progress.** The backend builds and its 15 automated tests pass. The GPUI desktop passes `cargo check`, links successfully, and runs `--help` on Linux. This environment has the X11 runtime library but lacks its development linker alias; linking was verified with a temporary local alias. A normal Ubuntu/Debian build requires `libxkbcommon-x11-dev`. GUI runtime behavior remains unverified. The real `pass` integration fixture is also blocked because this environment cannot start a disposable `gpg-agent`.
+
+The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
+
+## Initial scope
+
+- Browse nested `.gpg` entries in an existing store.
+- Search entry and folder names without decrypting content.
+- Explicit reveal: first-line password plus arbitrary remaining entry content.
+- Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
+- Cancel pending reveals and reject obsolete or background completion results.
+- Folder picker, explicit `--store`, and an isolated `--demo` mode.
+
+This version is read only. Clipboard, editing, generation, Git sync, export, and key management are deferred.
+
+## Linux build and run
+
+Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan graphics support. Configure graphical pinentry through your normal `gpg-agent` setup. Running the client does not require the `pass` CLI.
+
+The desktop is a separate Cargo package so security tests do not depend on GPUI:
+
+```sh
+# Fictional entries; no real store or GnuPG access
+cargo run --manifest-path desktop/Cargo.toml -- --demo
+
+# PASSWORD_STORE_DIR, falling back to ~/.password-store
+cargo run --manifest-path desktop/Cargo.toml
+
+# Explicit store and optional GnuPG executable
+cargo run --manifest-path desktop/Cargo.toml -- \
+  --store /path/to/password-store --gpg /usr/bin/gpg
+```
+
+GPUI is pinned to published version 0.2.2. Linux builds require native compiler, X11/Wayland, font, audio, and SSL development packages. A starting set on Ubuntu is:
+
+```sh
+sudo apt install build-essential clang cmake pkg-config libclang-dev \
+  libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+  libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+```
+
+See [GPUI](https://gpui.rs/) and [Zed's Linux build documentation](https://zed.dev/docs/development/linux) for platform requirements. Both desktop and backend dependency lockfiles are included.
+
+GPUI's archive dependency still uses `xattr 0.2.3`, which references the removed Linux `libc::ENOATTR` alias. The desktop uses a small [vendored compatibility patch](vendor/xattr/PATCH.md) selecting Linux/Android `ENODATA` while preserving macOS/BSD behavior. Current libc remains in use. The patch is selected automatically; do not edit Cargo's registry cache or apply the compiler's unrelated `ENOSTR` suggestion.
+
+If linking reports `unable to find library -lxkbcommon-x11`, install `libxkbcommon-x11-dev` (Ubuntu/Debian). Having the runtime `.so.0` installed alone is insufficient for a normal build.
+
+GnuPG defaults to `/usr/bin/gpg`. `--gpg` requires an absolute executable path. The folder picker requires a working desktop portal; use `--store` if unavailable.
+
+| Key | Action |
+| --- | --- |
+| Ctrl F | Focus search and select query |
+| Up / Down | Previous / next entry |
+| Enter | Reveal / hide selected entry |
+| Escape | Hide and cancel reveal |
+| Ctrl R | Refresh store |
+| Tab | Switch search/navigation focus |
+| Ctrl Q | Quit |
+| F11 | Toggle fullscreen |
+
+Drag the dark title bar to move the window. Double-click it to enter or leave fullscreen. The Refresh control remains independently clickable.
+
+## Verification
+
+```sh
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+cargo fmt --all --check
+cargo fmt --manifest-path desktop/Cargo.toml --all --check
+
+# Requires gpg, gpg-agent, pass, Python 3; uses disposable keys/store
+bash scripts/test-pass-compat.sh
+
+# Still required with package registry access
+cargo build --manifest-path desktop/Cargo.toml
+cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
+```
+
+The integration fixture sets its own `GNUPGHOME` and `PASSWORD_STORE_DIR`, creates root and nested multi-recipient entries through `pass`, checks exact multiline plaintext in Rust, and checks unchanged ciphertext. It stops its own agent and removes its own temporary directory.
+
+Before calling the desktop working: build, run `--demo`, check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout; then run the integration fixture and test a disposable protected key with graphical pinentry. Visual verification must use fictional data.
+
+## YubiKey / OpenPGP smartcards
+
+YubiKey support uses the same chain as an existing GnuPG-backed `pass` setup: `gpg → gpg-agent → scdaemon → OpenPGP card`. The client inherits `GNUPGHOME` and uses the existing keyring and card key stubs. It does not move, import, export, or recreate your private key, or start a separate managed agent.
+
+PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. The pending-reveal message reminds you to check the PIN prompt or touch the key. The 30-second display timer begins after successful decryption, not while unlocking the card.
+
+Your current `pass` setup is the intended prerequisite. A terminal-only pinentry may need a graphical equivalent for the desktop launcher. Ignoring `gpg.conf` does **not** ignore `gpg-agent.conf` or `scdaemon.conf`. [GnuPG smartcard documentation](https://www.gnupg.org/documentation/manuals/gnupg/gpg_002dcard.html)
+
+Hardware behavior remains unverified here. On Linux, use a disposable entry encrypted to your existing card recipient and check:
+
+1. Reveal with the card inserted; enter the correct PIN in pinentry if requested, and touch if your configured policy requires it.
+2. Confirm pinentry taking focus does not cancel the operation. If completion occurs before the app regains focus, the secret must stay hidden; a second explicit reveal should work.
+3. Cancel pinentry, cancel the app request, and switch entries during a request; no plaintext should appear afterward.
+4. Remove the card before a new request, then reconnect and retry. Failure must remain hidden and retry must recover.
+5. Verify Escape, deactivation, and the 30-second timeout after hardware decryption.
+
+The app follows your existing agent/card policy; it does not force a fresh PIN or touch for every reveal. Removing a card does not currently hide an entry already revealed in memory; normal hide/focus/timeout rules apply.
+
+## Compatibility and future platforms
+
+`src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.
+
+Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
+
+The prototype rejects symlinks, multiply linked files, traversal, backslashes, and non-UTF-8/control/bidirectional-formatting filenames. Unsupported filenames are omitted. Limits: 1 MiB decrypted text, 50,000 entries, 100,000 directory nodes, and 32 directory levels. Displayed content is capped separately.
+
+Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
+
+Next: finish runtime verification, then writes respecting inherited/signed recipient policies, OS-random memorable generation, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.
