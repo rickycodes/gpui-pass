@@ -1,4 +1,4 @@
-//! Read-only access to standard pass stores. No UI, key management, or network code.
+//! Access to standard pass stores. No UI, key management, or network code.
 #![forbid(unsafe_code)]
 
 mod decrypt;
@@ -40,6 +40,7 @@ pub enum Error {
     InvalidRecipients,
     SignedRecipientsUnsupported,
     EntryAlreadyExists,
+    EntryNotFound,
     EncryptionFailed,
     MissingHome,
 }
@@ -74,6 +75,7 @@ impl fmt::Display for Error {
                 "This store requires signed .gpg-id verification, which is not supported for writes yet."
             }
             Self::EntryAlreadyExists => "An entry already exists at that name. Choose another name.",
+            Self::EntryNotFound => "This entry no longer exists. Refresh the store.",
             Self::EncryptionFailed => "GnuPG could not encrypt the new entry.",
             Self::MissingHome => "Set PASSWORD_STORE_DIR or supply a store path with --store.",
         })

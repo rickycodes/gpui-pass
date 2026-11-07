@@ -127,6 +127,7 @@ pub(crate) struct PassApp {
     generation_separators: bool,
     generator_slider_bounds: Option<Bounds<gpui::Pixels>>,
     generator_open: bool,
+    confirming_delete: Option<Entry>,
     saving: Option<(
         Cancellation,
         OperationProgress,
@@ -187,6 +188,7 @@ impl PassApp {
             generation_separators: true,
             generator_slider_bounds: None,
             generator_open: false,
+            confirming_delete: None,
             saving: None,
             saved_entry_name: None,
             close_after_save: false,
@@ -424,6 +426,10 @@ impl PassApp {
     }
 
     fn hide(&mut self, cx: &mut Context<Self>) {
+        if self.confirming_delete.take().is_some() {
+            cx.notify();
+            return;
+        }
         if self.generator_open {
             self.close_generator(cx);
             return;
@@ -433,6 +439,113 @@ impl PassApp {
         self.clear_generated(cx);
         self.clear_message();
         cx.notify();
+    }
+
+    fn request_delete(&mut self, cx: &mut Context<Self>) {
+        if let Some(entry) = self.session.selected().cloned() {
+            self.session.hide();
+            self.reveal = None;
+            self.clear_generated(cx);
+            self.confirming_delete = Some(entry);
+            cx.notify();
+        }
+    }
+
+    fn confirm_delete(&mut self, cx: &mut Context<Self>) {
+        let Some(entry) = self.confirming_delete.take() else {
+            return;
+        };
+        let result = self
+            .store
+            .as_ref()
+            .ok_or(Error::InvalidEntry)
+            .and_then(|store| store.remove_entry(&entry));
+        match result {
+            Ok(()) => {
+                self.session.hide();
+                self.reveal = None;
+                self.clear_generated(cx);
+                self.entries.retain(|existing| existing != &entry);
+                self.filter(cx);
+            }
+            Err(error) => self.set_message(error.to_string()),
+        }
+        cx.notify();
+    }
+
+    fn delete_confirmation_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(entry) = &self.confirming_delete else {
+            return div().into_any_element();
+        };
+        div()
+            .id("delete-confirmation")
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgb(PAPER))
+            .child(
+                div()
+                    .w(px(520.))
+                    .max_w(px(520.))
+                    .p(px(32.))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .bg(rgb(WHITE))
+                    .flex()
+                    .flex_col()
+                    .gap(px(20.))
+                    .child(label("REMOVE PASSWORD ENTRY"))
+                    .child(
+                        div()
+                            .text_size(px(24.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(entry.name().to_owned()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .line_height(px(21.))
+                            .text_color(rgb(MUTED))
+                            .child("This removes the encrypted entry from the current store. It does not erase copies in Git history or backups."),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(10.))
+                            .child(button("cancel-delete", "Cancel", false).on_click(
+                                cx.listener(|app, _, _, cx| {
+                                    app.confirming_delete = None;
+                                    cx.notify();
+                                }),
+                            ))
+                            .child(
+                                div()
+                                    .id("confirm-delete")
+                                    .h(px(40.))
+                                    .px(px(18.))
+                                    .border_1()
+                                    .border_color(rgb(ERROR))
+                                    .bg(rgb(ERROR))
+                                    .text_color(rgb(WHITE))
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgb(0x80352d)))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .on_click(cx.listener(|app, _, _, cx| app.confirm_delete(cx)))
+                                    .child("Delete entry"),
+                            ),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn generator_options(&self) -> GeneratorOptions {
@@ -1308,7 +1421,10 @@ impl PassApp {
                                         .child("Encrypted on disk"),
                                 ),
                         )
-                        .child(label("READ ONLY")),
+                        .child(
+                            button("delete-entry", "Delete entry", false)
+                                .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
+                        ),
                 );
 
             let mut body = div()
@@ -1512,7 +1628,7 @@ impl Render for PassApp {
                 app.open_generator(window, cx)
             }))
             .on_action(cx.listener(|app, _: &Reveal, window, cx| {
-                if !app.generator_open {
+                if !app.generator_open && app.confirming_delete.is_none() {
                     app.reveal(window, cx);
                 }
             }))
@@ -1664,6 +1780,9 @@ impl Render for PassApp {
             )
             .when(self.generator_open, |view| {
                 view.child(self.generator_view(window, cx))
+            })
+            .when(self.confirming_delete.is_some(), |view| {
+                view.child(self.delete_confirmation_view(cx))
             })
     }
 }
