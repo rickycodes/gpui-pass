@@ -184,7 +184,7 @@ impl PassApp {
             generated_visible: false,
             copied_password: None,
             generation_words: 6,
-            generator_mode: GeneratorMode::Memorable,
+            generator_mode: GeneratorMode::PassDefault,
             generation_digits: true,
             generation_separators: true,
             generator_slider_bounds: None,
@@ -772,10 +772,10 @@ impl PassApp {
             })
             .child(
                 div().flex().items_center().gap(px(8.))
-                    .child(button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
-                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::Memorable; cx.notify(); })))
                     .child(button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
                         .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::PassDefault; cx.notify(); })))
+                    .child(button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
+                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::Memorable; cx.notify(); })))
             )
             .when(self.generator_mode == GeneratorMode::Memorable, |panel| panel
             .child(
