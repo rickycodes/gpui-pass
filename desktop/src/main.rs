@@ -5,9 +5,10 @@ mod search;
 mod theme;
 
 use gpui::{
-    App, Application, Bounds, ClipboardItem, Context, FocusHandle, FontWeight, KeyBinding,
-    ScrollStrategy, SharedString, Subscription, TitlebarOptions, UniformListScrollHandle, Window,
-    WindowBounds, WindowOptions, actions, canvas, div, prelude::*, px, rgb, size, uniform_list,
+    App, Application, Bounds, ClipboardItem, Context, CursorStyle, FocusHandle, FontWeight,
+    KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription, TitlebarOptions,
+    UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas, div, prelude::*,
+    px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
     Cancellation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
@@ -1784,7 +1785,134 @@ impl Render for PassApp {
             .when(self.confirming_delete.is_some(), |view| {
                 view.child(self.delete_confirmation_view(cx))
             })
+            .child(resize_handle(
+                "resize-top",
+                ResizeEdge::Top,
+                CursorStyle::ResizeUpDown,
+                Some(0.),
+                Some(8.),
+                Some(8.),
+                None,
+                None,
+                Some(8.),
+            ))
+            .child(resize_handle(
+                "resize-bottom",
+                ResizeEdge::Bottom,
+                CursorStyle::ResizeUpDown,
+                None,
+                Some(8.),
+                Some(8.),
+                Some(0.),
+                None,
+                Some(8.),
+            ))
+            .child(resize_handle(
+                "resize-left",
+                ResizeEdge::Left,
+                CursorStyle::ResizeLeftRight,
+                Some(8.),
+                Some(0.),
+                None,
+                Some(8.),
+                Some(8.),
+                None,
+            ))
+            .child(resize_handle(
+                "resize-right",
+                ResizeEdge::Right,
+                CursorStyle::ResizeLeftRight,
+                Some(8.),
+                None,
+                Some(0.),
+                Some(8.),
+                Some(8.),
+                None,
+            ))
+            .child(resize_handle(
+                "resize-top-left",
+                ResizeEdge::TopLeft,
+                CursorStyle::ResizeUpLeftDownRight,
+                Some(0.),
+                Some(0.),
+                None,
+                None,
+                Some(14.),
+                Some(14.),
+            ))
+            .child(resize_handle(
+                "resize-top-right",
+                ResizeEdge::TopRight,
+                CursorStyle::ResizeUpRightDownLeft,
+                Some(0.),
+                None,
+                Some(0.),
+                None,
+                Some(14.),
+                Some(14.),
+            ))
+            .child(resize_handle(
+                "resize-bottom-left",
+                ResizeEdge::BottomLeft,
+                CursorStyle::ResizeUpRightDownLeft,
+                None,
+                Some(0.),
+                None,
+                Some(0.),
+                Some(14.),
+                Some(14.),
+            ))
+            .child(resize_handle(
+                "resize-bottom-right",
+                ResizeEdge::BottomRight,
+                CursorStyle::ResizeUpLeftDownRight,
+                None,
+                None,
+                Some(0.),
+                Some(0.),
+                Some(14.),
+                Some(14.),
+            ))
     }
+}
+
+fn resize_handle(
+    id: &'static str,
+    edge: ResizeEdge,
+    cursor: CursorStyle,
+    top: Option<f32>,
+    left: Option<f32>,
+    right: Option<f32>,
+    bottom: Option<f32>,
+    width: Option<f32>,
+    height: Option<f32>,
+) -> gpui::Stateful<gpui::Div> {
+    let mut handle = div().id(id).absolute().cursor(cursor).on_mouse_down(
+        gpui::MouseButton::Left,
+        move |_, window, cx| {
+            window.start_window_resize(edge);
+            cx.stop_propagation();
+        },
+    );
+    if let Some(top) = top {
+        handle = handle.top(px(top));
+    }
+    if let Some(left) = left {
+        handle = handle.left(px(left));
+    }
+    if let Some(right) = right {
+        handle = handle.right(px(right));
+    }
+    if let Some(bottom) = bottom {
+        handle = handle.bottom(px(bottom));
+    }
+    if let Some(width) = width {
+        handle = handle.w(px(width));
+    }
+    if let Some(height) = height {
+        handle = handle.h(px(height));
+    }
+    handle
 }
 
 fn main() {
@@ -1833,6 +1961,7 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
                     window_min_size: Some(size(px(940.), px(640.))),
+                    is_resizable: true,
                     titlebar: Some(TitlebarOptions {
                         title: Some(SharedString::from("pass — Password store")),
                         ..Default::default()
