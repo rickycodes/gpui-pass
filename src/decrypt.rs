@@ -125,6 +125,25 @@ impl Gpg {
         Ok(secret)
     }
 
+    pub fn update_entry(
+        &self,
+        store: &Store,
+        entry: &Entry,
+        secret: &Secret,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<(), Error> {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let recipients = store.recipients_for_entry(entry)?;
+        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress)?;
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        store.replace_entry(entry, &ciphertext)
+    }
+
     fn encrypt_new_entry(
         &self,
         store: &Store,
@@ -211,6 +230,15 @@ impl Gpg {
             statuses
                 .drain(&mut stderr, progress)
                 .map_err(|_| Error::EncryptionFailed)?;
+            // Some card backends stop reporting status while waiting for the physical touch.
+            // Keep the prompt conditional because GnuPG cannot tell us whether the user has
+            // finished the PIN dialog or whether this particular key requires a touch.
+            if started.elapsed() >= self.helper_delay
+                && (progress.snapshot() == UNLOCKING
+                    || progress.snapshot() == crate::gpg_status::PINENTRY)
+            {
+                progress.update(CHECK_KEY);
+            }
             if !eof {
                 match stdout.read(&mut chunk) {
                     Ok(0) => eof = true,
@@ -315,7 +343,10 @@ impl Gpg {
                 .map_err(|_| Error::DecryptionFailed)?;
             // Some GnuPG/card backends do not forward busy/touch progress during decryption.
             // This is an explicitly conditional helper, never a claim that touch is required.
-            if started.elapsed() >= self.helper_delay && progress.snapshot() == UNLOCKING {
+            if started.elapsed() >= self.helper_delay
+                && (progress.snapshot() == UNLOCKING
+                    || progress.snapshot() == crate::gpg_status::PINENTRY)
+            {
                 progress.update(CHECK_KEY);
             }
             if !eof {

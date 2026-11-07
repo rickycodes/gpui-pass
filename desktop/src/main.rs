@@ -37,6 +37,10 @@ actions!(
         Delete,
         Left,
         Right,
+        SelectLeft,
+        SelectRight,
+        SelectUp,
+        SelectDown,
         Start,
         End,
         SelectAll,
@@ -110,8 +114,11 @@ pub(crate) struct PassApp {
     generator_name_focus: FocusHandle,
     generator_name: String,
     generator_name_selection: Range<usize>,
+    generator_name_anchor: Option<usize>,
+    generator_name_cursor: usize,
     generator_name_marked: Option<Range<usize>>,
     generator_name_bounds: Option<Bounds<gpui::Pixels>>,
+    generator_name_line_bounds: Vec<Bounds<gpui::Pixels>>,
     active: bool,
     store: Option<Store>,
     path: Option<PathBuf>,
@@ -136,6 +143,8 @@ pub(crate) struct PassApp {
     )>,
     saved_entry_name: Option<String>,
     close_after_save: bool,
+    editing_entry: bool,
+    saving_edit: bool,
     message: Option<String>,
     message_until: Option<Instant>,
     seconds: u64,
@@ -171,8 +180,11 @@ impl PassApp {
             generator_name_focus,
             generator_name: String::new(),
             generator_name_selection: 0..0,
+            generator_name_anchor: None,
+            generator_name_cursor: 0,
             generator_name_marked: None,
             generator_name_bounds: None,
+            generator_name_line_bounds: Vec::new(),
             active: window.is_window_active(),
             store: None,
             path: options.store.or_else(|| default_store_path().ok()),
@@ -193,6 +205,8 @@ impl PassApp {
             saving: None,
             saved_entry_name: None,
             close_after_save: false,
+            editing_entry: false,
+            saving_edit: false,
             message: None,
             message_until: None,
             seconds: 0,
@@ -281,7 +295,10 @@ impl PassApp {
                     self.entries = entries;
                     self.filter(cx);
                 }
-                Err(error) => self.set_message(error.to_string()),
+                Err(error) => {
+                    self.saving_edit = false;
+                    self.set_message(error.to_string());
+                }
             }
             cx.notify();
         }
@@ -343,6 +360,15 @@ impl PassApp {
             match result {
                 Ok((entry, secret)) => {
                     let name = entry.name().to_owned();
+                    if self.saving_edit {
+                        self.saving_edit = false;
+                        self.editing_entry = false;
+                        self.generator_name.clear();
+                        self.session.select(Some(entry));
+                        self.set_message("Entry updated.".into());
+                        cx.notify();
+                        return;
+                    }
                     self.entries.push(entry);
                     self.entries.sort_by(|a, b| {
                         a.name()
@@ -418,6 +444,8 @@ impl PassApp {
     }
 
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.editing_entry = false;
+        self.generator_name.clear();
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
         self.clear_generated(cx);
@@ -449,6 +477,12 @@ impl PassApp {
             self.close_generator(cx);
             return;
         }
+        if self.editing_entry {
+            self.editing_entry = false;
+            self.generator_name.clear();
+            cx.notify();
+            return;
+        }
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
@@ -464,6 +498,56 @@ impl PassApp {
             self.confirming_delete = Some(entry);
             cx.notify();
         }
+    }
+
+    fn begin_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(secret) = self.session.revealed(Instant::now()) else {
+            self.set_message("Reveal the entry before editing it.".into());
+            cx.notify();
+            return;
+        };
+        self.generator_name = secret.expose().to_owned();
+        self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
+        self.generator_name_anchor = None;
+        self.generator_name_cursor = self.generator_name.len();
+        self.generator_name_marked = None;
+        self.editing_entry = true;
+        self.generator_name_bounds = None;
+        self.generator_name_line_bounds.clear();
+        self.generator_name_focus.focus(window);
+        cx.notify();
+    }
+
+    fn save_edit(&mut self, cx: &mut Context<Self>) {
+        let Some(entry) = self.session.selected().cloned() else { return; };
+        let Some(store) = self.store.clone() else {
+            self.set_message("Open a password store before editing entries.".into());
+            cx.notify();
+            return;
+        };
+        let secret = match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
+            Ok(secret) => secret,
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+        };
+        let gpg = match Gpg::new(&self.gpg) {
+            Ok(gpg) => gpg,
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+        };
+        let cancellation = Cancellation::default();
+        let progress = OperationProgress::new(OperationStatus::working(
+            "Preparing entry update", "The updated content stays in memory until GnuPG encrypts it."));
+        let worker_cancel = cancellation.clone();
+        let worker_progress = progress.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = gpg.update_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
+                .map(|()| (entry, secret));
+            let _ = sender.send(result);
+        });
+        self.saving_edit = true;
+        self.saving = Some((cancellation, progress, receiver));
+        self.clear_message();
+        cx.notify();
     }
 
     fn confirm_delete(&mut self, cx: &mut Context<Self>) {
@@ -1355,7 +1439,7 @@ impl PassApp {
         )
     }
 
-    fn details(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    fn details(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let entry = self.session.selected();
         let now = Instant::now();
         let revealed = self.session.revealed(now);
@@ -1476,18 +1560,20 @@ impl PassApp {
                 .border_color(rgb(LINE))
                 .bg(rgb(PAPER))
                 .p(px(22.))
+                .w_full()
+                .min_w_0()
                 .min_h(px(84.));
-            if let Some(secret) = revealed {
+            if self.editing_entry {
+                password = password.child(self.generator_name_field(window, cx));
+            } else if let Some(secret) = revealed {
                 let text = secret.expose();
-                let first_line = text.split('\n').next().unwrap_or("").trim_end_matches('\r');
                 password = password.child(
                     div()
                         .id("password-text")
-                        .overflow_x_scroll()
                         .font_family(MONO)
                         .text_size(px(18.))
-                        .whitespace_nowrap()
-                        .child(first_line.chars().take(4096).collect::<String>()),
+                        .line_height(px(26.))
+                        .child(text.chars().take(16_384).collect::<String>()),
                 );
             } else {
                 password = password.child(
@@ -1535,6 +1621,14 @@ impl PassApp {
                         }
                     })),
                 )
+                .when(self.editing_entry, |controls| controls
+                    .child(button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
+                        .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx))))
+                    .child(button("cancel-entry-edit", "Cancel", false)
+                        .on_click(cx.listener(|app, _, _, cx| { app.editing_entry = false; app.generator_name.clear(); cx.notify(); }))))
+                .when(!self.editing_entry, |controls| controls
+                    .child(button("edit-entry", "Edit entry", true)
+                        .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx)))))
                 .child(
                     div()
                         .text_size(px(11.))
@@ -1546,35 +1640,15 @@ impl PassApp {
                         }),
                 );
             body = body.child(controls);
-            if let Some(status) = self.session.pending_status() {
+            if let Some(status) = self.session.pending_status().or_else(|| {
+                self.saving
+                    .as_ref()
+                    .map(|(_, progress, _)| progress.snapshot())
+            }) {
                 body = body.child(operation_status::panel(status));
             }
 
             if let Some(secret) = revealed {
-                if let Some((_, notes)) = secret
-                    .expose()
-                    .split_once('\n')
-                    .filter(|(_, notes)| !notes.trim().is_empty())
-                {
-                    body = body.child(
-                        div()
-                            .mt(px(12.))
-                            .pt(px(24.))
-                            .border_t_1()
-                            .border_color(rgb(LINE))
-                            .flex()
-                            .flex_col()
-                            .gap(px(18.))
-                            .child(label("ENTRY CONTENT"))
-                            .child(
-                                div()
-                                    .font_family(MONO)
-                                    .text_size(px(12.))
-                                    .line_height(px(23.))
-                                    .child(notes.chars().take(16_384).collect::<String>()),
-                            ),
-                    );
-                }
                 if secret.expose().len() > 16_384 {
                     body = body.child(
                         div()
@@ -1643,7 +1717,10 @@ impl Render for PassApp {
                 app.open_generator(window, cx)
             }))
             .on_action(cx.listener(|app, _: &Reveal, window, cx| {
-                if !app.generator_open && app.confirming_delete.is_none() {
+                if !app.generator_open
+                    && app.confirming_delete.is_none()
+                    && !app.generator_name_focus.is_focused(window)
+                {
                     app.reveal(window, cx);
                 }
             }))
@@ -1654,17 +1731,51 @@ impl Render for PassApp {
                 app.selection = 0..app.query.len();
                 cx.notify();
             }))
-            .on_action(cx.listener(|app, _: &NextEntry, _, cx| app.navigate(1, cx)))
-            .on_action(cx.listener(|app, _: &PreviousEntry, _, cx| app.navigate(-1, cx)))
+            .on_action(cx.listener(|app, _: &NextEntry, window, cx| {
+                if app.generator_name_focus.is_focused(window) && app.editing_entry {
+                    app.move_vertical(1, window, cx);
+                } else {
+                    app.navigate(1, cx);
+                }
+            }))
+            .on_action(cx.listener(|app, _: &PreviousEntry, window, cx| {
+                if app.generator_name_focus.is_focused(window) && app.editing_entry {
+                    app.move_vertical(-1, window, cx);
+                } else {
+                    app.navigate(-1, cx);
+                }
+            }))
             .on_action(cx.listener(|app, _: &Backspace, window, cx| app.backspace(window, cx)))
             .on_action(cx.listener(|app, _: &Delete, window, cx| app.delete(window, cx)))
             .on_action(cx.listener(|app, _: &Left, window, cx| app.move_cursor(-1, window, cx)))
             .on_action(cx.listener(|app, _: &Right, window, cx| app.move_cursor(1, window, cx)))
+            .on_action(cx.listener(|app, _: &SelectLeft, window, cx| {
+                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                    app.select_edit_text(-1, false, cx);
+                }
+            }))
+            .on_action(cx.listener(|app, _: &SelectRight, window, cx| {
+                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                    app.select_edit_text(1, false, cx);
+                }
+            }))
+            .on_action(cx.listener(|app, _: &SelectUp, window, cx| {
+                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                    app.select_edit_text(-1, true, cx);
+                }
+            }))
+            .on_action(cx.listener(|app, _: &SelectDown, window, cx| {
+                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                    app.select_edit_text(1, true, cx);
+                }
+            }))
             .on_action(cx.listener(|app, _: &Start, window, cx| app.move_edge(false, window, cx)))
             .on_action(cx.listener(|app, _: &End, window, cx| app.move_edge(true, window, cx)))
             .on_action(cx.listener(|app, _: &SelectAll, window, cx| {
                 if app.generator_name_focus.is_focused(window) {
                     app.generator_name_selection = 0..app.generator_name.len();
+                    app.generator_name_anchor = Some(0);
+                    app.generator_name_cursor = app.generator_name.len();
                     cx.notify();
                 } else if app.search_focus.is_focused(window) {
                     app.selection = 0..app.query.len();
@@ -1775,7 +1886,7 @@ impl Render for PassApp {
                     .flex_1()
                     .min_h_0()
                     .child(self.sidebar(window, cx))
-                    .child(self.details(cx)),
+                    .child(self.details(window, cx)),
             )
             .child(
                 div()
@@ -1955,6 +2066,10 @@ fn main() {
             KeyBinding::new("delete", Delete, Some("Pass")),
             KeyBinding::new("left", Left, Some("Pass")),
             KeyBinding::new("right", Right, Some("Pass")),
+            KeyBinding::new("shift-left", SelectLeft, Some("Pass")),
+            KeyBinding::new("shift-right", SelectRight, Some("Pass")),
+            KeyBinding::new("shift-up", SelectUp, Some("Pass")),
+            KeyBinding::new("shift-down", SelectDown, Some("Pass")),
             KeyBinding::new("home", Start, Some("Pass")),
             KeyBinding::new("end", End, Some("Pass")),
             KeyBinding::new("ctrl-a", SelectAll, Some("Pass")),

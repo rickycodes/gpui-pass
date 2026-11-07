@@ -309,10 +309,20 @@ impl Store {
 
     /// Atomically create a new encrypted entry without following links or replacing a file.
     pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
+        self.write_entry(entry, ciphertext, false)
+    }
+
+    /// Atomically replace an existing encrypted entry within the pinned store.
+    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
+        self.open_entry(entry)?;
+        self.write_entry(entry, ciphertext, true)
+    }
+
+    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], replace: bool) -> Result<(), Error> {
         #[cfg(unix)]
         {
             use rustix::{
-                fs::{AtFlags, Mode, OFlags, linkat, mkdirat, openat, unlinkat},
+                fs::{AtFlags, Mode, OFlags, linkat, mkdirat, openat, renameat, unlinkat},
                 io::Errno,
             };
 
@@ -382,9 +392,17 @@ impl Store {
                 let mut file = file;
                 file.write_all(ciphertext)?;
                 file.sync_all()?;
-                linkat(&parent, temporary_os, &parent, *file_name, AtFlags::empty())
-                    .map_err(std::io::Error::from)?;
-                unlinkat(&parent, temporary_os, AtFlags::empty()).map_err(std::io::Error::from)?;
+                if replace {
+                    renameat(&parent, temporary_os, &parent, *file_name)
+                        .map_err(std::io::Error::from)?;
+                } else {
+                    linkat(&parent, temporary_os, &parent, *file_name, AtFlags::empty())
+                        .map_err(std::io::Error::from)?;
+                }
+                if !replace {
+                    unlinkat(&parent, temporary_os, AtFlags::empty())
+                        .map_err(std::io::Error::from)?;
+                }
                 parent.sync_all()?;
                 Ok::<(), std::io::Error>(())
             })();
@@ -399,7 +417,7 @@ impl Store {
         }
         #[cfg(not(unix))]
         {
-            let _ = (entry, ciphertext);
+            let _ = (entry, ciphertext, replace);
             Err(Error::UnsupportedPlatform)
         }
     }

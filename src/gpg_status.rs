@@ -8,10 +8,10 @@ pub(crate) const UNLOCKING: OperationStatus = OperationStatus::working(
     "Your entry stays hidden while your key is being unlocked.",
 );
 pub(crate) const CHECK_KEY: OperationStatus = OperationStatus::attention(
-    "Check your YubiKey or system prompt",
-    "If your YubiKey is blinking, touch its gold contact. Complete any open PIN or passphrase prompt first.",
+    "Continue with your YubiKey",
+    "Finish any open system prompt first. If your YubiKey is blinking, touch its gold contact to continue.",
 );
-const PINENTRY: OperationStatus = OperationStatus::attention(
+pub(crate) const PINENTRY: OperationStatus = OperationStatus::attention(
     "Complete the system prompt",
     "Follow the system prompt to unlock your key. If your YubiKey then blinks, touch its gold contact to continue.",
 );

@@ -42,7 +42,7 @@ PIN-launch and card-busy events are hints, not a reliable indication of PIN comp
 
 Decryption follows the ciphertext's recipients, so browsing does not need to interpret `.gpg-id`. Multiline text is preserved; first-line password and remaining content are presentation conventions. Binary entries cannot be displayed. Generated phrases use EFF Short Word List #2, version 0 (1,296 words); attribution is in `assets/EFF-WORDLIST-LICENSE.md`.
 
-New-entry writes use nearest-ancestor recipients, multiple recipients, `PASSWORD_STORE_KEY`, restricted directory/file permissions, and atomic no-overwrite creation. Signed recipient policy verification is not implemented and causes writes to fail closed. Replacing entries, concurrent update handling, and Git staging/commit semantics remain unimplemented; generated entries are not automatically added to Git.
+New-entry writes use nearest-ancestor recipients, multiple recipients, `PASSWORD_STORE_KEY`, restricted directory/file permissions, and atomic no-overwrite creation. Edited entries are encrypted before an atomic replacement within the pinned store directory. Concurrent update handling and Git staging/commit semantics remain unimplemented; generated entries are not automatically added to Git. Signed recipient policy verification is not implemented and causes writes to fail closed.
 
 ## Outstanding verification
 
