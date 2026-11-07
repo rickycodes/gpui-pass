@@ -202,9 +202,10 @@ impl PassApp {
         app.refresh(cx);
         cx.spawn(async move |entity, cx| {
             loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(100))
-                    .await;
+                let delay = entity
+                    .update(cx, |app, _| app.tick_interval())
+                    .unwrap_or(Duration::from_secs(2));
+                cx.background_executor().timer(delay).await;
                 if entity.update(cx, |app, cx| app.tick(cx)).is_err() {
                     break;
                 }
@@ -212,6 +213,19 @@ impl PassApp {
         })
         .detach();
         app
+    }
+
+    fn tick_interval(&self) -> Duration {
+        if self.load.is_some() || self.reveal.is_some() || self.saving.is_some() {
+            Duration::from_millis(100)
+        } else if self.session.revealed(Instant::now()).is_some()
+            || self.generated.is_some()
+            || self.message_until.is_some()
+        {
+            Duration::from_millis(250)
+        } else {
+            Duration::from_secs(2)
+        }
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
