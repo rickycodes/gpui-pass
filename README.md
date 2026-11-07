@@ -13,9 +13,10 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Explicit reveal: first-line password plus arbitrary remaining entry content.
 - Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
 - Cancel pending reveals and reject obsolete or background completion results.
+- Generate memorable phrases from randomly selected whole words or use pass's random-character generator defaults. Name entries with folders such as `Email/example.com`.
 - Folder picker, explicit `--store`, and an isolated `--demo` mode.
 
-This version is read only. Clipboard, editing, generation, Git sync, export, and key management are deferred.
+Generated entries are encrypted by GnuPG to the recipients resolved from the nearest `.gpg-id` (or `PASSWORD_STORE_KEY`) and created without overwriting an existing entry. The random mode follows `pass` defaults: 25 characters from punctuation and alphanumeric characters, with `PASSWORD_STORE_GENERATED_LENGTH` and `PASSWORD_STORE_CHARACTER_SET` overrides. The character-set parser supports common POSIX classes and safe literal ASCII characters. Signed recipient policies are rejected until signature verification is implemented. Automatic Git commits/sync, export, and key management are deferred. Clipboard copying is explicit; the displayed generated password and copied value expire after 30 seconds. The bundled EFF Short Word List #2 is attributed in [assets/EFF-WORDLIST-LICENSE.md](assets/EFF-WORDLIST-LICENSE.md).
 
 ## Linux build and run
 
@@ -117,4 +118,4 @@ The prototype rejects symlinks, multiply linked files, traversal, backslashes, a
 
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 
-Next: finish runtime verification, then writes respecting inherited/signed recipient policies, OS-random memorable generation, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.
+Next: finish runtime verification, then encrypted writes respecting inherited/signed recipient policies, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.

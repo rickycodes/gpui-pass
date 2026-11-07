@@ -31,6 +31,10 @@ const DECRYPTING: OperationStatus = OperationStatus::working(
     "Decrypting entry",
     "Your entry stays hidden until decryption and integrity checks succeed.",
 );
+pub(crate) const ENCRYPTING: OperationStatus = OperationStatus::working(
+    "Encrypting new entry",
+    "The entry will be written only after GnuPG succeeds.",
+);
 
 /// Fixed storage, bounded lines, and bounded reads per poll preserve cancellation responsiveness.
 pub(crate) struct StatusReader {

@@ -20,8 +20,11 @@ It does not defend against a compromised account, privileged inspection, malicio
 - Reveal requests carry entry and request identities. Selection/search changes, refresh, hide, and destruction invalidate them. Late results cannot repopulate another entry.
 - Every operation-status reporter is a separate latest-value slot containing only static application text. Raw diagnostics, key IDs, serial numbers, filenames, and secret contents are never forwarded. The parser has 4 KiB line and scratch buffers, drops oversized lines completely, and bounds work per poll so output floods cannot starve cancellation. Parser buffers are zeroized; progress does not authorize plaintext display or bypass the GnuPG exit-status check.
 - Visible content expires after 30 seconds and clears on deactivation. Pending pinentry may continue while unfocused, but completion is accepted only while the app is active; otherwise the user must reveal again.
+- Generated phrases select words, digits, and separators independently and uniformly using OS-provided cryptographic randomness with rejection sampling. The UI estimates entropy from those configured choices. The pass-default mode uses the standard 25-character punctuation/alphanumeric alphabet and honors the generated-length and character-set environment overrides supported by the app. Backend secret buffers are zeroized when they expire, the generator closes, or the window deactivates. Copying requires an explicit button press; after 30 seconds, the app clears the clipboard only when it still contains the exact phrase it copied.
 - Linux startup disables core dumps and marks the process non-dumpable. Failure prevents startup.
-- No entry writes, shell commands, extensions, Git operations, clipboard access, telemetry, application network code, or plaintext temporary files.
+- No entry writes, shell commands, extensions, Git operations, telemetry, application network code, or plaintext temporary files.
+
+Clipboard contents can also be retained by desktop clipboard managers or synchronization tools. The app cannot erase those external histories, and closing the app before the timer fires leaves its current clipboard value untouched. New passwords are encrypted before writing. Recipient selection follows `PASSWORD_STORE_KEY` or the nearest existing `.gpg-id`, and the resulting ciphertext is written with mode 0600 via a temporary file and atomic no-overwrite link. Newly created folder permissions are restricted to the user. If `PASSWORD_STORE_SIGNING_KEY` is set, entry creation fails closed because signed recipient policy verification is not yet implemented. Automatic Git staging/commit is not implemented.
 
 ## Memory and rendering limits
 
@@ -35,9 +38,9 @@ PIN-launch and card-busy events are hints, not a reliable indication of PIN comp
 
 ## Compatibility boundary
 
-Decryption follows the ciphertext's recipients, so this read-only client does not need to interpret `.gpg-id`. Multiline text is preserved; first-line password and remaining content are presentation conventions. Binary entries cannot be displayed.
+Decryption follows the ciphertext's recipients, so browsing does not need to interpret `.gpg-id`. Multiline text is preserved; first-line password and remaining content are presentation conventions. Binary entries cannot be displayed. Generated phrases use EFF Short Word List #2, version 0 (1,296 words); attribution is in `assets/EFF-WORDLIST-LICENSE.md`.
 
-Future writes must implement nearest-ancestor recipients, multiple recipients, `PASSWORD_STORE_KEY`, signed-recipient policies, permissions, atomic replacement, concurrent modification handling, and Git semantics. These policies must not be inferred from the read-only implementation.
+New-entry writes use nearest-ancestor recipients, multiple recipients, `PASSWORD_STORE_KEY`, restricted directory/file permissions, and atomic no-overwrite creation. Signed recipient policy verification is not implemented and causes writes to fail closed. Replacing entries, concurrent update handling, and Git staging/commit semantics remain unimplemented; generated entries are not automatically added to Git.
 
 ## Outstanding verification
 

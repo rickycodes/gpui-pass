@@ -5,13 +5,13 @@ mod search;
 mod theme;
 
 use gpui::{
-    App, Application, Bounds, Context, FocusHandle, FontWeight, KeyBinding, ScrollStrategy,
-    SharedString, Subscription, TitlebarOptions, UniformListScrollHandle, Window, WindowBounds,
-    WindowOptions, actions, div, prelude::*, px, rgb, size, uniform_list,
+    App, Application, Bounds, ClipboardItem, Context, FocusHandle, FontWeight, KeyBinding,
+    ScrollStrategy, SharedString, Subscription, TitlebarOptions, UniformListScrollHandle, Window,
+    WindowBounds, WindowOptions, actions, canvas, div, prelude::*, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    Entry, Error, Gpg, OperationStatus, RevealRequest, Secret, Session, Store, default_store_path,
-    harden_process,
+    Cancellation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
+    RevealRequest, Secret, Session, Store, default_store_path, harden_process,
 };
 use std::{
     ops::Range,
@@ -26,6 +26,7 @@ actions!(
     pass,
     [
         Hide,
+        OpenGenerator,
         Reveal,
         Refresh,
         FocusSearch,
@@ -72,7 +73,7 @@ impl Options {
                 }
                 Some("--help" | "-h") => {
                     println!(
-                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo]\n\nRead-only pass store browser. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store."
+                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store."
                     );
                     return Ok(None);
                 }
@@ -88,6 +89,12 @@ impl Options {
 
 type LoadedStore = Result<(Store, Vec<Entry>), Error>;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GeneratorMode {
+    Memorable,
+    PassDefault,
+}
+
 pub(crate) struct PassApp {
     session: Session,
     entries: Vec<Entry>,
@@ -99,6 +106,11 @@ pub(crate) struct PassApp {
     input_bounds: Option<Bounds<gpui::Pixels>>,
     focus: FocusHandle,
     search_focus: FocusHandle,
+    generator_name_focus: FocusHandle,
+    generator_name: String,
+    generator_name_selection: Range<usize>,
+    generator_name_marked: Option<Range<usize>>,
+    generator_name_bounds: Option<Bounds<gpui::Pixels>>,
     active: bool,
     store: Option<Store>,
     path: Option<PathBuf>,
@@ -106,6 +118,22 @@ pub(crate) struct PassApp {
     demo: bool,
     load: Option<Receiver<LoadedStore>>,
     reveal: Option<(RevealRequest, Receiver<Result<Secret, Error>>)>,
+    generated: Option<(Secret, Instant)>,
+    generated_visible: bool,
+    copied_password: Option<Zeroizing<String>>,
+    generation_words: usize,
+    generator_mode: GeneratorMode,
+    generation_digits: bool,
+    generation_separators: bool,
+    generator_slider_bounds: Option<Bounds<gpui::Pixels>>,
+    generator_open: bool,
+    saving: Option<(
+        Cancellation,
+        OperationProgress,
+        Receiver<Result<(Entry, Secret), Error>>,
+    )>,
+    saved_entry_name: Option<String>,
+    close_after_save: bool,
     message: Option<String>,
     message_until: Option<Instant>,
     seconds: u64,
@@ -117,10 +145,12 @@ impl PassApp {
     fn new(options: Options, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         let search_focus = cx.focus_handle();
+        let generator_name_focus = cx.focus_handle();
         let subscription = cx.observe_window_activation(window, |app, window, cx| {
             app.active = window.is_window_active();
             if !app.active {
                 app.session.deactivate();
+                app.clear_generated(cx);
             }
             cx.notify();
         });
@@ -136,6 +166,11 @@ impl PassApp {
             input_bounds: None,
             focus,
             search_focus,
+            generator_name_focus,
+            generator_name: String::new(),
+            generator_name_selection: 0..0,
+            generator_name_marked: None,
+            generator_name_bounds: None,
             active: window.is_window_active(),
             store: None,
             path: options.store.or_else(|| default_store_path().ok()),
@@ -143,6 +178,18 @@ impl PassApp {
             demo: options.demo,
             load: None,
             reveal: None,
+            generated: None,
+            generated_visible: false,
+            copied_password: None,
+            generation_words: 6,
+            generator_mode: GeneratorMode::Memorable,
+            generation_digits: true,
+            generation_separators: true,
+            generator_slider_bounds: None,
+            generator_open: false,
+            saving: None,
+            saved_entry_name: None,
+            close_after_save: false,
             message: None,
             message_until: None,
             seconds: 0,
@@ -170,6 +217,7 @@ impl PassApp {
         }
         self.session.select(None);
         self.reveal = None;
+        self.clear_generated(cx);
         self.clear_message();
         self.store = None;
         self.entries.clear();
@@ -188,7 +236,7 @@ impl PassApp {
             .into_iter()
             .map(|path| Entry::from_relative_file(path).expect("static demo path"))
             .collect();
-            self.filter();
+            self.filter(cx);
         } else if let Some(path) = self.path.clone() {
             let (sender, receiver) = mpsc::sync_channel(1);
             self.load = Some(receiver);
@@ -214,7 +262,7 @@ impl PassApp {
                 Ok((store, entries)) => {
                     self.store = Some(store);
                     self.entries = entries;
-                    self.filter();
+                    self.filter(cx);
                 }
                 Err(error) => self.set_message(error.to_string()),
             }
@@ -253,6 +301,14 @@ impl PassApp {
             self.message_until = None;
             cx.notify();
         }
+        if self
+            .generated
+            .as_ref()
+            .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
+        {
+            self.clear_generated(cx);
+            cx.notify();
+        }
         if self.session.expire(Instant::now()) {
             cx.notify();
         }
@@ -261,7 +317,54 @@ impl PassApp {
             self.seconds = seconds;
             cx.notify();
         }
-        let status = self.session.pending_status();
+        if let Some(result) = self
+            .saving
+            .as_ref()
+            .and_then(|(_, _, receiver)| receiver.try_recv().ok())
+        {
+            self.saving = None;
+            match result {
+                Ok((entry, secret)) => {
+                    let name = entry.name().to_owned();
+                    self.entries.push(entry);
+                    self.entries.sort_by(|a, b| {
+                        a.name()
+                            .to_lowercase()
+                            .cmp(&b.name().to_lowercase())
+                            .then_with(|| a.name().cmp(b.name()))
+                    });
+                    self.query.clear();
+                    self.selection = 0..0;
+                    self.filter(cx);
+                    self.session.select(
+                        self.entries
+                            .iter()
+                            .find(|entry| entry.name() == name)
+                            .cloned(),
+                    );
+                    self.saved_entry_name = Some(name);
+                    if !self.close_after_save {
+                        let text = secret.expose().to_owned();
+                        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                        self.copied_password = Some(Zeroizing::new(text));
+                        self.generated = Some((secret, Instant::now() + Duration::from_secs(30)));
+                    }
+                    self.clear_message();
+                }
+                Err(error) => self.set_message(error.to_string()),
+            }
+            let close = self.close_after_save;
+            self.close_after_save = false;
+            if close {
+                self.close_generator(cx);
+            }
+            cx.notify();
+        }
+        let status = self.session.pending_status().or_else(|| {
+            self.saving
+                .as_ref()
+                .map(|(_, progress, _)| progress.snapshot())
+        });
         if self.last_operation_status != status {
             self.last_operation_status = status;
             cx.notify();
@@ -278,9 +381,10 @@ impl PassApp {
         self.message_until = None;
     }
 
-    fn filter(&mut self) {
+    fn filter(&mut self, cx: &mut Context<Self>) {
         self.session.hide();
         self.reveal = None;
+        self.clear_generated(cx);
         self.clear_message();
         self.filtered = self
             .entries
@@ -299,6 +403,7 @@ impl PassApp {
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
+        self.clear_generated(cx);
         self.clear_message();
         cx.notify();
     }
@@ -319,10 +424,562 @@ impl PassApp {
     }
 
     fn hide(&mut self, cx: &mut Context<Self>) {
+        if self.generator_open {
+            self.close_generator(cx);
+            return;
+        }
         self.session.hide();
         self.reveal = None;
+        self.clear_generated(cx);
         self.clear_message();
         cx.notify();
+    }
+
+    fn generator_options(&self) -> GeneratorOptions {
+        GeneratorOptions {
+            words: self.generation_words,
+            add_digits: self.generation_digits,
+            add_separators: self.generation_separators,
+        }
+    }
+
+    fn set_generator_strength_from_x(&mut self, x: gpui::Pixels, cx: &mut Context<Self>) {
+        let Some(bounds) = self.generator_slider_bounds else {
+            return;
+        };
+        let fraction = ((x - bounds.origin.x) / bounds.size.width).clamp(0., 1.);
+        let words = 4 + (fraction * 4.).round() as usize;
+        if words != self.generation_words {
+            self.generation_words = words;
+            cx.notify();
+        }
+    }
+
+    fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.session.hide();
+        self.reveal = None;
+        self.clear_generated(cx);
+        self.generator_name_focus.focus(window);
+        self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
+        self.generator_open = true;
+        cx.notify();
+    }
+
+    fn close_generator(&mut self, cx: &mut Context<Self>) {
+        if let Some((cancellation, _, _)) = &self.saving {
+            cancellation.cancel();
+            self.close_after_save = true;
+            self.set_message("Cancelling entry creation…".into());
+            cx.notify();
+            return;
+        }
+        self.generator_open = false;
+        self.clear_generated(cx);
+        cx.notify();
+    }
+
+    fn save_generated(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() {
+            return;
+        }
+        if self.demo {
+            self.set_message("Saving is disabled in fictional demo mode.".into());
+            cx.notify();
+            return;
+        }
+        let name = self
+            .generator_name
+            .trim()
+            .strip_suffix(".gpg")
+            .unwrap_or(self.generator_name.trim());
+        if name.is_empty() {
+            self.set_message("Enter a name for this password entry.".into());
+            cx.notify();
+            return;
+        }
+        let entry = match Entry::from_relative_file(format!("{name}.gpg")) {
+            Ok(entry) => entry,
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let gpg = match Gpg::new(&self.gpg) {
+            Ok(gpg) => gpg,
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let Some(store) = self.store.clone() else {
+            self.set_message("Open a password store before saving a generated entry.".into());
+            cx.notify();
+            return;
+        };
+        let mode = self.generator_mode;
+        let options = self.generator_options();
+        let cancellation = Cancellation::default();
+        let progress = OperationProgress::new(OperationStatus::working(
+            "Preparing new entry",
+            "The generated password stays in memory until GnuPG encrypts it.",
+        ));
+        let worker_cancel = cancellation.clone();
+        let worker_progress = progress.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = match mode {
+                GeneratorMode::Memorable => {
+                    gpg.generate_entry(&store, &entry, options, &worker_cancel, &worker_progress)
+                }
+                GeneratorMode::PassDefault => gpg.generate_pass_default_entry(
+                    &store,
+                    &entry,
+                    &worker_cancel,
+                    &worker_progress,
+                ),
+            }
+            .map(|secret| (entry, secret));
+            let _ = sender.send(result);
+        });
+        self.clear_generated(cx);
+        self.clear_message();
+        self.saved_entry_name = None;
+        self.saving = Some((cancellation, progress, receiver));
+        cx.notify();
+    }
+
+    fn generator_view(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let options = self.generator_options();
+        let slider_left = ((self.generation_words - 4) as f32 / 4.) * 360.;
+        let entity = cx.entity().clone();
+        let slider_track = div()
+            .id("generator-strength-slider")
+            .relative()
+            .w(px(360.))
+            .h(px(26.))
+            .cursor_pointer()
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|app, event: &gpui::MouseDownEvent, _, cx| {
+                    app.set_generator_strength_from_x(event.position.x, cx);
+                }),
+            )
+            .on_mouse_move(cx.listener(|app, event: &gpui::MouseMoveEvent, _, cx| {
+                if event.dragging() {
+                    app.set_generator_strength_from_x(event.position.x, cx);
+                }
+            }))
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .top(px(11.))
+                    .h(px(3.))
+                    .bg(rgb(LINE)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .top(px(11.))
+                    .w(px(slider_left))
+                    .h(px(3.))
+                    .bg(rgb(GREEN)),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .left(px(slider_left - 7.))
+                    .top(px(5.))
+                    .size(px(15.))
+                    .border_1()
+                    .border_color(rgb(GREEN))
+                    .bg(rgb(WHITE)),
+            )
+            .child(
+                canvas(
+                    |_, _, _| (),
+                    move |bounds, (), _, cx| {
+                        entity.update(cx, |app, _| app.generator_slider_bounds = Some(bounds));
+                    },
+                )
+                .absolute()
+                .size_full(),
+            );
+        let slider = div()
+            .w(px(360.))
+            .flex()
+            .flex_col()
+            .gap(px(2.))
+            .child(slider_track)
+            .child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .font_family(MONO)
+                    .text_size(px(9.))
+                    .text_color(rgb(MUTED))
+                    .child("4 WORDS")
+                    .child("8 WORDS"),
+            );
+
+        let mut panel = div()
+            .w(px(640.))
+            .max_w(px(640.))
+            .p(px(36.))
+            .border_1()
+            .border_color(rgb(LINE))
+            .bg(rgb(WHITE))
+            .flex()
+            .flex_col()
+            .gap(px(24.))
+            .child(label("ENTRY NAME"))
+            .child(self.generator_name_field(window, cx))
+            .when(self.saving.is_some(), |panel| {
+                let status = self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()).unwrap();
+                panel.child(operation_status::panel(status))
+            })
+            .child(
+                div().flex().items_center().gap(px(8.))
+                    .child(button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
+                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::Memorable; cx.notify(); })))
+                    .child(button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
+                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::PassDefault; cx.notify(); })))
+            )
+            .when(self.generator_mode == GeneratorMode::Memorable, |panel| panel
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(label("PASSWORD GENERATOR"))
+                            .child(
+                                div()
+                                    .text_size(px(28.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("A phrase worth remembering."),
+                            ),
+                    )
+            )
+            .child(
+                div()
+                    .max_w(px(500.))
+                    .text_size(px(13.))
+                    .line_height(px(21.))
+                    .text_color(rgb(MUTED))
+                    .child("Choose the number of random whole words. More words make a stronger phrase; digits and punctuation add variety."),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(24.))
+                    .child(slider)
+                    .child(
+                        div()
+                            .min_w(px(126.))
+                            .font_family(MONO)
+                            .text_size(px(11.))
+                            .text_color(rgb(GREEN))
+                            .child(format!("{} WORDS  ·  {:.0} BITS", options.words, options.entropy_bits())),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(24.))
+                    .child(
+                        div()
+                            .id("toggle-generator-digits")
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .text_size(px(12.))
+                            .text_color(rgb(MUTED))
+                            .cursor_pointer()
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.generation_digits = !app.generation_digits;
+                                cx.notify();
+                            }))
+                            .child(if self.generation_digits { "☑" } else { "☐" })
+                            .child("Append a digit to each word"),
+                    )
+                    .child(
+                        div()
+                            .id("toggle-generator-separators")
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .text_size(px(12.))
+                            .text_color(rgb(MUTED))
+                            .cursor_pointer()
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.generation_separators = !app.generation_separators;
+                                cx.notify();
+                            }))
+                            .child(if self.generation_separators { "☑" } else { "☐" })
+                            .child("Separate words with punctuation"),
+                    ),
+            ));
+
+        panel = panel.when(self.generator_mode == GeneratorMode::PassDefault, |panel| {
+            panel.child(
+                div()
+                    .max_w(px(500.))
+                    .text_size(px(13.))
+                    .line_height(px(21.))
+                    .text_color(rgb(MUTED))
+                    .child("Random characters using pass’s default punctuation and letters. Respects PASSWORD_STORE_GENERATED_LENGTH and PASSWORD_STORE_CHARACTER_SET when set."),
+            )
+        });
+
+        if let Some((secret, deadline)) = &self.generated {
+            let remaining = deadline
+                .saturating_duration_since(Instant::now())
+                .as_secs()
+                .saturating_add(1);
+            panel = panel.child(
+                div()
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .bg(rgb(TINT))
+                    .p(px(18.))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(16.))
+                    .child(
+                        div()
+                            .id("generated-password-text")
+                            .min_w_0()
+                            .overflow_x_scroll()
+                            .whitespace_nowrap()
+                            .font_family(MONO)
+                            .text_size(px(16.))
+                            .child(if self.generated_visible {
+                                secret.expose().to_owned()
+                            } else {
+                                "*".repeat(secret.expose().chars().count())
+                            }),
+                    )
+                    .child(
+                        button(
+                            "toggle-generated-visibility",
+                            if self.generated_visible {
+                                "Hide"
+                            } else {
+                                "Show"
+                            },
+                            false,
+                        )
+                        .on_click(cx.listener(|app, _, _, cx| {
+                            app.generated_visible = !app.generated_visible;
+                            cx.notify();
+                        })),
+                    )
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .font_family(MONO)
+                            .text_size(px(9.))
+                            .text_color(rgb(MUTED))
+                            .child(format!("HIDES IN {remaining:02}s")),
+                    ),
+            );
+            panel = panel.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        button(
+                            "copy-generated",
+                            if self.generator_mode == GeneratorMode::Memorable {
+                                "Copy phrase"
+                            } else {
+                                "Copy password"
+                            },
+                            true,
+                        )
+                        .on_click(cx.listener(|app, _, _, cx| {
+                            if let Some((secret, _)) = &app.generated {
+                                let text = secret.expose().to_owned();
+                                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                                app.copied_password = Some(Zeroizing::new(text));
+                                cx.notify();
+                            }
+                        })),
+                    )
+                    .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(
+                        if self.saved_entry_name.is_some() {
+                            "Saved · copied to clipboard; clears in 30 seconds."
+                        } else {
+                            "Available for 30 seconds."
+                        },
+                    )),
+            );
+        } else {
+            panel = panel.child(
+                div()
+                    .h(px(76.))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .bg(rgb(PAPER))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(12.))
+                    .text_color(rgb(MUTED))
+                    .child(if self.saving.is_some() {
+                        "Encrypting and saving entry…"
+                    } else {
+                        "Choose a name, then generate and save."
+                    }),
+            );
+        }
+        panel = panel.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .max_w(px(380.))
+                        .text_size(px(11.))
+                        .line_height(px(17.))
+                        .text_color(rgb(MUTED))
+                        .child("Creates a new encrypted entry. Existing entries are never overwritten."),
+                )
+                .child(
+                    button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
+                        .on_click(cx.listener(|app, _, _, cx| app.save_generated(cx))),
+                ),
+        );
+
+        div()
+            .id("generator-window")
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .flex()
+            .flex_col()
+            .bg(rgb(PAPER))
+            .child(
+                div()
+                    .id("generator-titlebar")
+                    .w_full()
+                    .h(px(76.))
+                    .flex_shrink_0()
+                    .px(px(26.))
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .bg(rgb(INK))
+                    .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
+                        if event.click_count == 2 {
+                            window.toggle_fullscreen();
+                        } else {
+                            window.start_window_move();
+                        }
+                        cx.stop_propagation();
+                    })
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(14.))
+                            .child(
+                                div()
+                                    .w(px(32.))
+                                    .h(px(32.))
+                                    .border_1()
+                                    .border_color(rgb(0x809287))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .font_family(MONO)
+                                    .text_color(rgb(0xe0edcb))
+                                    .child("/"),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(20.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(WHITE))
+                                    .child("pass"),
+                            )
+                            .child(
+                                div()
+                                    .ml(px(18.))
+                                    .text_size(px(11.))
+                                    .text_color(rgb(0xc7d6be))
+                                    .child("PASSWORD GENERATOR"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .id("close-generator")
+                            .size(px(34.))
+                            .border_1()
+                            .border_color(rgb(0x809287))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(22.))
+                            .text_color(rgb(WHITE))
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgb(0x39433e)))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|app, _, _, cx| {
+                                    cx.stop_propagation();
+                                    app.close_generator(cx);
+                                }),
+                            )
+                            .child("×"),
+                    ),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .items_start()
+                    .justify_center()
+                    .px(px(32.))
+                    .pt(px(48.))
+                    .child(panel),
+            )
+            .into_any_element()
+    }
+
+    fn clear_generated(&mut self, cx: &mut Context<Self>) {
+        self.generated = None;
+        self.generated_visible = false;
+        let Some(expected) = self.copied_password.take() else {
+            return;
+        };
+        let current = cx
+            .read_from_clipboard()
+            .and_then(|item| item.text())
+            .map(Zeroizing::new);
+        if current
+            .as_deref()
+            .is_some_and(|text| text == expected.as_str())
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
+        }
     }
 
     fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -334,6 +991,7 @@ impl PassApp {
             self.hide(cx);
             return;
         }
+        self.clear_generated(cx);
         let Some(request) = self.session.begin_reveal() else {
             return;
         };
@@ -807,7 +1465,8 @@ impl PassApp {
                 .child(div().text_size(px(30.)).child(if self.load.is_some() { "Opening your store." } else if !self.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
                 .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(MUTED))
                     .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                .child(button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx)))));
+                .child(button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
+);
         }
         detail
             .child(
@@ -849,7 +1508,14 @@ impl Render for PassApp {
             .key_context("Pass")
             .track_focus(&self.focus)
             .on_action(cx.listener(|app, _: &Hide, _, cx| app.hide(cx)))
-            .on_action(cx.listener(|app, _: &Reveal, window, cx| app.reveal(window, cx)))
+            .on_action(cx.listener(|app, _: &OpenGenerator, window, cx| {
+                app.open_generator(window, cx)
+            }))
+            .on_action(cx.listener(|app, _: &Reveal, window, cx| {
+                if !app.generator_open {
+                    app.reveal(window, cx);
+                }
+            }))
             .on_action(cx.listener(|app, _: &Refresh, _, cx| app.refresh(cx)))
             .on_action(cx.listener(|app, _: &FocusSearch, window, cx| {
                 app.hide(cx);
@@ -866,7 +1532,10 @@ impl Render for PassApp {
             .on_action(cx.listener(|app, _: &Start, window, cx| app.move_edge(false, window, cx)))
             .on_action(cx.listener(|app, _: &End, window, cx| app.move_edge(true, window, cx)))
             .on_action(cx.listener(|app, _: &SelectAll, window, cx| {
-                if app.search_focus.is_focused(window) {
+                if app.generator_name_focus.is_focused(window) {
+                    app.generator_name_selection = 0..app.generator_name.len();
+                    cx.notify();
+                } else if app.search_focus.is_focused(window) {
                     app.selection = 0..app.query.len();
                     cx.notify();
                 }
@@ -943,6 +1612,20 @@ impl Render for PassApp {
                             )
                             .child(
                                 div()
+                                    .id("open-generator")
+                                    .text_size(px(12.))
+                                    .text_color(rgb(WHITE))
+                                    .cursor_pointer()
+                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
+                                    .on_click(cx.listener(|app, _, window, cx| {
+                                        app.open_generator(window, cx)
+                                    }))
+                                    .child("Generate ↗"),
+                            )
+                            .child(
+                                div()
                                     .id("refresh")
                                     .text_size(px(12.))
                                     .text_color(rgb(WHITE))
@@ -975,10 +1658,13 @@ impl Render for PassApp {
                     .border_color(rgb(LINE))
                     .child(
                         div().text_size(px(10.)).text_color(rgb(MUTED)).child(
-                            "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Esc  Hide",
+                            "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl G  Generate     Esc  Hide",
                         ),
                     ),
             )
+            .when(self.generator_open, |view| {
+                view.child(self.generator_view(window, cx))
+            })
     }
 }
 
@@ -998,6 +1684,7 @@ fn main() {
     Application::new().run(move |cx: &mut App| {
         cx.bind_keys([
             KeyBinding::new("escape", Hide, Some("Pass")),
+            KeyBinding::new("ctrl-g", OpenGenerator, Some("Pass")),
             KeyBinding::new("enter", Reveal, Some("Pass")),
             KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
             KeyBinding::new("ctrl-f", FocusSearch, Some("Pass")),

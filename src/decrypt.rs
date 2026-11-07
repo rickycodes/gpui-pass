@@ -1,11 +1,11 @@
 use crate::{
-    Entry, Error, OperationProgress, Store,
-    gpg_status::{CHECK_KEY, StatusReader, UNLOCKING},
+    Entry, Error, GeneratorOptions, OperationProgress, Store, generate_memorable_password,
+    gpg_status::{CHECK_KEY, ENCRYPTING, StatusReader, UNLOCKING},
 };
 use std::{
     fmt,
     fs::File,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
@@ -18,6 +18,7 @@ use std::{
 use zeroize::Zeroizing;
 
 pub const MAX_SECRET_BYTES: usize = 1024 * 1024;
+const MAX_CIPHERTEXT_BYTES: usize = 1024 * 1024;
 
 /// Plaintext has no Clone/Display implementation; Debug is always redacted.
 pub struct Secret(Zeroizing<Vec<u8>>);
@@ -91,6 +92,169 @@ impl Gpg {
         }
         progress.update(UNLOCKING);
         self.decrypt_file(store.open_entry(entry)?, cancel, progress)
+    }
+
+    pub fn generate_entry(
+        &self,
+        store: &Store,
+        entry: &Entry,
+        options: GeneratorOptions,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<Secret, Error> {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let secret = generate_memorable_password(options)?;
+        self.encrypt_new_entry(store, entry, &secret, cancel, progress)?;
+        Ok(secret)
+    }
+
+    pub fn generate_pass_default_entry(
+        &self,
+        store: &Store,
+        entry: &Entry,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<Secret, Error> {
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        let secret = crate::generate_pass_default_password()?;
+        self.encrypt_new_entry(store, entry, &secret, cancel, progress)?;
+        Ok(secret)
+    }
+
+    fn encrypt_new_entry(
+        &self,
+        store: &Store,
+        entry: &Entry,
+        secret: &Secret,
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<(), Error> {
+        let recipients = store.recipients_for_entry(entry)?;
+        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress)?;
+        if cancel.is_cancelled() {
+            return Err(Error::Cancelled);
+        }
+        store.create_entry(entry, &ciphertext)
+    }
+
+    #[cfg(unix)]
+    fn encrypt_secret(
+        &self,
+        secret: &Secret,
+        recipients: &[String],
+        cancel: &Cancellation,
+        progress: &OperationProgress,
+    ) -> Result<Vec<u8>, Error> {
+        use rustix::fs::{OFlags, fcntl_setfl};
+
+        if recipients.is_empty() {
+            return Err(Error::MissingRecipients);
+        }
+        progress.update(ENCRYPTING);
+        let mut command = Command::new(&self.executable);
+        command.args([
+            "--no-options",
+            "--batch",
+            "--no-tty",
+            "--pinentry-mode",
+            "ask",
+            "--no-auto-key-retrieve",
+            "--no-auto-key-import",
+            "--no-encrypt-to",
+            "--quiet",
+            "--yes",
+            "--compress-algo=none",
+            "--output",
+            "-",
+            "--status-fd",
+            "2",
+        ]);
+        for recipient in recipients {
+            command.arg("--recipient").arg(recipient);
+        }
+        let mut child = ChildGuard(
+            command
+                .arg("--encrypt")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|_| Error::EncryptionFailed)?,
+        );
+        let mut stdin = child.0.stdin.take().ok_or(Error::EncryptionFailed)?;
+        let mut stdout = child.0.stdout.take().ok_or(Error::EncryptionFailed)?;
+        let mut stderr = child.0.stderr.take().ok_or(Error::EncryptionFailed)?;
+        fcntl_setfl(&stdout, OFlags::NONBLOCK).map_err(|_| Error::EncryptionFailed)?;
+        fcntl_setfl(&stderr, OFlags::NONBLOCK).map_err(|_| Error::EncryptionFailed)?;
+        stdin
+            .write_all(secret.expose().as_bytes())
+            .and_then(|()| stdin.write_all(b"\n"))
+            .map_err(|_| Error::EncryptionFailed)?;
+        drop(stdin);
+
+        let started = Instant::now();
+        let mut statuses = StatusReader::new();
+        let mut ciphertext = Vec::with_capacity(8192);
+        let mut chunk = [0u8; 8192];
+        let mut eof = false;
+        loop {
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            if started.elapsed() >= self.timeout {
+                return Err(Error::TimedOut);
+            }
+            statuses
+                .drain(&mut stderr, progress)
+                .map_err(|_| Error::EncryptionFailed)?;
+            if !eof {
+                match stdout.read(&mut chunk) {
+                    Ok(0) => eof = true,
+                    Ok(count) => {
+                        if ciphertext.len().saturating_add(count) > MAX_CIPHERTEXT_BYTES {
+                            return Err(Error::EncryptionFailed);
+                        }
+                        ciphertext.extend_from_slice(&chunk[..count]);
+                    }
+                    Err(error)
+                        if error.kind() == io::ErrorKind::WouldBlock
+                            || error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(_) => return Err(Error::EncryptionFailed),
+                }
+            }
+            if let Some(status) = child.0.try_wait().map_err(|_| Error::EncryptionFailed)? {
+                if !status.success() {
+                    return Err(Error::EncryptionFailed);
+                }
+                if eof {
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        if cancel.is_cancelled() || ciphertext.is_empty() {
+            return Err(if cancel.is_cancelled() {
+                Error::Cancelled
+            } else {
+                Error::EncryptionFailed
+            });
+        }
+        Ok(ciphertext)
+    }
+
+    #[cfg(not(unix))]
+    fn encrypt_secret(
+        &self,
+        _: &Secret,
+        _: &[String],
+        _: &Cancellation,
+        _: &OperationProgress,
+    ) -> Result<Vec<u8>, Error> {
+        Err(Error::UnsupportedPlatform)
     }
 
     #[cfg(unix)]

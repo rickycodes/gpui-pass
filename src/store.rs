@@ -2,6 +2,7 @@ use crate::Error;
 use std::{
     env,
     fs::{self, File},
+    io::{Read, Write},
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
@@ -9,6 +10,29 @@ use std::{
 const MAX_ENTRIES: usize = 50_000;
 const MAX_NODES: usize = 100_000;
 const MAX_DEPTH: usize = 32;
+const MAX_RECIPIENTS_BYTES: usize = 65_536;
+
+fn parse_recipients(text: &str) -> Result<Vec<String>, Error> {
+    let mut recipients = Vec::new();
+    for line in text.lines() {
+        for recipient in line.split_whitespace() {
+            if recipient.len() > 256 || recipient.chars().any(char::is_control) {
+                return Err(Error::InvalidRecipients);
+            }
+            if !recipients.iter().any(|existing| existing == recipient) {
+                recipients.push(recipient.to_owned());
+                if recipients.len() > 256 {
+                    return Err(Error::InvalidRecipients);
+                }
+            }
+        }
+    }
+    if recipients.is_empty() {
+        Err(Error::MissingRecipients)
+    } else {
+        Ok(recipients)
+    }
+}
 
 pub fn default_store_path() -> Result<PathBuf, Error> {
     if let Some(path) = env::var_os("PASSWORD_STORE_DIR").filter(|v| !v.is_empty()) {
@@ -206,6 +230,178 @@ impl Store {
             }
         }
         Ok(file)
+    }
+
+    pub(crate) fn recipients_for_entry(&self, entry: &Entry) -> Result<Vec<String>, Error> {
+        if env::var_os("PASSWORD_STORE_SIGNING_KEY").is_some_and(|value| !value.is_empty()) {
+            return Err(Error::SignedRecipientsUnsupported);
+        }
+        if let Some(keys) = env::var_os("PASSWORD_STORE_KEY").filter(|value| !value.is_empty()) {
+            return parse_recipients(&keys.to_string_lossy());
+        }
+        #[cfg(unix)]
+        {
+            use rustix::{
+                fs::{Mode, OFlags, openat},
+                io::Errno,
+            };
+            let mut directories = vec![self.directory.try_clone()?];
+            if let Some(parent) = entry.relative_file().parent() {
+                for component in parent.components() {
+                    let Component::Normal(name) = component else {
+                        return Err(Error::InvalidEntry);
+                    };
+                    let current = directories.last().expect("root directory");
+                    match openat(
+                        current,
+                        name,
+                        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                        Mode::empty(),
+                    ) {
+                        Ok(directory) => directories.push(File::from(directory)),
+                        Err(error) if error == Errno::NOENT => break,
+                        Err(_) => return Err(Error::InvalidEntry),
+                    }
+                }
+            }
+            for directory in directories.iter().rev() {
+                let config = match openat(
+                    directory,
+                    ".gpg-id",
+                    OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+                    Mode::empty(),
+                ) {
+                    Ok(config) => File::from(config),
+                    Err(error) if error == Errno::NOENT => continue,
+                    Err(_) => return Err(Error::InvalidRecipients),
+                };
+                let metadata = config.metadata()?;
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::MetadataExt;
+                    if !metadata.is_file() || metadata.nlink() != 1 {
+                        return Err(Error::InvalidRecipients);
+                    }
+                }
+                if !metadata.is_file() {
+                    return Err(Error::InvalidRecipients);
+                }
+                let mut contents = Vec::with_capacity(1024);
+                config
+                    .take(65_537)
+                    .read_to_end(&mut contents)
+                    .map_err(|_| Error::InvalidRecipients)?;
+                if contents.len() > MAX_RECIPIENTS_BYTES {
+                    return Err(Error::InvalidRecipients);
+                }
+                let contents =
+                    std::str::from_utf8(&contents).map_err(|_| Error::InvalidRecipients)?;
+                return parse_recipients(contents);
+            }
+            Err(Error::MissingRecipients)
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = entry;
+            Err(Error::UnsupportedPlatform)
+        }
+    }
+
+    /// Atomically create a new encrypted entry without following links or replacing a file.
+    pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
+        #[cfg(unix)]
+        {
+            use rustix::{
+                fs::{AtFlags, Mode, OFlags, linkat, mkdirat, openat, unlinkat},
+                io::Errno,
+            };
+
+            let parts: Vec<_> = entry.relative_file().components().collect();
+            if parts.len() > MAX_DEPTH + 1 || parts.is_empty() {
+                return Err(Error::InvalidEntry);
+            }
+            let (parent_parts, file_name) = parts.split_at(parts.len() - 1);
+            let Component::Normal(file_name) = &file_name[0] else {
+                return Err(Error::InvalidEntry);
+            };
+            let mut parent = self.directory.try_clone()?;
+            for component in parent_parts {
+                let Component::Normal(name) = component else {
+                    return Err(Error::InvalidEntry);
+                };
+                let directory = match openat(
+                    &parent,
+                    *name,
+                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                    Mode::empty(),
+                ) {
+                    Ok(directory) => directory,
+                    Err(error) if error == Errno::NOENT => {
+                        match mkdirat(&parent, *name, Mode::RWXU) {
+                            Ok(()) => {}
+                            Err(error) if error == Errno::EXIST => {}
+                            Err(_) => return Err(Error::Io(std::io::Error::from(error))),
+                        }
+                        openat(
+                            &parent,
+                            *name,
+                            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                            Mode::empty(),
+                        )
+                        .map_err(|_| Error::InvalidEntry)?
+                    }
+                    Err(_) => return Err(Error::InvalidEntry),
+                };
+                parent = File::from(directory);
+            }
+
+            let mut random = [0u8; 16];
+            getrandom::fill(&mut random).map_err(|_| Error::RandomUnavailable)?;
+            let temporary = format!(
+                ".gpui-pass-{}.tmp",
+                random
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            );
+            let temporary_os = std::ffi::OsStr::new(&temporary);
+            let file = File::from(
+                openat(
+                    &parent,
+                    temporary_os,
+                    OFlags::WRONLY
+                        | OFlags::CREATE
+                        | OFlags::EXCL
+                        | OFlags::CLOEXEC
+                        | OFlags::NOFOLLOW,
+                    Mode::RUSR | Mode::WUSR,
+                )
+                .map_err(std::io::Error::from)?,
+            );
+            let write_result = (|| {
+                let mut file = file;
+                file.write_all(ciphertext)?;
+                file.sync_all()?;
+                linkat(&parent, temporary_os, &parent, *file_name, AtFlags::empty())
+                    .map_err(std::io::Error::from)?;
+                unlinkat(&parent, temporary_os, AtFlags::empty()).map_err(std::io::Error::from)?;
+                parent.sync_all()?;
+                Ok::<(), std::io::Error>(())
+            })();
+            if let Err(error) = write_result {
+                let _ = unlinkat(&parent, temporary_os, AtFlags::empty());
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    return Err(Error::EntryAlreadyExists);
+                }
+                return Err(Error::Io(error));
+            }
+            Ok(())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = (entry, ciphertext);
+            Err(Error::UnsupportedPlatform)
+        }
     }
 
     #[cfg(unix)]

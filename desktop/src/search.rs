@@ -23,6 +23,141 @@ fn utf16_at_byte(text: &str, offset: usize) -> usize {
 }
 
 impl PassApp {
+    fn replace_generator_name(
+        &mut self,
+        range: Option<Range<usize>>,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Range<usize> {
+        let range = range
+            .map(|range| {
+                byte_at_utf16(&self.generator_name, range.start)
+                    ..byte_at_utf16(&self.generator_name, range.end)
+            })
+            .or_else(|| self.generator_name_marked.clone())
+            .unwrap_or_else(|| self.generator_name_selection.clone());
+        let start = range.start.min(range.end);
+        let end = range.end.max(range.start);
+        let room = 512_usize.saturating_sub(
+            self.generator_name[..start].chars().count()
+                + self.generator_name[end..].chars().count(),
+        );
+        let text: String = text
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(room)
+            .collect();
+        self.generator_name.replace_range(start..end, &text);
+        let inserted = start..start + text.len();
+        self.generator_name_selection = inserted.end..inserted.end;
+        self.generator_name_marked = None;
+        self.clear_message();
+        cx.notify();
+        inserted
+    }
+
+    pub(crate) fn generator_name_field(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let focus = self.generator_name_focus.clone();
+        let entity = cx.entity().clone();
+        let focused = focus.is_focused(window);
+        let start = self
+            .generator_name_selection
+            .start
+            .min(self.generator_name.len());
+        let end = self
+            .generator_name_selection
+            .end
+            .min(self.generator_name.len());
+        let mut text = div()
+            .flex()
+            .items_center()
+            .whitespace_nowrap()
+            .font_family(MONO)
+            .text_size(px(13.));
+        if self.generator_name.is_empty() {
+            text = text
+                .when(focused, |view| {
+                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN)))
+                })
+                .child(div().text_color(rgb(MUTED)).child("e.g. Email/example.com"));
+        } else {
+            text = text
+                .child(self.generator_name[..start].to_owned())
+                .when(start != end, |view| {
+                    view.child(
+                        div()
+                            .bg(rgb(TINT))
+                            .child(self.generator_name[start..end].to_owned()),
+                    )
+                })
+                .when(focused && start == end, |view| {
+                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN)))
+                })
+                .child(self.generator_name[end..].to_owned());
+        }
+        div()
+            .id("generator-entry-name")
+            .track_focus(&self.generator_name_focus)
+            .h(px(44.))
+            .w_full()
+            .flex()
+            .items_center()
+            .px(px(12.))
+            .border_1()
+            .border_color(rgb(if focused { GREEN } else { LINE }))
+            .bg(rgb(WHITE))
+            .cursor_text()
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
+                    app.generator_name_focus.focus(window);
+                    if let Some(bounds) = app.generator_name_bounds {
+                        let column =
+                            ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
+                        let byte = app
+                            .generator_name
+                            .char_indices()
+                            .nth(column)
+                            .map_or(app.generator_name.len(), |(byte, _)| byte);
+                        app.generator_name_selection = byte..byte;
+                    }
+                    cx.notify();
+                }),
+            )
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_w_0()
+                    .h(px(20.))
+                    .overflow_hidden()
+                    .child(text)
+                    .child(
+                        canvas(
+                            |_, _, _| (),
+                            move |bounds, (), window, cx| {
+                                entity
+                                    .update(cx, |app, _| app.generator_name_bounds = Some(bounds));
+                                if focus.is_focused(window) {
+                                    window.handle_input(
+                                        &focus,
+                                        ElementInputHandler::new(bounds, entity.clone()),
+                                        cx,
+                                    );
+                                }
+                            },
+                        )
+                        .absolute()
+                        .size_full(),
+                    ),
+            )
+            .into_any_element()
+    }
+
     pub(crate) fn search_field(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let focus = self.search_focus.clone();
         let entity = cx.entity();
@@ -138,12 +273,23 @@ impl PassApp {
         let inserted = start..start + text.len();
         self.selection = inserted.end..inserted.end;
         self.marked = None;
-        self.filter();
+        self.filter(cx);
         cx.notify();
         inserted
     }
 
     pub(crate) fn backspace(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.generator_name_focus.is_focused(window) {
+            if self.generator_name_selection.is_empty() {
+                self.generator_name_selection.start = self.generator_name
+                    [..self.generator_name_selection.start]
+                    .char_indices()
+                    .next_back()
+                    .map_or(0, |(byte, _)| byte);
+            }
+            self.replace_generator_name(None, "", cx);
+            return;
+        }
         if !self.search_focus.is_focused(window) {
             return;
         }
@@ -158,6 +304,17 @@ impl PassApp {
     }
 
     pub(crate) fn delete(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.generator_name_focus.is_focused(window) {
+            if self.generator_name_selection.is_empty() {
+                self.generator_name_selection.end += self.generator_name
+                    [self.generator_name_selection.end..]
+                    .chars()
+                    .next()
+                    .map_or(0, char::len_utf8);
+            }
+            self.replace_generator_name(None, "", cx);
+            return;
+        }
         if !self.search_focus.is_focused(window) {
             return;
         }
@@ -171,6 +328,30 @@ impl PassApp {
     }
 
     pub(crate) fn move_cursor(&mut self, delta: isize, window: &Window, cx: &mut Context<Self>) {
+        if self.generator_name_focus.is_focused(window) {
+            let byte = if !self.generator_name_selection.is_empty() {
+                if delta < 0 {
+                    self.generator_name_selection.start
+                } else {
+                    self.generator_name_selection.end
+                }
+            } else if delta < 0 {
+                self.generator_name[..self.generator_name_selection.start]
+                    .char_indices()
+                    .next_back()
+                    .map_or(0, |(byte, _)| byte)
+            } else {
+                self.generator_name_selection.end
+                    + self.generator_name[self.generator_name_selection.end..]
+                        .chars()
+                        .next()
+                        .map_or(0, char::len_utf8)
+            };
+            self.generator_name_selection = byte..byte;
+            self.generator_name_marked = None;
+            cx.notify();
+            return;
+        }
         if !self.search_focus.is_focused(window) {
             return;
         }
@@ -198,6 +379,13 @@ impl PassApp {
     }
 
     pub(crate) fn move_edge(&mut self, end: bool, window: &Window, cx: &mut Context<Self>) {
+        if self.generator_name_focus.is_focused(window) {
+            let byte = if end { self.generator_name.len() } else { 0 };
+            self.generator_name_selection = byte..byte;
+            self.generator_name_marked = None;
+            cx.notify();
+            return;
+        }
         if !self.search_focus.is_focused(window) {
             return;
         }
@@ -213,9 +401,18 @@ impl EntityInputHandler for PassApp {
         &mut self,
         range: Range<usize>,
         adjusted: &mut Option<Range<usize>>,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<String> {
+        if self.generator_name_focus.is_focused(window) {
+            let start = byte_at_utf16(&self.generator_name, range.start);
+            let end = byte_at_utf16(&self.generator_name, range.end).max(start);
+            *adjusted = Some(
+                utf16_at_byte(&self.generator_name, start)
+                    ..utf16_at_byte(&self.generator_name, end),
+            );
+            return Some(self.generator_name[start..end].to_owned());
+        }
         let start = byte_at_utf16(&self.query, range.start);
         let end = byte_at_utf16(&self.query, range.end).max(start);
         *adjusted = Some(utf16_at_byte(&self.query, start)..utf16_at_byte(&self.query, end));
@@ -225,24 +422,41 @@ impl EntityInputHandler for PassApp {
     fn selected_text_range(
         &mut self,
         _: bool,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
+        let (text, selection) = if self.generator_name_focus.is_focused(window) {
+            (&self.generator_name, &self.generator_name_selection)
+        } else {
+            (&self.query, &self.selection)
+        };
         Some(UTF16Selection {
-            range: utf16_at_byte(&self.query, self.selection.start)
-                ..utf16_at_byte(&self.query, self.selection.end),
+            range: utf16_at_byte(text, selection.start)..utf16_at_byte(text, selection.end),
             reversed: false,
         })
     }
 
-    fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.as_ref().map(|range| {
-            utf16_at_byte(&self.query, range.start)..utf16_at_byte(&self.query, range.end)
-        })
+    fn marked_text_range(
+        &self,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<Range<usize>> {
+        let (text, marked) = if self.generator_name_focus.is_focused(window) {
+            (&self.generator_name, &self.generator_name_marked)
+        } else {
+            (&self.query, &self.marked)
+        };
+        marked
+            .as_ref()
+            .map(|range| utf16_at_byte(text, range.start)..utf16_at_byte(text, range.end))
     }
 
-    fn unmark_text(&mut self, _: &mut Window, cx: &mut Context<Self>) {
-        self.marked = None;
+    fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.generator_name_focus.is_focused(window) {
+            self.generator_name_marked = None;
+        } else {
+            self.marked = None;
+        }
         cx.notify();
     }
 
@@ -250,10 +464,14 @@ impl EntityInputHandler for PassApp {
         &mut self,
         range: Option<Range<usize>>,
         text: &str,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.replace_search(range, text, cx);
+        if self.generator_name_focus.is_focused(window) {
+            self.replace_generator_name(range, text, cx);
+        } else {
+            self.replace_search(range, text, cx);
+        }
     }
 
     fn replace_and_mark_text_in_range(
@@ -261,15 +479,30 @@ impl EntityInputHandler for PassApp {
         range: Option<Range<usize>>,
         text: &str,
         selected: Option<Range<usize>>,
-        _: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let inserted = self.replace_search(range, text, cx);
-        self.marked = (!inserted.is_empty()).then_some(inserted.clone());
+        let name_focused = self.generator_name_focus.is_focused(window);
+        let inserted = if name_focused {
+            self.replace_generator_name(range, text, cx)
+        } else {
+            self.replace_search(range, text, cx)
+        };
+        let (source, marked) = if name_focused {
+            (&self.generator_name, &mut self.generator_name_marked)
+        } else {
+            (&self.query, &mut self.marked)
+        };
+        *marked = (!inserted.is_empty()).then_some(inserted.clone());
         if let Some(selected) = selected {
-            let text = &self.query[inserted.clone()];
-            self.selection = inserted.start + byte_at_utf16(text, selected.start)
+            let text = &source[inserted.clone()];
+            let selection = inserted.start + byte_at_utf16(text, selected.start)
                 ..inserted.start + byte_at_utf16(text, selected.end);
+            if name_focused {
+                self.generator_name_selection = selection;
+            } else {
+                self.selection = selection;
+            }
         }
     }
 
@@ -277,11 +510,16 @@ impl EntityInputHandler for PassApp {
         &mut self,
         range: Range<usize>,
         bounds: Bounds<Pixels>,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let byte = byte_at_utf16(&self.query, range.start);
-        let column = self.query[..byte].chars().count() as f32;
+        let text = if self.generator_name_focus.is_focused(window) {
+            &self.generator_name
+        } else {
+            &self.query
+        };
+        let byte = byte_at_utf16(text, range.start);
+        let column = text[..byte].chars().count() as f32;
         Some(Bounds {
             origin: Point {
                 x: bounds.origin.x + px(column * ADVANCE),
@@ -294,11 +532,20 @@ impl EntityInputHandler for PassApp {
     fn character_index_for_point(
         &mut self,
         point: Point<Pixels>,
-        _: &mut Window,
+        window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        let bounds = self.input_bounds?;
+        let bounds = if self.generator_name_focus.is_focused(window) {
+            self.generator_name_bounds?
+        } else {
+            self.input_bounds?
+        };
         let column = ((point.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-        Some(self.query.chars().take(column).map(char::len_utf16).sum())
+        let text = if self.generator_name_focus.is_focused(window) {
+            &self.generator_name
+        } else {
+            &self.query
+        };
+        Some(text.chars().take(column).map(char::len_utf16).sum())
     }
 }

@@ -45,6 +45,7 @@ dependencies = [
 name = "gpui-pass-core"
 version = "0.1.0"
 dependencies = [
+ "getrandom",
  "rustix",
  "tempfile",
  "zeroize",
