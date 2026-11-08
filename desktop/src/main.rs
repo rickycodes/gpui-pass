@@ -1504,7 +1504,6 @@ impl PassApp {
                         .pb(px(24.))
                         .flex()
                         .items_center()
-                        .justify_between()
                         .border_b_1()
                         .border_color(rgb(LINE))
                         .child(
@@ -1520,10 +1519,6 @@ impl PassApp {
                                         .child("Encrypted on disk"),
                                 ),
                         )
-                        .child(
-                            button("delete-entry", "Delete entry", false)
-                                .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
-                        ),
                 );
 
             let mut body = div()
@@ -1628,7 +1623,15 @@ impl PassApp {
                         .on_click(cx.listener(|app, _, _, cx| { app.editing_entry = false; app.generator_name.clear(); cx.notify(); }))))
                 .when(!self.editing_entry, |controls| controls
                     .child(button("edit-entry", "Edit entry", true)
-                        .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx)))))
+                        .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx))))
+                    .child(
+                        button("delete-entry", "Delete", false)
+                            .border_color(rgb(0xe7c6c1))
+                            .bg(rgb(0xf8e9e6))
+                            .text_color(rgb(ERROR))
+                            .hover(|style| style.bg(rgb(0xf1d9d5)))
+                            .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
+                    ))
                 .child(
                     div()
                         .text_size(px(11.))
