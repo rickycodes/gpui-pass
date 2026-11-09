@@ -1,12 +1,11 @@
 use crate::{PassApp, theme::*};
 use gpui::{
-    Bounds, Context, ElementInputHandler, EntityInputHandler, Pixels, Point, UTF16Selection,
+    Bounds, ClipboardItem, Context, ElementInputHandler, EntityInputHandler, Pixels, Point, UTF16Selection,
     Window, canvas, div, prelude::*, px, rgb,
 };
 use std::ops::Range;
 
 const ADVANCE: f32 = 7.8;
-const EDIT_ADVANCE: f32 = 10.8;
 
 fn byte_at_utf16(text: &str, offset: usize) -> usize {
     let mut utf16 = 0;
@@ -21,25 +20,6 @@ fn byte_at_utf16(text: &str, offset: usize) -> usize {
 
 fn utf16_at_byte(text: &str, offset: usize) -> usize {
     text[..offset].encode_utf16().count()
-}
-
-fn multiline_byte_at_point(
-    text: &str,
-    line_bounds: &[Bounds<gpui::Pixels>],
-    point: Point<gpui::Pixels>,
-) -> usize {
-    let lines: Vec<_> = text.split('\n').collect();
-    let row = line_bounds.iter().position(|bounds| {
-        point.y >= bounds.origin.y && point.y <= bounds.origin.y + bounds.size.height
-    }).unwrap_or_else(|| {
-        line_bounds.iter().position(|bounds| point.y < bounds.origin.y)
-            .unwrap_or_else(|| line_bounds.len().saturating_sub(1))
-    }).min(lines.len().saturating_sub(1));
-    let Some(bounds) = line_bounds.get(row) else { return 0; };
-    let Some(line) = lines.get(row) else { return text.len(); };
-    let byte_start = lines.iter().take(row).map(|line| line.len() + 1).sum::<usize>();
-    let column = ((point.x - bounds.origin.x) / px(EDIT_ADVANCE)).max(0.) as usize;
-    byte_start + line.char_indices().nth(column).map_or(line.len(), |(byte, _)| byte)
 }
 
 impl PassApp {
@@ -70,7 +50,7 @@ impl PassApp {
             .collect();
         self.generator_name.replace_range(start..end, &text);
         if self.editing_entry {
-            self.generator_name_line_bounds.clear();
+            self.editor_layout = None;
         }
         let inserted = start..start + text.len();
         self.generator_name_selection = inserted.end..inserted.end;
@@ -87,6 +67,47 @@ impl PassApp {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
+        if self.editing_entry {
+            let entity = cx.entity().clone();
+            let focused = self.generator_name_focus.is_focused(window);
+            return div()
+                .id("entry-editor-field")
+                .track_focus(&self.generator_name_focus)
+                .w_full()
+                .min_w_0()
+                .flex()
+                .items_start()
+                .border_1()
+                .border_color(rgb(if focused { GREEN } else { LINE }))
+                .bg(rgb(PAPER))
+                .cursor_text()
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
+                        app.begin_edit_mouse_selection(event.position, event.click_count, window, cx);
+                    }),
+                )
+                .on_mouse_move(cx.listener(|app, event: &gpui::MouseMoveEvent, _, cx| {
+                    if event.dragging() {
+                        app.drag_edit_mouse_selection(event.position, cx);
+                    }
+                }))
+                .on_mouse_up(gpui::MouseButton::Left, cx.listener(|app, _, _, _| app.end_edit_mouse_selection()))
+                .on_mouse_up_out(gpui::MouseButton::Left, cx.listener(|app, _, _, _| app.end_edit_mouse_selection()))
+                .child(
+                    div()
+                        .id("entry-editor-scroll")
+                        .w_full()
+                        .min_w_0()
+                        .overflow_x_scroll()
+                        .font_family(MONO)
+                        .text_size(px(18.))
+                        .line_height(px(26.))
+                        .text_color(rgb(INK))
+                        .child(crate::entry_editor::EntryTextElement { app: entity }),
+                )
+                .into_any_element();
+        }
         let focus = self.generator_name_focus.clone();
         let entity = cx.entity().clone();
         let focused = focus.is_focused(window);
@@ -98,86 +119,32 @@ impl PassApp {
             .generator_name_selection
             .end
             .min(self.generator_name.len());
-        let text = if self.editing_entry {
-            let mut byte_start = 0;
-            let rows = self.generator_name.split('\n').enumerate().map(|(row_index, line)| {
-                let line_start = byte_start;
-                let line_end = line_start + line.len();
-                byte_start = line_end + 1;
-                let selection_start = start.clamp(line_start, line_end) - line_start;
-                let selection_end = end.clamp(line_start, line_end) - line_start;
-                let has_selection = start < line_end && end > line_start;
-                let cursor_here = focused && start == end && start >= line_start && start <= line_end;
-                let row_entity = entity.clone();
-                div()
-                    .h(px(26.))
-                    .flex()
-                    .items_center()
-                    .whitespace_nowrap()
-                    .font_family(MONO)
-                    .text_size(px(18.))
-                    .line_height(px(26.))
-                    .text_color(rgb(INK))
-                    .child(line[..selection_start].to_owned())
-                    .when(has_selection, |row| {
-                        row.child(div().bg(rgb(TINT)).child(line[selection_start..selection_end].to_owned()))
-                    })
-                    .when(cursor_here, |row| {
-                        row.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN)))
-                    })
-                    .child(line[selection_end..].to_owned())
-                    .child(
-                        canvas(
-                            |_, _, _| (),
-                            move |bounds, (), _, cx| {
-                                row_entity.update(cx, |app, _| {
-                                    if app.generator_name_line_bounds.len() <= row_index {
-                                        app.generator_name_line_bounds.resize(row_index + 1, bounds);
-                                    }
-                                    app.generator_name_line_bounds[row_index] = bounds;
-                                });
-                            },
-                        )
-                        .absolute()
-                        .size_full(),
-                    )
-                    .into_any_element()
-            }).collect::<Vec<_>>();
-            div().flex().flex_col().children(rows)
+        let mut text = div()
+            .flex()
+            .items_center()
+            .whitespace_nowrap()
+            .font_family(MONO)
+            .text_size(px(13.));
+        if self.generator_name.is_empty() {
+            text = text
+                .when(focused, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
+                .child(div().text_color(rgb(MUTED)).child("e.g. Email/example.com"));
         } else {
-            let mut text = div()
-                .flex()
-                .items_center()
-                .whitespace_nowrap()
-                .font_family(MONO)
-                .text_size(px(13.));
-            if self.generator_name.is_empty() {
-                text = text
-                    .when(focused, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
-                    .child(div().text_color(rgb(MUTED)).child("e.g. Email/example.com"));
-            } else {
-                text = text
-                    .child(self.generator_name[..start].to_owned())
-                    .when(start != end, |view| view.child(div().bg(rgb(TINT)).child(self.generator_name[start..end].to_owned())))
-                    .when(focused && start == end, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
-                    .child(self.generator_name[end..].to_owned());
-            }
-            text
-        };
+            text = text
+                .child(self.generator_name[..start].to_owned())
+                .when(start != end, |view| view.child(div().bg(rgb(TINT)).child(self.generator_name[start..end].to_owned())))
+                .when(focused && start == end, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
+                .child(self.generator_name[end..].to_owned());
+        }
         div()
             .id("generator-entry-name")
             .track_focus(&self.generator_name_focus)
-            .when(self.editing_entry, |field| field.min_h(px(26.)).items_start())
-            .when(!self.editing_entry, |field| field.h(px(44.)))
+            .h(px(44.))
             .w_full()
             .min_w_0()
             .flex()
-            .when(self.editing_entry, |field| field.items_start())
-            .when(!self.editing_entry, |field| field.items_center())
+            .items_center()
             .px(px(12.))
-            .when(self.editing_entry, |field| {
-                field.px(px(0.)).py(px(0.)).border_color(rgb(PAPER)).bg(rgb(PAPER))
-            })
             .border_1()
             .border_color(rgb(if focused { GREEN } else { LINE }))
             .bg(rgb(WHITE))
@@ -185,36 +152,24 @@ impl PassApp {
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
-                    if app.editing_entry {
-                        app.begin_edit_mouse_selection(event.position, event.click_count, window, cx);
-                    } else {
-                        app.generator_name_focus.focus(window);
-                        if let Some(bounds) = app.generator_name_bounds {
-                            let column = ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-                            let byte = app.generator_name.char_indices().nth(column).map_or(app.generator_name.len(), |(byte, _)| byte);
-                            app.generator_name_selection = byte..byte;
-                            app.generator_name_cursor = byte;
-                        }
-                        cx.notify();
+                    app.generator_name_focus.focus(window);
+                    if let Some(bounds) = app.generator_name_bounds {
+                        let column = ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
+                        let byte = app.generator_name.char_indices().nth(column).map_or(app.generator_name.len(), |(byte, _)| byte);
+                        app.generator_name_selection = byte..byte;
+                        app.generator_name_cursor = byte;
                     }
+                    cx.notify();
                 }),
             )
-            .on_mouse_move(cx.listener(|app, event: &gpui::MouseMoveEvent, _, cx| {
-                if app.editing_entry && event.dragging() {
-                    app.drag_edit_mouse_selection(event.position, cx);
-                }
-            }))
-            .on_mouse_up(gpui::MouseButton::Left, cx.listener(|app, _, _, _| app.end_edit_mouse_selection()))
-            .on_mouse_up_out(gpui::MouseButton::Left, cx.listener(|app, _, _, _| app.end_edit_mouse_selection()))
             .child(
                 div()
-                    .id("entry-editor-text-area")
+                    .id("generator-entry-name-input")
                     .relative()
                     .flex_1()
                     .min_w_0()
-                    .when(self.editing_entry, |text| text.items_start())
-                    .when(!self.editing_entry, |text| text.h(px(20.)))
-                    .when(self.editing_entry, |text| text.overflow_x_scroll())
+                    .h(px(20.))
+                    .overflow_hidden()
                     .child(text)
                     .child(
                         canvas(
@@ -462,7 +417,22 @@ impl PassApp {
 
     pub(crate) fn move_edge(&mut self, end: bool, window: &Window, cx: &mut Context<Self>) {
         if self.generator_name_focus.is_focused(window) {
-            let byte = if end { self.generator_name.len() } else { 0 };
+            let byte = if self.editing_entry {
+                let cursor = self.generator_name_cursor;
+                if end {
+                    self.generator_name[cursor..]
+                        .find('\n')
+                        .map_or(self.generator_name.len(), |offset| cursor + offset)
+                } else {
+                    self.generator_name[..cursor]
+                        .rfind('\n')
+                        .map_or(0, |offset| offset + 1)
+                }
+            } else if end {
+                self.generator_name.len()
+            } else {
+                0
+            };
             self.generator_name_selection = byte..byte;
             self.generator_name_cursor = byte;
             self.generator_name_anchor = None;
@@ -529,7 +499,7 @@ impl PassApp {
     }
 
     fn edit_mouse_position(&self, point: Point<Pixels>) -> Option<usize> {
-        Some(multiline_byte_at_point(&self.generator_name, &self.generator_name_line_bounds, point))
+        self.editor_layout.as_ref().map(|layout| layout.index_for_point(point))
     }
 
     pub(crate) fn begin_edit_mouse_selection(
@@ -586,6 +556,33 @@ impl PassApp {
     pub(crate) fn end_edit_mouse_selection(&mut self) {
         self.generator_name_anchor = None;
     }
+
+    pub(crate) fn copy_edit_selection(&self, window: &Window, cx: &mut Context<Self>) {
+        if self.editing_entry && self.generator_name_focus.is_focused(window)
+            && !self.generator_name_selection.is_empty()
+        {
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.generator_name[self.generator_name_selection.clone()].to_owned(),
+            ));
+        }
+    }
+
+    pub(crate) fn cut_edit_selection(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.editing_entry && self.generator_name_focus.is_focused(window)
+            && !self.generator_name_selection.is_empty()
+        {
+            self.copy_edit_selection(window, cx);
+            self.replace_generator_name(None, "", cx);
+        }
+    }
+
+    pub(crate) fn paste_edit_text(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.editing_entry && self.generator_name_focus.is_focused(window) {
+            if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+                self.replace_generator_name(None, &text.replace("\r\n", "\n").replace('\r', "\n"), cx);
+            }
+        }
+    }
 }
 
 impl EntityInputHandler for PassApp {
@@ -624,7 +621,8 @@ impl EntityInputHandler for PassApp {
         };
         Some(UTF16Selection {
             range: utf16_at_byte(text, selection.start)..utf16_at_byte(text, selection.end),
-            reversed: false,
+            reversed: self.generator_name_focus.is_focused(window)
+                && self.generator_name_cursor < selection.start,
         })
     }
 
@@ -706,12 +704,23 @@ impl EntityInputHandler for PassApp {
         window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<Bounds<Pixels>> {
-        let text = if self.generator_name_focus.is_focused(window) {
+        let name_focused = self.generator_name_focus.is_focused(window);
+        let text = if name_focused {
             &self.generator_name
         } else {
             &self.query
         };
         let byte = byte_at_utf16(text, range.start);
+        if name_focused && self.editing_entry {
+            let line = self.editor_layout.as_ref()?.lines.iter()
+                .find(|line| byte >= line.range.start && byte <= line.range.end)
+                .or_else(|| self.editor_layout.as_ref()?.lines.last())?;
+            let offset = byte.saturating_sub(line.range.start).min(line.range.end - line.range.start);
+            return Some(Bounds::new(
+                Point { x: line.bounds.left() + line.shaped.x_for_index(offset), y: line.bounds.top() },
+                gpui::size(px(1.), line.bounds.size.height),
+            ));
+        }
         let (column, row) = if self.generator_name_focus.is_focused(window) && self.editing_entry {
             let prefix = &text[..byte];
             let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
@@ -744,22 +753,18 @@ impl EntityInputHandler for PassApp {
         window: &mut Window,
         _: &mut Context<Self>,
     ) -> Option<usize> {
-        let bounds = if self.generator_name_focus.is_focused(window) {
+        let name_focused = self.generator_name_focus.is_focused(window);
+        let text = if name_focused { &self.generator_name } else { &self.query };
+        if name_focused && self.editing_entry {
+            let byte = self.editor_layout.as_ref()?.index_for_point(point);
+            return Some(utf16_at_byte(text, byte));
+        }
+        let bounds = if name_focused {
             self.generator_name_bounds?
         } else {
             self.input_bounds?
         };
-        let text = if self.generator_name_focus.is_focused(window) {
-            &self.generator_name
-        } else {
-            &self.query
-        };
-        if self.generator_name_focus.is_focused(window) && self.editing_entry {
-            let byte = multiline_byte_at_point(text, &self.generator_name_line_bounds, point);
-            Some(utf16_at_byte(text, byte))
-        } else {
-            let column = ((point.x - bounds.origin.x) / px(EDIT_ADVANCE)).max(0.) as usize;
-            Some(text.chars().take(column).map(char::len_utf16).sum())
-        }
+        let column = ((point.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
+        Some(text.chars().take(column).map(char::len_utf16).sum())
     }
 }

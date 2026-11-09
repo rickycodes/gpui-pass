@@ -36,3 +36,22 @@ pub fn button(id: &'static str, text: &'static str, primary: bool) -> gpui::Stat
         .hover(move |style| style.bg(rgb(if primary { 0x19543c } else { TINT })))
         .child(text)
 }
+
+pub fn danger_button(id: &'static str, text: &'static str) -> gpui::Stateful<Div> {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .justify_center()
+        .h(px(40.))
+        .px(px(18.))
+        .border_1()
+        .border_color(rgb(0xe7c6c1))
+        .bg(rgb(0xf8e9e6))
+        .text_color(rgb(ERROR))
+        .text_size(px(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .cursor_pointer()
+        .hover(|style| style.bg(rgb(0xf1d9d5)))
+        .child(text)
+}
