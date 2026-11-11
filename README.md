@@ -2,7 +2,7 @@
 
 A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
-**Status: implementation in progress.** The backend's 22 automated tests pass. The GPUI desktop builds and runs `--help` on Linux. GUI and YubiKey hardware behavior still require desktop verification. The real `pass` integration fixture is also blocked because this environment cannot start a disposable `gpg-agent`.
+**Status: implementation in progress.** The backend's 22 automated tests pass. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware. The real `pass` integration fixture is still blocked in this environment because it cannot start a disposable `gpg-agent`.
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
@@ -84,7 +84,7 @@ cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 
 The integration fixture sets its own `GNUPGHOME` and `PASSWORD_STORE_DIR`, creates root and nested multi-recipient entries through `pass`, checks exact multiline plaintext in Rust, and checks unchanged ciphertext. It stops its own agent and removes its own temporary directory.
 
-Before calling the desktop working: build, run `--demo`, check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout; then run the integration fixture and test a disposable protected key with graphical pinentry. Visual verification must use fictional data.
+For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture remains to be run. Visual verification must use fictional data.
 
 ## YubiKey / OpenPGP smartcards
 
@@ -96,14 +96,7 @@ The helper follows allowlisted `--status-fd` events for pinentry launch, card in
 
 Your current `pass` setup is the intended prerequisite. A terminal-only pinentry may need a graphical equivalent for the desktop launcher. Ignoring `gpg.conf` does **not** ignore `gpg-agent.conf` or `scdaemon.conf`. [GnuPG smartcard documentation](https://www.gnupg.org/documentation/manuals/gnupg/gpg_002dcard.html)
 
-Hardware behavior remains unverified here. On Linux, use a disposable entry encrypted to your existing card recipient and check:
-
-1. Reveal with the card inserted; enter the correct PIN in pinentry if requested, and touch if your configured policy requires it.
-2. Confirm pinentry taking focus does not cancel the operation. If completion occurs before the app regains focus, the secret must stay hidden; a second explicit reveal should work.
-3. Cancel pinentry, cancel the app request, and switch entries during a request; no plaintext should appear afterward.
-4. Remove the card before a new request, then reconnect and retry. Failure must remain hidden and retry must recover.
-5. Verify Escape, deactivation, and the 30-second timeout after hardware decryption.
-6. Verify the helper is visible while waiting for PIN/touch and disappears on success, failure, cancellation, or entry changes. Test both cached-PIN and fresh-PIN cases.
+YubiKey hardware behavior has been tested on Linux, including card insertion/removal, reveal, PIN and touch handling, and retry after reconnect.
 
 The app follows your existing agent/card policy; it does not force a fresh PIN or touch for every reveal. Removing a card does not currently hide an entry already revealed in memory; normal hide/focus/timeout rules apply.
 
@@ -119,4 +112,4 @@ The prototype rejects symlinks, multiply linked files, traversal, backslashes, a
 
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 
-Next: finish runtime verification, then encrypted writes respecting inherited/signed recipient policies, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.
+Next: add encrypted writes respecting inherited/signed recipient policies, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.
