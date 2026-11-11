@@ -14,7 +14,7 @@ pub use generator::{
     GeneratorOptions, generate_memorable_password, generate_pass_default_password,
 };
 pub use hardening::harden_process;
-pub use operation::{OperationProgress, OperationStatus, StatusKind};
+pub use operation::{CardEvent, CardObservation, OperationProgress, OperationStatus, StatusKind};
 pub use session::{RevealRequest, Session};
 pub use store::{Entry, Store, default_store_path};
 

@@ -1,5 +1,5 @@
 //! Allowlisted GnuPG status decoding. Raw diagnostic text never leaves this module.
-use crate::{OperationProgress, OperationStatus};
+use crate::{CardEvent, OperationProgress, OperationStatus};
 use std::io::{self, Read};
 use zeroize::Zeroizing;
 
@@ -81,8 +81,13 @@ impl StatusReader {
     fn push(&mut self, byte: u8, progress: &OperationProgress) {
         if byte == b'\n' {
             if !self.discard_line {
-                if let Some(status) = decode(&self.line[..self.used]) {
-                    progress.update(status);
+                if let Some((status, card_event)) = decode(&self.line[..self.used]) {
+                    if let Some(status) = status {
+                        progress.update(status);
+                    }
+                    if let Some(event) = card_event {
+                        progress.observe_card(event);
+                    }
                 }
             }
             self.line[..self.used].fill(0);
@@ -101,16 +106,20 @@ impl StatusReader {
     }
 }
 
-fn decode(line: &[u8]) -> Option<OperationStatus> {
+fn decode(line: &[u8]) -> Option<(Option<OperationStatus>, Option<CardEvent>)> {
     let payload = line.strip_prefix(b"[GNUPG:] ")?;
     let mut fields = payload
         .split(|byte| byte.is_ascii_whitespace())
         .filter(|part| !part.is_empty());
     match fields.next()? {
-        b"PINENTRY_LAUNCHED" if fields.next().is_some() => Some(PINENTRY),
+        b"PINENTRY_LAUNCHED" if fields.next().is_some() => {
+            Some((Some(PINENTRY), Some(CardEvent::PinentryOpened)))
+        }
         b"CARDCTRL" => match fields.next()? {
-            b"1" | b"4" | b"5" => Some(INSERT_CARD),
-            b"3" => Some(UNLOCKING),
+            b"1" => Some((Some(INSERT_CARD), Some(CardEvent::InsertionRequested))),
+            b"3" => Some((Some(UNLOCKING), Some(CardEvent::CardDetected))),
+            b"4" => Some((Some(INSERT_CARD), Some(CardEvent::NoCardAvailable))),
+            b"5" => Some((Some(INSERT_CARD), Some(CardEvent::NoReaderAvailable))),
             _ => None,
         },
         b"PROGRESS" => {
@@ -122,12 +131,12 @@ fn decode(line: &[u8]) -> Option<OperationStatus> {
                 return None;
             }
             match operation {
-                b"card_busy" => Some(CARD_BUSY),
-                b"scd_locked" => Some(AGENT_BUSY),
+                b"card_busy" => Some((Some(CARD_BUSY), Some(CardEvent::CardBusy))),
+                b"scd_locked" => Some((Some(AGENT_BUSY), Some(CardEvent::AgentBusy))),
                 _ => None,
             }
         }
-        b"BEGIN_DECRYPTION" | b"DECRYPTION_OKAY" => Some(DECRYPTING),
+        b"BEGIN_DECRYPTION" | b"DECRYPTION_OKAY" => Some((Some(DECRYPTING), None)),
         _ => None,
     }
 }

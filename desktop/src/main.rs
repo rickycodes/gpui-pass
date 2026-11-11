@@ -12,13 +12,16 @@ use gpui::{
     px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    Cancellation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
+    Cancellation, CardEvent, CardObservation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
     RevealRequest, Secret, Session, Store, default_store_path, harden_process,
 };
 use std::{
+    io::{BufRead, BufReader},
+    collections::VecDeque,
     ops::Range,
     path::PathBuf,
-    sync::mpsc::{self, Receiver},
+    process::{Child, Command, Stdio},
+    sync::{Arc, Mutex, mpsc::{self, Receiver}},
     time::{Duration, Instant},
 };
 use theme::*;
@@ -98,6 +101,64 @@ impl Options {
 
 type LoadedStore = Result<(Store, Vec<Entry>), Error>;
 
+#[derive(Clone, Copy)]
+struct YubiRecord {
+    observation: CardObservation,
+    operation: &'static str,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum YubiConnection {
+    Checking,
+    Connected,
+    NotDetected,
+    NoReader,
+    Busy,
+    Unavailable,
+}
+
+#[derive(Clone)]
+struct CardDetails {
+    application: String,
+    reader: Option<String>,
+    version: Option<String>,
+    manufacturer: Option<String>,
+    key_attributes: Vec<String>,
+    pin_retries: Option<[u32; 3]>,
+    signature_count: Option<u64>,
+}
+
+struct CardProbeResult {
+    connection: YubiConnection,
+    details: Option<CardDetails>,
+}
+
+#[derive(Clone, Copy)]
+enum CardWatchEvent {
+    Ready,
+    Status(Option<bool>),
+    Failed,
+}
+
+struct CardWatcher {
+    child: Arc<Mutex<Child>>,
+    events: Receiver<CardWatchEvent>,
+}
+
+impl Drop for CardWatcher {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+        }
+    }
+}
+
+enum ParsedCardStatus {
+    Detected(CardDetails),
+    NotDetected,
+    Unrecognized,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GeneratorMode {
     Memorable,
@@ -145,6 +206,16 @@ pub(crate) struct PassApp {
         Receiver<Result<(Entry, Secret), Error>>,
     )>,
     saved_entry_name: Option<String>,
+    yubikey_open: bool,
+    yubikey_history: VecDeque<YubiRecord>,
+    last_yubikey_observation: Option<Instant>,
+    yubikey_connection: YubiConnection,
+    yubikey_details: Option<CardDetails>,
+    yubikey_check: Option<Receiver<CardProbeResult>>,
+    yubikey_last_checked: Option<Instant>,
+    card_watcher: Option<CardWatcher>,
+    card_watcher_supported: Option<bool>,
+    card_refresh_pending: bool,
     close_after_save: bool,
     pub(crate) editing_entry: bool,
     pub(crate) editor_layout: Option<entry_editor::TextLayout>,
@@ -208,6 +279,16 @@ impl PassApp {
             confirming_delete: None,
             saving: None,
             saved_entry_name: None,
+            yubikey_open: false,
+            yubikey_history: VecDeque::new(),
+            last_yubikey_observation: None,
+            yubikey_connection: YubiConnection::Checking,
+            yubikey_details: None,
+            yubikey_check: None,
+            yubikey_last_checked: None,
+            card_watcher: None,
+            card_watcher_supported: None,
+            card_refresh_pending: false,
             close_after_save: false,
             editing_entry: false,
             editor_layout: None,
@@ -219,6 +300,8 @@ impl PassApp {
             _activation: subscription,
         };
         app.refresh(cx);
+        app.start_yubikey_check();
+        app.start_card_watcher();
         cx.spawn(async move |entity, cx| {
             loop {
                 let delay = entity
@@ -236,6 +319,10 @@ impl PassApp {
 
     fn tick_interval(&self) -> Duration {
         if self.load.is_some() || self.reveal.is_some() || self.saving.is_some() {
+            Duration::from_millis(100)
+        } else if self.card_watcher.is_some() {
+            // The watcher is event-driven. Poll its receiver frequently so hotplug events
+            // reach the UI promptly instead of waiting for the idle refresh interval.
             Duration::from_millis(100)
         } else if self.session.revealed(Instant::now()).is_some()
             || self.generated.is_some()
@@ -288,6 +375,8 @@ impl PassApp {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
+        self.capture_yubikey_status(cx);
+        self.poll_yubikey_connection(cx);
         if let Some(result) = self
             .load
             .as_ref()
@@ -416,6 +505,236 @@ impl PassApp {
             self.last_operation_status = status;
             cx.notify();
         }
+    }
+
+    fn start_yubikey_check(&mut self) {
+        // Keep the initial loading state, then leave the last result on screen while the
+        // background probe runs. An absent key should not flash "Checking" on every retry.
+        if self.yubikey_last_checked.is_none() {
+            self.yubikey_connection = YubiConnection::Checking;
+        }
+        let executable = self.gpg.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.yubikey_check = Some(receiver);
+        std::thread::spawn(move || {
+            let _ = sender.send(check_card_status(&executable));
+        });
+    }
+
+    fn start_card_watcher(&mut self) {
+        let gpg_parent = self.gpg.parent().unwrap_or_else(|| std::path::Path::new("/usr/bin"));
+        let sibling = gpg_parent.join("gpg-connect-agent");
+        let executable = if sibling.is_file() {
+            sibling
+        } else {
+            PathBuf::from("gpg-connect-agent")
+        };
+        let Ok(mut child) = Command::new(executable)
+            .arg("scd devinfo --watch")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            self.card_watcher_supported = Some(false);
+            return;
+        };
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            self.card_watcher_supported = Some(false);
+            return;
+        };
+
+        let child = Arc::new(Mutex::new(child));
+        let thread_child = child.clone();
+        let (sender, events) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            let mut ready = false;
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => {
+                        let _ = sender.send(CardWatchEvent::Failed);
+                        break;
+                    }
+                    Ok(_) => {
+                        if line.contains("DEVINFO_START") || line.contains("DEVINFO_END") {
+                            if !ready {
+                                ready = true;
+                                let _ = sender.send(CardWatchEvent::Ready);
+                            }
+                        }
+                        if line.contains("DEVINFO_STATUS") {
+                            ready = true;
+                            let _ = sender.send(CardWatchEvent::Ready);
+                            let words = line.split_whitespace().collect::<Vec<_>>();
+                            let present = words
+                                .iter()
+                                .position(|word| *word == "DEVINFO_STATUS")
+                                .and_then(|index| words.get(index + 1))
+                                .and_then(|status| match *status {
+                                    "new" => Some(true),
+                                    "removal" => Some(false),
+                                    _ => None,
+                                });
+                            let _ = sender.send(CardWatchEvent::Status(present));
+                        }
+                        if line.starts_with("ERR ") {
+                            let _ = sender.send(CardWatchEvent::Failed);
+                            break;
+                        }
+                    }
+                }
+            }
+            if let Ok(mut child) = thread_child.lock() {
+                let _ = child.wait();
+            }
+        });
+        self.card_watcher = Some(CardWatcher { child, events });
+    }
+
+    fn poll_yubikey_connection(&mut self, cx: &mut Context<Self>) {
+        if self.reveal.is_some() || self.saving.is_some() {
+            return;
+        }
+        let watch_events = self
+            .card_watcher
+            .as_ref()
+            .map(|watcher| watcher.events.try_iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for event in watch_events {
+            match event {
+                CardWatchEvent::Ready => self.card_watcher_supported = Some(true),
+                CardWatchEvent::Status(present) => {
+                    self.card_watcher_supported = Some(true);
+                    if let Some(present) = present {
+                        let connection = if present {
+                            YubiConnection::Connected
+                        } else {
+                            YubiConnection::NotDetected
+                        };
+                        if self.yubikey_connection != connection {
+                            self.yubikey_connection = connection;
+                            self.yubikey_details = None;
+                            if !present {
+                                self.yubikey_open = false;
+                            }
+                            cx.notify();
+                        }
+                    }
+                    if self.yubikey_check.is_some() {
+                        self.card_refresh_pending = true;
+                    } else {
+                        self.start_yubikey_check();
+                    }
+                }
+                CardWatchEvent::Failed => {
+                    self.card_watcher_supported = Some(false);
+                    self.card_watcher = None;
+                }
+            }
+        }
+        if let Some(result) = self
+            .yubikey_check
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok())
+        {
+            self.yubikey_check = None;
+            self.yubikey_last_checked = Some(Instant::now());
+            // A busy service is inconclusive. Keep the last known connection in that case
+            // so the status link doesn't flicker while the key is in use.
+            if result.connection != YubiConnection::Busy {
+                let changed = self.yubikey_connection != result.connection
+                    || self.yubikey_details.as_ref().map(|details| {
+                        (
+                            &details.application,
+                            &details.reader,
+                            &details.version,
+                            &details.manufacturer,
+                            &details.key_attributes,
+                            details.pin_retries,
+                            details.signature_count,
+                        )
+                    }) != result.details.as_ref().map(|details| {
+                        (
+                            &details.application,
+                            &details.reader,
+                            &details.version,
+                            &details.manufacturer,
+                            &details.key_attributes,
+                            details.pin_retries,
+                            details.signature_count,
+                        )
+                    });
+                self.yubikey_connection = result.connection;
+                self.yubikey_details = result.details;
+                if self.yubikey_connection != YubiConnection::Connected {
+                    self.yubikey_open = false;
+                }
+                if changed {
+                    cx.notify();
+                }
+            } else if self.yubikey_connection != YubiConnection::Connected {
+                self.yubikey_connection = YubiConnection::Busy;
+                self.yubikey_details = None;
+                cx.notify();
+            }
+        }
+        if self.yubikey_check.is_none() && self.card_refresh_pending {
+            self.card_refresh_pending = false;
+            self.start_yubikey_check();
+        }
+        if self.card_watcher_supported != Some(true)
+            && self.yubikey_check.is_none()
+            && self
+                .yubikey_last_checked
+                .is_none_or(|last| last.elapsed() >= Duration::from_secs(3))
+        {
+            self.start_yubikey_check();
+            cx.notify();
+        }
+    }
+
+    fn capture_yubikey_status(&mut self, cx: &mut Context<Self>) {
+        let observation = self
+            .reveal
+            .as_ref()
+            .and_then(|(request, _)| {
+                request
+                    .progress
+                    .card_observation()
+                    .map(|observation| (observation, "Reveal entry"))
+            })
+            .or_else(|| {
+                self.saving.as_ref().and_then(|(_, progress, _)| {
+                    progress.card_observation().map(|observation| {
+                        let operation = if self.saving_edit {
+                            "Save edited entry"
+                        } else {
+                            "Save generated entry"
+                        };
+                        (observation, operation)
+                    })
+                })
+            });
+        let Some((observation, operation)) = observation else {
+            return;
+        };
+        if self
+            .last_yubikey_observation
+            .is_some_and(|last| observation.observed_at <= last)
+        {
+            return;
+        }
+        self.last_yubikey_observation = Some(observation.observed_at);
+        self.yubikey_history.push_front(YubiRecord {
+            observation,
+            operation,
+        });
+        self.yubikey_history.truncate(12);
+        cx.notify();
     }
 
     fn set_message(&mut self, message: String) {
@@ -681,6 +1000,7 @@ impl PassApp {
     }
 
     fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.yubikey_open = false;
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
@@ -1437,6 +1757,134 @@ impl PassApp {
             .into_any_element()
     }
 
+    fn yubikey_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let latest = self.yubikey_history.front().copied();
+        let mut page = div()
+            .id("yubikey-status-page")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(54.))
+            .py(px(42.))
+            .flex()
+            .flex_col()
+            .gap(px(26.))
+            .bg(rgb(WHITE))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(
+                                div()
+                                    .text_size(px(32.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .child("Smartcard status"),
+                            ),
+                    )
+                    .child(button("yubikey-back", "Back to entries", false).on_click(
+                        cx.listener(|app, _, _, cx| {
+                            app.yubikey_open = false;
+                            cx.notify();
+                        }),
+                    )),
+            );
+
+        page = page.child(
+            div()
+                .max_w(px(760.))
+                .border_1()
+                .border_color(rgb(LINE))
+                .bg(rgb(PAPER))
+                .p(px(24.))
+                .flex()
+                .flex_col()
+                .gap(px(12.))
+                .child(label("CARD CONNECTION"))
+                .child(
+                    div()
+                        .text_size(px(21.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(rgb(match self.yubikey_connection {
+                            YubiConnection::Connected => GREEN,
+                            YubiConnection::NotDetected | YubiConnection::NoReader => ERROR,
+                            _ => INK,
+                        }))
+                        .child(yubi_connection_title(self.yubikey_connection)),
+                )
+        );
+
+        if let Some(details) = &self.yubikey_details {
+            let mut rows = div()
+                .max_w(px(760.))
+                .flex()
+                .flex_col()
+                .gap(px(1.))
+                .child(yubi_info_row("Application", details.application.clone()));
+            if let Some(reader) = &details.reader {
+                rows = rows.child(yubi_info_row("Reader", reader.clone()));
+            }
+            if let Some(version) = &details.version {
+                rows = rows.child(yubi_info_row("Card version", version.clone()));
+            }
+            if let Some(manufacturer) = &details.manufacturer {
+                rows = rows.child(yubi_info_row("Manufacturer", manufacturer.clone()));
+            }
+            if !details.key_attributes.is_empty() {
+                rows = rows.child(yubi_info_row(
+                    "Key algorithms",
+                    details.key_attributes.join(" · "),
+                ));
+            }
+            if let Some(retries) = details.pin_retries {
+                rows = rows.child(yubi_info_row(
+                    "PIN retries",
+                    format!("{} · {} · {}", retries[0], retries[1], retries[2]),
+                ));
+            }
+            if let Some(count) = details.signature_count {
+                rows = rows.child(yubi_info_row("Signature count", count.to_string()));
+            }
+            page = page.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(label("CARD DETAILS"))
+                    .child(rows),
+            );
+        } else if self.yubikey_connection == YubiConnection::Connected {
+            page = page.child(
+                div()
+                    .max_w(px(760.))
+                    .text_size(px(12.))
+                    .text_color(rgb(MUTED))
+                    .child("No card details reported by GnuPG."),
+            );
+        }
+
+        if let Some(record) = latest {
+            page = page.child(
+                div()
+                    .max_w(px(760.))
+                    .text_size(px(11.))
+                    .text_color(rgb(MUTED))
+                    .child(format!(
+                        "Recent activity: {} · {}",
+                        card_event_title(record.observation.event),
+                        record.operation
+                    )),
+            );
+        }
+
+        page.into_any_element()
+    }
+
     fn path_label(&self) -> String {
         if self.demo {
             return "Fictional entries · in memory".into();
@@ -1714,6 +2162,17 @@ impl PassApp {
 
 impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let main_content = if self.yubikey_open {
+            self.yubikey_view(cx)
+        } else {
+            div()
+                .flex()
+                .flex_1()
+                .min_h_0()
+                .child(self.sidebar(window, cx))
+                .child(self.details(window, cx))
+                .into_any_element()
+        };
         div()
             .size_full()
             .flex()
@@ -1881,6 +2340,23 @@ impl Render for PassApp {
                                     }))
                                     .child("Generate ↗"),
                             )
+                            .when(self.yubikey_connection == YubiConnection::Connected, |header| {
+                                header.child(
+                                    div()
+                                    .id("open-yubikey-status")
+                                    .text_size(px(12.))
+                                    .text_color(rgb(if self.yubikey_open { 0xd7ebbb } else { WHITE }))
+                                    .cursor_pointer()
+                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.yubikey_open = true;
+                                        cx.notify();
+                                    }))
+                                    .child("Card status ↗"),
+                                )
+                            })
                             .child(
                                 div()
                                     .id("refresh")
@@ -1895,14 +2371,7 @@ impl Render for PassApp {
                             ),
                     ),
             )
-            .child(
-                div()
-                    .flex()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.sidebar(window, cx))
-                    .child(self.details(window, cx)),
-            )
+            .child(main_content)
             .child(
                 div()
                     .h(px(30.))
@@ -2014,6 +2483,340 @@ impl Render for PassApp {
                 Some(14.),
             ))
     }
+}
+
+fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
+    let Ok(mut child) = Command::new(executable)
+        .args([
+            "--batch",
+            "--no-tty",
+            "--with-colons",
+            "--card-status",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    else {
+        return CardProbeResult {
+            connection: YubiConnection::Unavailable,
+            details: None,
+        };
+    };
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if started.elapsed() < Duration::from_secs(5) => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            _ => break None,
+        }
+    };
+    if status.is_none() {
+        let _ = child.kill();
+        let _ = child.wait();
+        return CardProbeResult {
+            connection: YubiConnection::Busy,
+            details: None,
+        };
+    }
+
+    // Parse only an allowlist of useful fields. GnuPG also returns serials, cardholder data,
+    // login data, and key fingerprints; those values are intentionally discarded.
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        Err(_) => {
+            return CardProbeResult {
+                connection: YubiConnection::Unavailable,
+                details: None,
+            };
+        }
+    };
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined_output = format!("{stdout}\n{stderr}");
+    match parse_card_status(&combined_output) {
+        ParsedCardStatus::Detected(details) => {
+            return CardProbeResult {
+                connection: YubiConnection::Connected,
+                details: Some(details),
+            };
+        }
+        ParsedCardStatus::NotDetected if output.status.success() => {
+            return CardProbeResult {
+                connection: YubiConnection::NotDetected,
+                details: None,
+            };
+        }
+        // GnuPG's successful exit is authoritative for presence; detail records vary
+        // between card applications and GnuPG versions.
+        ParsedCardStatus::Unrecognized if output.status.success() => {
+            return CardProbeResult {
+                connection: YubiConnection::Connected,
+                details: None,
+            };
+        }
+        ParsedCardStatus::NotDetected | ParsedCardStatus::Unrecognized => {}
+    }
+
+    // Diagnostics are consulted only to classify failures and are never retained or displayed.
+    let diagnostic = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+    let connection = if diagnostic.contains("no agent running")
+        || diagnostic.contains("can't connect to the agent")
+        || diagnostic.contains("cannot connect to the agent")
+    {
+        YubiConnection::Unavailable
+    } else if diagnostic.contains("busy") || diagnostic.contains("locked") {
+        YubiConnection::Busy
+    } else if diagnostic.contains("no reader") || diagnostic.contains("reader not found") {
+        YubiConnection::NoReader
+    } else if [
+        "no such device",
+        "no card",
+        "card not present",
+        "selecting card failed",
+        "card not available",
+    ]
+    .iter()
+    .any(|message| diagnostic.contains(message))
+    {
+        YubiConnection::NotDetected
+    } else {
+        YubiConnection::Unavailable
+    };
+    CardProbeResult {
+        connection,
+        details: None,
+    }
+}
+
+fn parse_card_status(output: &str) -> ParsedCardStatus {
+    let mut application = None;
+    let mut reader = None;
+    let mut version = None;
+    let mut manufacturer = None;
+    let mut key_attributes = Vec::new();
+    let mut pin_retries = None;
+    let mut signature_count = None;
+    let mut aid_record_seen = false;
+    let mut aid_present = false;
+
+    for line in output.lines() {
+        let fields: Vec<_> = line.split(':').collect();
+        let (raw_label, raw_value) = line.split_once(':').unwrap_or((line, ""));
+        let label = raw_label
+            .trim()
+            .trim_matches('.')
+            .trim()
+            .to_ascii_lowercase();
+        let value = raw_value.trim().trim_end_matches(':').trim();
+        match label.as_str() {
+            "reader" => reader = Some(safe_card_text(value)),
+            "aid" => {
+                aid_record_seen = true;
+                aid_present = fields.get(1).is_some_and(|value| !value.is_empty());
+            }
+            "openpgp-card" => application = Some("OpenPGP".to_owned()),
+            "piv-card" => application = Some("PIV".to_owned()),
+            "netkey-card" => application = Some("NetKey".to_owned()),
+            "dinsig-card" => application = Some("DINSIG".to_owned()),
+            "pkcs15-card" => application = Some("PKCS#15".to_owned()),
+            "geldkarte-card" => application = Some("Geldkarte".to_owned()),
+            "unknown-card" => application = Some("Unknown card application".to_owned()),
+            tag if tag.ends_with("-card") => {
+                application = Some(
+                    tag.trim_end_matches("-card")
+                        .replace('-', " ")
+                        .to_ascii_uppercase(),
+                );
+            }
+            "application type" => {
+                if !value.is_empty() {
+                    application = Some(safe_card_text(value));
+                }
+            }
+            "version" => {
+                version = decode_card_version(if value.is_empty() {
+                    fields.get(1).copied().unwrap_or_default()
+                } else {
+                    value
+                });
+            }
+            "vendor" => {
+                manufacturer = fields.get(2).map(|value| safe_card_text(value));
+            }
+            "manufacturer" => manufacturer = Some(safe_card_text(value)),
+            "keyattr" => {
+                if let (Some(slot), Some(algorithm), Some(parameter)) =
+                    (fields.get(1), fields.get(2), fields.get(3))
+                    && let Some(attribute) = card_key_attribute(slot, algorithm, parameter)
+                {
+                    key_attributes.push(attribute);
+                }
+            }
+            "key attributes" => {
+                key_attributes.extend(value.split_whitespace().map(|attribute| {
+                    format!("Key: {}", safe_card_text(attribute))
+                }));
+            }
+            "pinretry" => {
+                if let (Some(first), Some(second), Some(third)) = (
+                    fields.get(1).and_then(|value| value.parse().ok()),
+                    fields.get(2).and_then(|value| value.parse().ok()),
+                    fields.get(3).and_then(|value| value.parse().ok()),
+                ) {
+                    pin_retries = Some([first, second, third]);
+                }
+            }
+            "pin retry counter" => {
+                let retries: Vec<_> = value
+                    .split_whitespace()
+                    .filter_map(|value| value.parse().ok())
+                    .collect();
+                if let [first, second, third] = retries.as_slice() {
+                    pin_retries = Some([*first, *second, *third]);
+                }
+            }
+            "sigcount" => signature_count = fields.get(1).and_then(|value| value.parse().ok()),
+            "signature counter" => signature_count = value.parse().ok(),
+            _ => {}
+        }
+    }
+
+    if aid_present
+        || application.is_some()
+        || reader.as_ref().is_some_and(|value| !value.is_empty())
+        || version.is_some()
+        || manufacturer.is_some()
+        || !key_attributes.is_empty()
+        || pin_retries.is_some()
+        || signature_count.is_some()
+    {
+        ParsedCardStatus::Detected(CardDetails {
+            application: application.unwrap_or_else(|| "Smartcard".to_owned()),
+            reader: reader.filter(|value| !value.is_empty()),
+            version,
+            manufacturer: manufacturer.filter(|value| !value.is_empty()),
+            key_attributes,
+            pin_retries,
+            signature_count,
+        })
+    } else if aid_record_seen {
+        ParsedCardStatus::NotDetected
+    } else {
+        ParsedCardStatus::Unrecognized
+    }
+}
+
+fn card_key_attribute(slot: &str, algorithm: &str, parameter: &str) -> Option<String> {
+    let slot = match slot {
+        "1" => "Signing",
+        "2" => "Encryption",
+        "3" => "Authentication",
+        _ => return None,
+    };
+    let algorithm = match algorithm {
+        "1" => format!("RSA {}", parameter),
+        "18" => format!("ECDH {}", safe_card_text(parameter)),
+        "19" => format!("ECDSA {}", safe_card_text(parameter)),
+        "22" => format!("EdDSA {}", safe_card_text(parameter)),
+        value => format!("algorithm {value}"),
+    };
+    Some(format!("{slot}: {algorithm}"))
+}
+
+fn decode_card_version(value: &str) -> Option<String> {
+    if value.len() == 4 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        let major = u8::from_str_radix(&value[..2], 16).ok()?;
+        let minor = u8::from_str_radix(&value[2..], 16).ok()?;
+        Some(format!("{major}.{minor}"))
+    } else if value.is_empty() {
+        None
+    } else {
+        Some(safe_card_text(value))
+    }
+}
+
+fn safe_card_text(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len()
+            && let (Some(high), Some(low)) = (hex_digit(bytes[index + 1]), hex_digit(bytes[index + 2]))
+        {
+            decoded.push(high * 16 + low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8_lossy(&decoded)
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect()
+}
+
+fn hex_digit(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn yubi_connection_title(status: YubiConnection) -> &'static str {
+    match status {
+        YubiConnection::Checking => "Checking card status…",
+        YubiConnection::Connected => "Smartcard detected",
+        YubiConnection::NotDetected => "No card detected",
+        YubiConnection::NoReader => "No smartcard reader available",
+        YubiConnection::Busy => "Card service is busy",
+        YubiConnection::Unavailable => "Card status unavailable",
+    }
+}
+
+fn card_event_title(event: CardEvent) -> &'static str {
+    match event {
+        CardEvent::PinentryOpened => "System PIN or passphrase prompt opened",
+        CardEvent::CardDetected => "GnuPG detected a card",
+        CardEvent::InsertionRequested => "GnuPG requested a card",
+        CardEvent::NoCardAvailable => "GnuPG reported no card available",
+        CardEvent::NoReaderAvailable => "GnuPG reported no card reader",
+        CardEvent::CardBusy => "GnuPG reported a busy card",
+        CardEvent::AgentBusy => "GnuPG agent is busy",
+    }
+}
+
+fn yubi_info_row(title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
+    let detail: SharedString = detail.into();
+    div()
+        .flex()
+        .items_start()
+        .gap(px(18.))
+        .border_b_1()
+        .border_color(rgb(LINE))
+        .py(px(13.))
+        .child(
+            div()
+                .w(px(140.))
+                .flex_shrink_0()
+                .text_size(px(12.))
+                .font_weight(FontWeight::MEDIUM)
+                .child(title),
+        )
+        .child(
+            div()
+                .max_w(px(560.))
+                .text_size(px(12.))
+                .line_height(px(19.))
+                .text_color(rgb(MUTED))
+                .child(detail),
+        )
 }
 
 fn resize_handle(
