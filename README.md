@@ -112,4 +112,4 @@ The prototype rejects symlinks, multiply linked files, traversal, backslashes, a
 
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 
-Next: add encrypted writes respecting inherited/signed recipient policies, Git sync with conflict handling, and separate encrypted-backup/plaintext-export flows. See [SECURITY.md](SECURITY.md) for the security boundary and limitations.
+See [roadmap.md](roadmap.md) for planned work and [SECURITY.md](SECURITY.md) for the security boundary and limitations.
