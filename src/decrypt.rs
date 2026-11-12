@@ -18,7 +18,7 @@ use std::{
 use zeroize::Zeroizing;
 
 pub const MAX_SECRET_BYTES: usize = 1024 * 1024;
-const MAX_CIPHERTEXT_BYTES: usize = 1024 * 1024;
+const MAX_CIPHERTEXT_BYTES: usize = 2 * MAX_SECRET_BYTES;
 
 /// Plaintext has no Clone/Display implementation; Debug is always redacted.
 pub struct Secret(Zeroizing<Vec<u8>>);
@@ -137,7 +137,7 @@ impl Gpg {
             return Err(Error::Cancelled);
         }
         let recipients = store.recipients_for_entry(entry)?;
-        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress)?;
+        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress, false)?;
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
@@ -153,7 +153,7 @@ impl Gpg {
         progress: &OperationProgress,
     ) -> Result<(), Error> {
         let recipients = store.recipients_for_entry(entry)?;
-        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress)?;
+        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress, true)?;
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
@@ -167,6 +167,7 @@ impl Gpg {
         recipients: &[String],
         cancel: &Cancellation,
         progress: &OperationProgress,
+        append_newline: bool,
     ) -> Result<Vec<u8>, Error> {
         use rustix::fs::{OFlags, fcntl_setfl};
 
@@ -204,16 +205,16 @@ impl Gpg {
                 .spawn()
                 .map_err(|_| Error::EncryptionFailed)?,
         );
-        let mut stdin = child.0.stdin.take().ok_or(Error::EncryptionFailed)?;
+        let stdin = child.0.stdin.take().ok_or(Error::EncryptionFailed)?;
         let mut stdout = child.0.stdout.take().ok_or(Error::EncryptionFailed)?;
         let mut stderr = child.0.stderr.take().ok_or(Error::EncryptionFailed)?;
         fcntl_setfl(&stdout, OFlags::NONBLOCK).map_err(|_| Error::EncryptionFailed)?;
         fcntl_setfl(&stderr, OFlags::NONBLOCK).map_err(|_| Error::EncryptionFailed)?;
-        stdin
-            .write_all(secret.expose().as_bytes())
-            .and_then(|()| stdin.write_all(b"\n"))
-            .map_err(|_| Error::EncryptionFailed)?;
-        drop(stdin);
+        fcntl_setfl(&stdin, OFlags::NONBLOCK).map_err(|_| Error::EncryptionFailed)?;
+        let mut stdin = Some(stdin);
+        let mut written = 0;
+        let input = secret.expose().as_bytes();
+        let input_len = input.len() + usize::from(append_newline);
 
         let started = Instant::now();
         let mut statuses = StatusReader::new();
@@ -221,6 +222,7 @@ impl Gpg {
         let mut chunk = [0u8; 8192];
         let mut eof = false;
         loop {
+            let mut made_progress = false;
             if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
@@ -230,6 +232,29 @@ impl Gpg {
             statuses
                 .drain(&mut stderr, progress)
                 .map_err(|_| Error::EncryptionFailed)?;
+            // Feed stdin while draining both output pipes so backpressure cannot
+            // bypass cancellation/timeouts or deadlock a child emitting diagnostics.
+            if let Some(pipe) = stdin.as_mut() {
+                let pending = if written < input.len() {
+                    &input[written..input.len().min(written + 8192)]
+                } else if written < input_len {
+                    &b"\n"[..]
+                } else {
+                    &[]
+                };
+                if !pending.is_empty() {
+                    match pipe.write(pending) {
+                        Ok(0) => return Err(Error::EncryptionFailed),
+                        Ok(count) => { written += count; made_progress = true; },
+                        Err(error) if matches!(error.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted) => {},
+                        Err(_) => return Err(Error::EncryptionFailed),
+                    }
+                }
+                if written == input_len {
+                    stdin = None;
+                }
+            }
             // Some card backends stop reporting status while waiting for the physical touch.
             // Keep the prompt conditional because GnuPG cannot tell us whether the user has
             // finished the PIN dialog or whether this particular key requires a touch.
@@ -243,6 +268,7 @@ impl Gpg {
                 match stdout.read(&mut chunk) {
                     Ok(0) => eof = true,
                     Ok(count) => {
+                        made_progress = true;
                         if ciphertext.len().saturating_add(count) > MAX_CIPHERTEXT_BYTES {
                             return Err(Error::EncryptionFailed);
                         }
@@ -262,9 +288,11 @@ impl Gpg {
                     break;
                 }
             }
-            thread::sleep(Duration::from_millis(10));
+            if !made_progress {
+                thread::sleep(Duration::from_millis(10));
+            }
         }
-        if cancel.is_cancelled() || ciphertext.is_empty() {
+        if cancel.is_cancelled() || ciphertext.is_empty() || written != input_len {
             return Err(if cancel.is_cancelled() {
                 Error::Cancelled
             } else {
@@ -281,6 +309,7 @@ impl Gpg {
         _: &[String],
         _: &Cancellation,
         _: &OperationProgress,
+        _: bool,
     ) -> Result<Vec<u8>, Error> {
         Err(Error::UnsupportedPlatform)
     }
@@ -332,6 +361,7 @@ impl Gpg {
         let mut eof = false;
         let started = Instant::now();
         loop {
+            let mut made_progress = false;
             if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
@@ -353,6 +383,7 @@ impl Gpg {
                 match stdout.read(&mut bytes[used..]) {
                     Ok(0) => eof = true,
                     Ok(count) => {
+                        made_progress = true;
                         used += count;
                         if used > MAX_SECRET_BYTES {
                             return Err(Error::SecretTooLarge);
@@ -373,7 +404,9 @@ impl Gpg {
                     break;
                 }
             }
-            thread::sleep(Duration::from_millis(10));
+            if !made_progress {
+                thread::sleep(Duration::from_millis(10));
+            }
         }
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
@@ -436,6 +469,60 @@ mod tests {
             assert!(Instant::now() < deadline, "operation hint was not received");
             thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn edits_preserve_exact_multiline_bytes_and_generated_entries_add_one_newline() {
+        let (dir, gpg, store, entry) = fake_gpg(
+            "sys.stdout.buffer.write(b'cipher:' + sys.stdin.buffer.read())",
+        );
+        fs::write(dir.path().join(".gpg-id"), b"fixture-recipient\n").unwrap();
+        let progress = OperationProgress::new(ENCRYPTING);
+        for text in ["password\nnotes\n", "password\nnotes", ""] {
+            let secret = Secret::from_bytes(Zeroizing::new(text.as_bytes().to_vec())).unwrap();
+            for _ in 0..2 {
+                gpg.update_entry(&store, &entry, &secret, &Cancellation::default(), &progress).unwrap();
+                assert_eq!(&fs::read(dir.path().join("entry.gpg")).unwrap()[7..], text.as_bytes());
+            }
+        }
+        let secret = Secret::from_bytes(Zeroizing::new(b"generated".to_vec())).unwrap();
+        let new_entry = Entry::from_relative_file("new.gpg").unwrap();
+        gpg.encrypt_new_entry(&store, &new_entry, &secret, &Cancellation::default(), &progress).unwrap();
+        assert_eq!(fs::read(dir.path().join("new.gpg")).unwrap(), b"cipher:generated\n");
+    }
+
+    #[test]
+    fn encryption_drains_output_before_child_reads_large_input() {
+        let (_dir, mut gpg, _, _) = fake_gpg(
+            "sys.stderr.buffer.write(b'x' * 131072 + b'\\n')\nsys.stderr.flush()\nsys.stdout.buffer.write(sys.stdin.buffer.read())",
+        );
+        gpg.timeout = Duration::from_secs(5);
+        let secret = Secret::from_bytes(Zeroizing::new(vec![b'x'; MAX_SECRET_BYTES])).unwrap();
+        let output = gpg.encrypt_secret(&secret, &["fixture".into()], &Cancellation::default(),
+            &OperationProgress::new(ENCRYPTING), false).unwrap();
+        assert_eq!(output.len(), MAX_SECRET_BYTES);
+    }
+
+    #[test]
+    fn encryption_deadline_applies_when_child_never_reads_stdin() {
+        let (_dir, mut gpg, _, _) = fake_gpg("time.sleep(10)");
+        gpg.timeout = Duration::from_millis(80);
+        let secret = Secret::from_bytes(Zeroizing::new(vec![b'x'; MAX_SECRET_BYTES])).unwrap();
+        let started = Instant::now();
+        assert!(matches!(gpg.encrypt_secret(&secret, &["fixture".into()],
+            &Cancellation::default(), &OperationProgress::new(ENCRYPTING), false), Err(Error::TimedOut)));
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn detached_recipient_signatures_block_updates() {
+        let (dir, gpg, store, entry) = fake_gpg("raise AssertionError('must not encrypt')");
+        fs::write(dir.path().join(".gpg-id"), b"fixture\n").unwrap();
+        fs::write(dir.path().join(".gpg-id.sig"), b"signature").unwrap();
+        let secret = Secret::from_bytes(Zeroizing::new(b"edited".to_vec())).unwrap();
+        assert!(matches!(gpg.update_entry(&store, &entry, &secret, &Cancellation::default(),
+            &OperationProgress::new(ENCRYPTING)), Err(Error::SignedRecipientsUnsupported)));
+        assert_eq!(fs::read(dir.path().join("entry.gpg")).unwrap(), b"ciphertext");
     }
 
     #[test]

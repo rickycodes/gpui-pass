@@ -31,8 +31,8 @@ impl PassApp {
     ) -> Range<usize> {
         let range = range
             .map(|range| {
-                byte_at_utf16(&self.generator_name, range.start)
-                    ..byte_at_utf16(&self.generator_name, range.end)
+                byte_at_utf16(self.generator_name.as_str(), range.start)
+                    ..byte_at_utf16(self.generator_name.as_str(), range.end)
             })
             .or_else(|| self.generator_name_marked.clone())
             .unwrap_or_else(|| self.generator_name_selection.clone());
@@ -290,7 +290,7 @@ impl PassApp {
     ) -> Range<usize> {
         let range = range
             .map(|range| {
-                byte_at_utf16(&self.query, range.start)..byte_at_utf16(&self.query, range.end)
+                byte_at_utf16(self.query.as_str(), range.start)..byte_at_utf16(self.query.as_str(), range.end)
             })
             .or_else(|| self.marked.clone())
             .unwrap_or_else(|| self.selection.clone());
@@ -594,17 +594,17 @@ impl EntityInputHandler for PassApp {
         _: &mut Context<Self>,
     ) -> Option<String> {
         if self.generator_name_focus.is_focused(window) {
-            let start = byte_at_utf16(&self.generator_name, range.start);
-            let end = byte_at_utf16(&self.generator_name, range.end).max(start);
+            let start = byte_at_utf16(self.generator_name.as_str(), range.start);
+            let end = byte_at_utf16(self.generator_name.as_str(), range.end).max(start);
             *adjusted = Some(
-                utf16_at_byte(&self.generator_name, start)
-                    ..utf16_at_byte(&self.generator_name, end),
+                utf16_at_byte(self.generator_name.as_str(), start)
+                    ..utf16_at_byte(self.generator_name.as_str(), end),
             );
             return Some(self.generator_name[start..end].to_owned());
         }
-        let start = byte_at_utf16(&self.query, range.start);
-        let end = byte_at_utf16(&self.query, range.end).max(start);
-        *adjusted = Some(utf16_at_byte(&self.query, start)..utf16_at_byte(&self.query, end));
+        let start = byte_at_utf16(self.query.as_str(), range.start);
+        let end = byte_at_utf16(self.query.as_str(), range.end).max(start);
+        *adjusted = Some(utf16_at_byte(self.query.as_str(), start)..utf16_at_byte(self.query.as_str(), end));
         Some(self.query[start..end].to_owned())
     }
 
@@ -615,9 +615,9 @@ impl EntityInputHandler for PassApp {
         _: &mut Context<Self>,
     ) -> Option<UTF16Selection> {
         let (text, selection) = if self.generator_name_focus.is_focused(window) {
-            (&self.generator_name, &self.generator_name_selection)
+            (self.generator_name.as_str(), &self.generator_name_selection)
         } else {
-            (&self.query, &self.selection)
+            (self.query.as_str(), &self.selection)
         };
         Some(UTF16Selection {
             range: utf16_at_byte(text, selection.start)..utf16_at_byte(text, selection.end),
@@ -632,9 +632,9 @@ impl EntityInputHandler for PassApp {
         _: &mut Context<Self>,
     ) -> Option<Range<usize>> {
         let (text, marked) = if self.generator_name_focus.is_focused(window) {
-            (&self.generator_name, &self.generator_name_marked)
+            (self.generator_name.as_str(), &self.generator_name_marked)
         } else {
-            (&self.query, &self.marked)
+            (self.query.as_str(), &self.marked)
         };
         marked
             .as_ref()
@@ -679,9 +679,9 @@ impl EntityInputHandler for PassApp {
             self.replace_search(range, text, cx)
         };
         let (source, marked) = if name_focused {
-            (&self.generator_name, &mut self.generator_name_marked)
+            (self.generator_name.as_str(), &mut self.generator_name_marked)
         } else {
-            (&self.query, &mut self.marked)
+            (self.query.as_str(), &mut self.marked)
         };
         *marked = (!inserted.is_empty()).then_some(inserted.clone());
         if let Some(selected) = selected {
@@ -706,9 +706,9 @@ impl EntityInputHandler for PassApp {
     ) -> Option<Bounds<Pixels>> {
         let name_focused = self.generator_name_focus.is_focused(window);
         let text = if name_focused {
-            &self.generator_name
+            self.generator_name.as_str()
         } else {
-            &self.query
+            self.query.as_str()
         };
         let byte = byte_at_utf16(text, range.start);
         if name_focused && self.editing_entry {
@@ -754,7 +754,7 @@ impl EntityInputHandler for PassApp {
         _: &mut Context<Self>,
     ) -> Option<usize> {
         let name_focused = self.generator_name_focus.is_focused(window);
-        let text = if name_focused { &self.generator_name } else { &self.query };
+        let text = if name_focused { self.generator_name.as_str() } else { self.query.as_str() };
         if name_focused && self.editing_entry {
             let byte = self.editor_layout.as_ref()?.index_for_point(point);
             return Some(utf16_at_byte(text, byte));

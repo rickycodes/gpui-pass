@@ -25,7 +25,7 @@ use std::{
     time::{Duration, Instant},
 };
 use theme::*;
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 actions!(
     pass,
@@ -195,7 +195,7 @@ pub(crate) struct PassApp {
     focus: FocusHandle,
     search_focus: FocusHandle,
     pub(crate) generator_name_focus: FocusHandle,
-    pub(crate) generator_name: String,
+    pub(crate) generator_name: Zeroizing<String>,
     pub(crate) generator_name_selection: Range<usize>,
     generator_name_anchor: Option<usize>,
     pub(crate) generator_name_cursor: usize,
@@ -233,6 +233,7 @@ pub(crate) struct PassApp {
     yubikey_last_checked: Option<Instant>,
     yubikey_info: Option<YubiKeyInfo>,
     yubikey_info_check: Option<Receiver<YubiKeyInfo>>,
+    yubikey_info_invalidated: bool,
     usb_reader_details: Option<UsbReaderDetails>,
     card_detail_retry_at: Option<Instant>,
     card_detail_retry_count: u8,
@@ -282,7 +283,7 @@ impl PassApp {
             focus,
             search_focus,
             generator_name_focus,
-            generator_name: String::new(),
+            generator_name: Zeroizing::new(String::new()),
             generator_name_selection: 0..0,
             generator_name_anchor: None,
             generator_name_cursor: 0,
@@ -316,6 +317,7 @@ impl PassApp {
             yubikey_last_checked: None,
             yubikey_info: None,
             yubikey_info_check: None,
+            yubikey_info_invalidated: false,
             usb_reader_details: None,
             card_detail_retry_at: None,
             card_detail_retry_count: 0,
@@ -379,6 +381,9 @@ impl PassApp {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
+        self.cancel_edit(cx);
+        self.confirming_delete = None;
         if self.load.is_some() {
             return;
         }
@@ -515,6 +520,7 @@ impl PassApp {
                     });
                     self.query.clear();
                     self.selection = 0..0;
+                    self.marked = None;
                     self.filter(cx);
                     self.session.select(
                         self.entries
@@ -523,7 +529,7 @@ impl PassApp {
                             .cloned(),
                     );
                     self.saved_entry_name = Some(name);
-                    if !self.close_after_save {
+                    if !self.close_after_save && self.active {
                         let text = secret.expose().to_owned();
                         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
                         self.copied_password = Some(Zeroizing::new(text));
@@ -531,7 +537,10 @@ impl PassApp {
                     }
                     self.clear_message();
                 }
-                Err(error) => self.set_message(error.to_string()),
+                Err(error) => {
+                    self.saving_edit = false;
+                    self.set_message(error.to_string());
+                },
             }
             let close = self.close_after_save;
             self.close_after_save = false;
@@ -552,6 +561,10 @@ impl PassApp {
     }
 
     fn start_yubikey_check(&mut self) {
+        if self.yubikey_check.is_some() || self.yubikey_info_check.is_some() {
+            self.card_refresh_pending = true;
+            return;
+        }
         // Keep the initial loading state, then leave the last result on screen while the
         // background probe runs. An absent key should not flash "Checking" on every retry.
         if self.yubikey_last_checked.is_none()
@@ -759,6 +772,7 @@ impl PassApp {
             return;
         }
         let (sender, receiver) = mpsc::sync_channel(1);
+        self.yubikey_info_invalidated = false;
         self.yubikey_info_check = Some(receiver);
         std::thread::spawn(move || {
             let _ = sender.send(query_yubikey_info());
@@ -780,7 +794,9 @@ impl PassApp {
         } else {
             self.usb_reader_details = None;
             self.yubikey_info = None;
-            self.yubikey_info_check = None;
+            // Keep the receiver until the worker exits; dropping it does not
+            // stop ykman and would allow competing GnuPG probes on reinsertion.
+            self.yubikey_info_invalidated = true;
             self.card_detail_retry_at = None;
             self.card_detail_retry_count = 0;
         }
@@ -862,7 +878,8 @@ impl PassApp {
             .and_then(|receiver| receiver.try_recv().ok())
         {
             self.yubikey_info_check = None;
-            if self.usb_yubikey_present == Some(true)
+            if !self.yubikey_info_invalidated
+                && self.usb_yubikey_present == Some(true)
                 && self.yubikey_info.as_ref() != Some(&info)
             {
                 self.yubikey_info = Some(info);
@@ -906,8 +923,9 @@ impl PassApp {
                     self.card_detail_retry_at =
                         Some(Instant::now() + Duration::from_millis(delay_ms));
                 } else {
-                    self.card_detail_retry_at = None;
-                    eprintln!("[card-detect] GnuPG details unavailable; retry limit reached");
+                    // Enumeration can outlast the initial short retry burst.
+                    // Keep trying quietly while USB confirms the key is present.
+                    self.card_detail_retry_at = Some(Instant::now() + Duration::from_secs(3));
                 }
                 cx.notify();
             } else if self.usb_yubikey_present == Some(true) {
@@ -1072,6 +1090,9 @@ impl PassApp {
     }
 
     fn filter(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
+        self.cancel_edit(cx);
+        self.confirming_delete = None;
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
@@ -1091,6 +1112,7 @@ impl PassApp {
     }
 
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
         self.cancel_edit(cx);
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
@@ -1136,8 +1158,14 @@ impl PassApp {
     }
 
     fn cancel_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.editing_entry { return; }
+        if self.saving_edit {
+            if let Some((cancel, _, _)) = &self.saving {
+                cancel.cancel();
+            }
+        }
         self.editing_entry = false;
-        self.generator_name.clear();
+        self.generator_name.zeroize();
         self.generator_name_selection = 0..0;
         self.generator_name_anchor = None;
         self.generator_name_cursor = 0;
@@ -1147,6 +1175,7 @@ impl PassApp {
     }
 
     fn request_delete(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
         if let Some(entry) = self.session.selected().cloned() {
             self.session.hide();
             self.reveal = None;
@@ -1157,12 +1186,13 @@ impl PassApp {
     }
 
     fn begin_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
         let Some(secret) = self.session.revealed(Instant::now()) else {
             self.set_message("Reveal the entry before editing it.".into());
             cx.notify();
             return;
         };
-        self.generator_name = secret.expose().to_owned();
+        self.generator_name = Zeroizing::new(secret.expose().to_owned());
         self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
         self.generator_name_anchor = None;
         self.generator_name_cursor = self.generator_name.len();
@@ -1175,6 +1205,7 @@ impl PassApp {
     }
 
     fn save_edit(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
         let Some(entry) = self.session.selected().cloned() else { return; };
         let Some(store) = self.store.clone() else {
             self.set_message("Open a password store before editing entries.".into());
@@ -1324,6 +1355,8 @@ impl PassApp {
     }
 
     fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
+        self.cancel_edit(cx);
         self.yubikey_open = false;
         self.session.hide();
         self.reveal = None;
@@ -1415,6 +1448,7 @@ impl PassApp {
         self.clear_generated(cx);
         self.clear_message();
         self.saved_entry_name = None;
+        self.saving_edit = false;
         self.saving = Some((cancellation, progress, receiver));
         cx.notify();
     }
@@ -1898,6 +1932,7 @@ impl PassApp {
     }
 
     fn open_store(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
         self.hide(cx);
         let picker = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
@@ -1909,6 +1944,7 @@ impl PassApp {
             if let Ok(Ok(Some(paths))) = picker.await {
                 if let Some(path) = paths.into_iter().next() {
                     let _ = entity.update(cx, |app, cx| {
+                        if app.saving.is_some() { return; }
                         app.load = None;
                         app.demo = false;
                         app.path = Some(path);

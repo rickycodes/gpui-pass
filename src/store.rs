@@ -140,12 +140,7 @@ impl Store {
         let mut entries = Vec::new();
         let mut nodes = 0;
         self.visit(&self.directory, Path::new(""), 0, &mut nodes, &mut entries)?;
-        entries.sort_by(|a, b| {
-            a.name
-                .to_lowercase()
-                .cmp(&b.name.to_lowercase())
-                .then_with(|| a.name.cmp(&b.name))
-        });
+        entries.sort_by_cached_key(|entry| (entry.name.to_lowercase(), entry.name.clone()));
         Ok(entries)
     }
 
@@ -275,6 +270,13 @@ impl Store {
                     Err(error) if error == Errno::NOENT => continue,
                     Err(_) => return Err(Error::InvalidRecipients),
                 };
+                // A detached signature declares a signed recipient policy even
+                // when PASSWORD_STORE_SIGNING_KEY is absent in this process.
+                match rustix::fs::statat(directory, ".gpg-id.sig", rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
+                    Ok(_) => return Err(Error::SignedRecipientsUnsupported),
+                    Err(error) if error == Errno::NOENT => {},
+                    Err(_) => return Err(Error::InvalidRecipients),
+                }
                 let metadata = config.metadata()?;
                 #[cfg(unix)]
                 {

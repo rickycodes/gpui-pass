@@ -62,11 +62,11 @@ impl fmt::Display for Error {
             Self::DecryptionFailed => {
                 "GnuPG could not decrypt this entry. Check your key or YubiKey, and your system PIN prompt."
             }
-            Self::Cancelled => "Reveal cancelled.",
+            Self::Cancelled => "Operation cancelled.",
             Self::TimedOut => "Unlock timed out. Check the PIN prompt or YubiKey touch request, then reveal again.",
             Self::SecretTooLarge => "This entry exceeds the 1 MiB reveal limit.",
             Self::InvalidText => "This entry is not UTF-8 text and cannot be displayed safely.",
-            Self::InvalidGenerationLength => "Choose a phrase with 4 to 8 words.",
+            Self::InvalidGenerationLength => "Use 4 to 8 words, or a random length of 1 to 1024 with a supported character set.",
             Self::RandomUnavailable => "The operating system could not provide secure randomness.",
             Self::InvalidWordList => "The bundled password word list is invalid.",
             Self::MissingRecipients => "No GnuPG recipients are configured for this folder.",
@@ -76,7 +76,7 @@ impl fmt::Display for Error {
             }
             Self::EntryAlreadyExists => "An entry already exists at that name. Choose another name.",
             Self::EntryNotFound => "This entry no longer exists. Refresh the store.",
-            Self::EncryptionFailed => "GnuPG could not encrypt the new entry.",
+            Self::EncryptionFailed => "GnuPG could not encrypt the entry.",
             Self::MissingHome => "Set PASSWORD_STORE_DIR or supply a store path with --store.",
         })
     }
