@@ -17,7 +17,7 @@ use gpui_pass_core::{
 };
 use std::{
     io::{BufRead, BufReader},
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     ops::Range,
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -107,7 +107,7 @@ struct YubiRecord {
     operation: &'static str,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum YubiConnection {
     Checking,
     Connected,
@@ -145,7 +145,25 @@ struct CardWatcher {
     events: Receiver<CardWatchEvent>,
 }
 
+enum UsbCardEvent {
+    Presence(bool),
+    Failed,
+}
+
+struct UsbCardWatcher {
+    child: Arc<Mutex<Child>>,
+    events: Receiver<UsbCardEvent>,
+}
+
 impl Drop for CardWatcher {
+    fn drop(&mut self) {
+        if let Ok(mut child) = self.child.lock() {
+            let _ = child.kill();
+        }
+    }
+}
+
+impl Drop for UsbCardWatcher {
     fn drop(&mut self) {
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
@@ -213,9 +231,19 @@ pub(crate) struct PassApp {
     yubikey_details: Option<CardDetails>,
     yubikey_check: Option<Receiver<CardProbeResult>>,
     yubikey_last_checked: Option<Instant>,
+    yubikey_info: Option<YubiKeyInfo>,
+    yubikey_info_check: Option<Receiver<YubiKeyInfo>>,
+    usb_reader_details: Option<UsbReaderDetails>,
+    card_detail_retry_at: Option<Instant>,
+    card_detail_retry_count: u8,
     card_watcher: Option<CardWatcher>,
     card_watcher_supported: Option<bool>,
+    card_watcher_retry_at: Option<Instant>,
     card_refresh_pending: bool,
+    usb_card_watcher: Option<UsbCardWatcher>,
+    usb_watcher_retry_at: Option<Instant>,
+    usb_yubikey_present: Option<bool>,
+    usb_last_scan: Option<Instant>,
     close_after_save: bool,
     pub(crate) editing_entry: bool,
     pub(crate) editor_layout: Option<entry_editor::TextLayout>,
@@ -286,9 +314,19 @@ impl PassApp {
             yubikey_details: None,
             yubikey_check: None,
             yubikey_last_checked: None,
+            yubikey_info: None,
+            yubikey_info_check: None,
+            usb_reader_details: None,
+            card_detail_retry_at: None,
+            card_detail_retry_count: 0,
             card_watcher: None,
             card_watcher_supported: None,
+            card_watcher_retry_at: None,
             card_refresh_pending: false,
+            usb_card_watcher: None,
+            usb_watcher_retry_at: None,
+            usb_yubikey_present: None,
+            usb_last_scan: None,
             close_after_save: false,
             editing_entry: false,
             editor_layout: None,
@@ -300,8 +338,11 @@ impl PassApp {
             _activation: subscription,
         };
         app.refresh(cx);
-        app.start_yubikey_check();
         app.start_card_watcher();
+        app.start_usb_card_watcher(cx);
+        if app.yubikey_check.is_none() {
+            app.start_yubikey_check();
+        }
         cx.spawn(async move |entity, cx| {
             loop {
                 let delay = entity
@@ -320,7 +361,10 @@ impl PassApp {
     fn tick_interval(&self) -> Duration {
         if self.load.is_some() || self.reveal.is_some() || self.saving.is_some() {
             Duration::from_millis(100)
-        } else if self.card_watcher.is_some() {
+        } else if cfg!(target_os = "linux")
+            || self.card_watcher.is_some()
+            || self.usb_card_watcher.is_some()
+        {
             // The watcher is event-driven. Poll its receiver frequently so hotplug events
             // reach the UI promptly instead of waiting for the idle refresh interval.
             Duration::from_millis(100)
@@ -510,14 +554,22 @@ impl PassApp {
     fn start_yubikey_check(&mut self) {
         // Keep the initial loading state, then leave the last result on screen while the
         // background probe runs. An absent key should not flash "Checking" on every retry.
-        if self.yubikey_last_checked.is_none() {
+        if self.yubikey_last_checked.is_none()
+            && self.yubikey_connection != YubiConnection::Connected
+        {
             self.yubikey_connection = YubiConnection::Checking;
         }
         let executable = self.gpg.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         self.yubikey_check = Some(receiver);
         std::thread::spawn(move || {
-            let _ = sender.send(check_card_status(&executable));
+            let result = check_card_status(&executable);
+            eprintln!(
+                "[card-detect] GnuPG probe completed: state={:?}, details={}",
+                result.connection,
+                result.details.is_some()
+            );
+            let _ = sender.send(result);
         });
     }
 
@@ -530,18 +582,26 @@ impl PassApp {
             PathBuf::from("gpg-connect-agent")
         };
         let Ok(mut child) = Command::new(executable)
-            .arg("scd devinfo --watch")
+            // stdout is a pipe, so the helper otherwise buffers device events
+            // indefinitely while this long-running command waits for changes.
+            .arg("--unbuffered")
+            // gpg-agent recognizes this exact uppercase spelling and routes it to
+            // a dedicated connection. Lowercase bypasses that special case and
+            // leaves the watch on the ordinary smartcard command connection.
+            .arg("SCD DEVINFO --watch")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
         else {
             self.card_watcher_supported = Some(false);
+            self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
         let Some(stdout) = child.stdout.take() else {
             let _ = child.kill();
             self.card_watcher_supported = Some(false);
+            self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
 
@@ -589,13 +649,159 @@ impl PassApp {
                 }
             }
             if let Ok(mut child) = thread_child.lock() {
+                // Stop the helper before waiting, including when it returned an
+                // Assuan error but has not exited yet.
+                let _ = child.kill();
                 let _ = child.wait();
             }
         });
         self.card_watcher = Some(CardWatcher { child, events });
+        self.card_watcher_retry_at = None;
+    }
+
+    #[cfg(target_os = "linux")]
+    fn start_usb_card_watcher(&mut self, cx: &mut Context<Self>) {
+        let Ok(mut child) = Command::new("udevadm")
+            .args(["monitor", "--udev", "--property", "--subsystem-match=usb"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+        else {
+            self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            return;
+        };
+        let Some(stdout) = child.stdout.take() else {
+            let _ = child.kill();
+            self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            return;
+        };
+
+        let child = Arc::new(Mutex::new(child));
+        let thread_child = child.clone();
+        let (sender, events) = mpsc::channel();
+        let mut known_devices = connected_yubikey_usb_paths();
+        let initially_present = !known_devices.is_empty();
+        let previous_presence = self.usb_yubikey_present;
+        if previous_presence != Some(initially_present)
+            && (initially_present || previous_presence == Some(true))
+        {
+            self.apply_yubikey_usb_presence(initially_present, cx);
+        }
+
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            let mut event = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => {
+                        let _ = sender.send(UsbCardEvent::Failed);
+                        break;
+                    }
+                    Ok(_) if line.trim().is_empty() => {
+                        if let Some(present) = update_yubikey_usb_presence(&event, &mut known_devices)
+                        {
+                            let _ = sender.send(UsbCardEvent::Presence(present));
+                        }
+                        event.clear();
+                    }
+                    Ok(_) => event.push(line.trim_end().to_owned()),
+                }
+            }
+            if let Ok(mut child) = thread_child.lock() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        });
+        self.usb_card_watcher = Some(UsbCardWatcher { child, events });
+        self.usb_watcher_retry_at = None;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn start_usb_card_watcher(&mut self, _cx: &mut Context<Self>) {}
+
+    fn apply_card_presence_hint(&mut self, present: bool, cx: &mut Context<Self>) {
+        let connection = if present {
+            YubiConnection::Connected
+        } else {
+            YubiConnection::NotDetected
+        };
+        if self.yubikey_connection != connection {
+            self.yubikey_connection = connection;
+            self.yubikey_details = None;
+            if !present {
+                self.yubikey_open = false;
+            }
+            cx.notify();
+        }
+        if self.yubikey_check.is_some()
+            || self.yubikey_info_check.is_some()
+            || self.reveal.is_some()
+            || self.saving.is_some()
+        {
+            self.card_refresh_pending = true;
+        } else {
+            self.start_yubikey_check();
+        }
+    }
+
+    fn start_yubikey_info_probe(&mut self) {
+        if self.yubikey_info.is_some()
+            || self.yubikey_info_check.is_some()
+            || self.usb_yubikey_present != Some(true)
+            || !self
+                .usb_reader_details
+                .as_ref()
+                .is_some_and(|details| details.vendor_id == 0x1050)
+        {
+            return;
+        }
+        let (sender, receiver) = mpsc::sync_channel(1);
+        self.yubikey_info_check = Some(receiver);
+        std::thread::spawn(move || {
+            let _ = sender.send(query_yubikey_info());
+        });
+    }
+
+    fn apply_yubikey_usb_presence(&mut self, present: bool, cx: &mut Context<Self>) {
+        // sysfs and udev can report the same transition. Do not reset retry
+        // state or start another probe for a duplicate event.
+        if self.usb_yubikey_present == Some(present) {
+            return;
+        }
+        eprintln!("[card-detect] USB YubiKey presence: {present}");
+        self.usb_yubikey_present = Some(present);
+        if present {
+            self.card_detail_retry_at = None;
+            self.card_detail_retry_count = 0;
+            self.usb_reader_details = usb_reader_for_card(None, true);
+        } else {
+            self.usb_reader_details = None;
+            self.yubikey_info = None;
+            self.yubikey_info_check = None;
+            self.card_detail_retry_at = None;
+            self.card_detail_retry_count = 0;
+        }
+        self.apply_card_presence_hint(present, cx);
     }
 
     fn poll_yubikey_connection(&mut self, cx: &mut Context<Self>) {
+        #[cfg(target_os = "linux")]
+        {
+            if self
+                .usb_last_scan
+                .is_none_or(|last| last.elapsed() >= Duration::from_millis(250))
+            {
+                self.usb_last_scan = Some(Instant::now());
+                let present = !connected_yubikey_usb_paths().is_empty();
+                let previous = self.usb_yubikey_present;
+                if previous != Some(present) && (present || previous == Some(true)) {
+                    self.apply_yubikey_usb_presence(present, cx);
+                }
+            }
+        }
         if self.reveal.is_some() || self.saving.is_some() {
             return;
         }
@@ -608,32 +814,59 @@ impl PassApp {
             match event {
                 CardWatchEvent::Ready => self.card_watcher_supported = Some(true),
                 CardWatchEvent::Status(present) => {
+                    eprintln!("[card-detect] GnuPG device event: {present:?}");
                     self.card_watcher_supported = Some(true);
                     if let Some(present) = present {
-                        let connection = if present {
-                            YubiConnection::Connected
-                        } else {
-                            YubiConnection::NotDetected
-                        };
-                        if self.yubikey_connection != connection {
-                            self.yubikey_connection = connection;
-                            self.yubikey_details = None;
-                            if !present {
-                                self.yubikey_open = false;
-                            }
-                            cx.notify();
+                        // A live USB event is authoritative for a YubiKey's physical
+                        // presence; scdaemon can report a stale removal during reconnect.
+                        if present || self.usb_yubikey_present != Some(true) {
+                            self.apply_card_presence_hint(present, cx);
                         }
                     }
-                    if self.yubikey_check.is_some() {
-                        self.card_refresh_pending = true;
-                    } else {
-                        self.start_yubikey_check();
+                    if present.is_none() {
+                        if self.yubikey_check.is_some() {
+                            self.card_refresh_pending = true;
+                        } else {
+                            self.start_yubikey_check();
+                        }
                     }
                 }
                 CardWatchEvent::Failed => {
                     self.card_watcher_supported = Some(false);
                     self.card_watcher = None;
+                    self.card_watcher_retry_at =
+                        Some(Instant::now() + Duration::from_secs(2));
                 }
+            }
+        }
+        let usb_events = self
+            .usb_card_watcher
+            .as_ref()
+            .map(|watcher| watcher.events.try_iter().collect::<Vec<_>>())
+            .unwrap_or_default();
+        for event in usb_events {
+            match event {
+                UsbCardEvent::Presence(present) => {
+                    self.apply_yubikey_usb_presence(present, cx);
+                }
+                UsbCardEvent::Failed => {
+                    self.usb_card_watcher = None;
+                    self.usb_watcher_retry_at =
+                        Some(Instant::now() + Duration::from_secs(2));
+                }
+            }
+        }
+        if let Some(info) = self
+            .yubikey_info_check
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok())
+        {
+            self.yubikey_info_check = None;
+            if self.usb_yubikey_present == Some(true)
+                && self.yubikey_info.as_ref() != Some(&info)
+            {
+                self.yubikey_info = Some(info);
+                cx.notify();
             }
         }
         if let Some(result) = self
@@ -643,9 +876,71 @@ impl PassApp {
         {
             self.yubikey_check = None;
             self.yubikey_last_checked = Some(Instant::now());
+            let refresh_after_event = self.card_refresh_pending;
+            self.card_refresh_pending = false;
+            eprintln!(
+                "[card-detect] Applying probe: state={:?}, details={}, superseded={}",
+                result.connection,
+                result.details.is_some(),
+                refresh_after_event
+            );
             // A busy service is inconclusive. Keep the last known connection in that case
             // so the status link doesn't flicker while the key is in use.
-            if result.connection != YubiConnection::Busy {
+            if refresh_after_event {
+                // A probe started before the latest device event can report a stale state.
+                // Keep the event's immediate presence update and probe again against the
+                // current reader state.
+                eprintln!("[card-detect] Discarding stale probe and retrying");
+                self.start_yubikey_check();
+            } else if self.usb_yubikey_present == Some(true)
+                && (result.connection != YubiConnection::Connected || result.details.is_none())
+            {
+                // USB confirms the physical key is present. Scdaemon may need a moment
+                // after reinsertion before it can return OpenPGP application details.
+                self.yubikey_connection = YubiConnection::Connected;
+                self.yubikey_details = None;
+                if self.card_detail_retry_count < 3 {
+                    eprintln!("[card-detect] GnuPG details unavailable; scheduling retry");
+                    let delay_ms = 250_u64 * (1 << self.card_detail_retry_count);
+                    self.card_detail_retry_count += 1;
+                    self.card_detail_retry_at =
+                        Some(Instant::now() + Duration::from_millis(delay_ms));
+                } else {
+                    self.card_detail_retry_at = None;
+                    eprintln!("[card-detect] GnuPG details unavailable; retry limit reached");
+                }
+                cx.notify();
+            } else if self.usb_yubikey_present == Some(true) {
+                self.card_detail_retry_at = None;
+                self.card_detail_retry_count = 0;
+                let changed = self.yubikey_details.as_ref().map(|details| {
+                    (
+                        &details.application,
+                        &details.reader,
+                        &details.version,
+                        &details.manufacturer,
+                        &details.key_attributes,
+                        details.pin_retries,
+                        details.signature_count,
+                    )
+                }) != result.details.as_ref().map(|details| {
+                    (
+                        &details.application,
+                        &details.reader,
+                        &details.version,
+                        &details.manufacturer,
+                        &details.key_attributes,
+                        details.pin_retries,
+                        details.signature_count,
+                    )
+                });
+                self.yubikey_connection = YubiConnection::Connected;
+                self.yubikey_details = result.details;
+                if changed {
+                    cx.notify();
+                }
+                self.start_yubikey_info_probe();
+            } else if result.connection != YubiConnection::Busy {
                 let changed = self.yubikey_connection != result.connection
                     || self.yubikey_details.as_ref().map(|details| {
                         (
@@ -682,12 +977,41 @@ impl PassApp {
                 cx.notify();
             }
         }
-        if self.yubikey_check.is_none() && self.card_refresh_pending {
+        if self.card_watcher.is_none()
+            && self
+                .card_watcher_retry_at
+                .is_some_and(|retry_at| retry_at <= Instant::now())
+        {
+            self.start_card_watcher();
+        }
+        if self.usb_card_watcher.is_none()
+            && self
+                .usb_watcher_retry_at
+                .is_some_and(|retry_at| retry_at <= Instant::now())
+        {
+            self.start_usb_card_watcher(cx);
+        }
+        if self.yubikey_check.is_none()
+            && self.yubikey_info_check.is_none()
+            && self.card_refresh_pending
+        {
             self.card_refresh_pending = false;
+            self.start_yubikey_check();
+        }
+        if self.usb_yubikey_present == Some(true)
+            && self.yubikey_details.is_none()
+            && self.yubikey_check.is_none()
+            && self
+                .card_detail_retry_at
+                .is_some_and(|retry_at| retry_at <= Instant::now())
+        {
+            self.card_detail_retry_at = None;
             self.start_yubikey_check();
         }
         if self.card_watcher_supported != Some(true)
             && self.yubikey_check.is_none()
+            && self.yubikey_info_check.is_none()
+            && !(self.usb_card_watcher.is_some() && self.usb_yubikey_present == Some(true))
             && self
                 .yubikey_last_checked
                 .is_none_or(|last| last.elapsed() >= Duration::from_secs(3))
@@ -1795,37 +2119,38 @@ impl PassApp {
                     )),
             );
 
-        page = page.child(
-            div()
-                .max_w(px(760.))
-                .border_1()
-                .border_color(rgb(LINE))
-                .bg(rgb(PAPER))
-                .p(px(24.))
-                .flex()
-                .flex_col()
-                .gap(px(12.))
-                .child(label("CARD CONNECTION"))
-                .child(
-                    div()
-                        .text_size(px(21.))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(rgb(match self.yubikey_connection {
-                            YubiConnection::Connected => GREEN,
-                            YubiConnection::NotDetected | YubiConnection::NoReader => ERROR,
-                            _ => INK,
-                        }))
-                        .child(yubi_connection_title(self.yubikey_connection)),
-                )
-        );
-
+        let mut rows = div()
+            .max_w(px(760.))
+            .flex()
+            .flex_col()
+            .gap(px(1.));
+        let mut has_details = false;
+        if let Some(usb) = &self.usb_reader_details {
+            rows = rows
+                .child(yubi_info_row(
+                    "USB device",
+                    format!("{} · {:04x}:{:04x}", usb.product, usb.vendor_id, usb.product_id),
+                ))
+                .child(yubi_info_row("USB location", usb.location.clone()));
+            has_details = true;
+        }
+        if let Some(info) = &self.yubikey_info {
+            if let Some(device_type) = &info.device_type {
+                rows = rows.child(yubi_info_row("Device", device_type.clone()));
+                has_details = true;
+            }
+            if let Some(form_factor) = &info.form_factor {
+                rows = rows.child(yubi_info_row("Form factor", form_factor.clone()));
+                has_details = true;
+            }
+            if let Some(firmware_version) = &info.firmware_version {
+                rows = rows.child(yubi_info_row("Firmware", firmware_version.clone()));
+                has_details = true;
+            }
+        }
         if let Some(details) = &self.yubikey_details {
-            let mut rows = div()
-                .max_w(px(760.))
-                .flex()
-                .flex_col()
-                .gap(px(1.))
-                .child(yubi_info_row("Application", details.application.clone()));
+            rows = rows.child(yubi_info_row("Application", details.application.clone()));
+            has_details = true;
             if let Some(reader) = &details.reader {
                 rows = rows.child(yubi_info_row("Reader", reader.clone()));
             }
@@ -1850,6 +2175,8 @@ impl PassApp {
             if let Some(count) = details.signature_count {
                 rows = rows.child(yubi_info_row("Signature count", count.to_string()));
             }
+        }
+        if has_details {
             page = page.child(
                 div()
                     .flex()
@@ -1858,13 +2185,22 @@ impl PassApp {
                     .child(label("CARD DETAILS"))
                     .child(rows),
             );
-        } else if self.yubikey_connection == YubiConnection::Connected {
+        }
+        if self.yubikey_connection == YubiConnection::Connected
+            && self.yubikey_details.is_none()
+        {
             page = page.child(
                 div()
                     .max_w(px(760.))
                     .text_size(px(12.))
                     .text_color(rgb(MUTED))
-                    .child("No card details reported by GnuPG."),
+                    .child(if self.yubikey_check.is_some()
+                        || self.card_detail_retry_at.is_some()
+                    {
+                        "Loading card details from GnuPG…"
+                    } else {
+                        "GnuPG has not reported additional card details."
+                    }),
             );
         }
 
@@ -2592,6 +2928,223 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
     }
 }
 
+#[derive(Clone, Default, PartialEq, Eq)]
+struct YubiKeyInfo {
+    device_type: Option<String>,
+    firmware_version: Option<String>,
+    form_factor: Option<String>,
+}
+
+#[derive(Clone)]
+struct UsbReaderDetails {
+    product: String,
+    vendor_id: u16,
+    product_id: u16,
+    location: String,
+}
+
+fn query_yubikey_info() -> YubiKeyInfo {
+    let mut command = Command::new("ykman");
+    let Ok(mut child) = command
+        .arg("info")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    else {
+        return YubiKeyInfo::default();
+    };
+
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if started.elapsed() < Duration::from_secs(2) => {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            _ => break None,
+        }
+    };
+    if !status.is_some_and(|status| status.success()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return YubiKeyInfo::default();
+    }
+
+    let Ok(output) = child.wait_with_output() else {
+        return YubiKeyInfo::default();
+    };
+    if !output.status.success() {
+        return YubiKeyInfo::default();
+    }
+
+    let mut info = YubiKeyInfo::default();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Some((label, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = safe_card_text(value.trim());
+        if value.is_empty() {
+            continue;
+        }
+        match label.trim().to_ascii_lowercase().as_str() {
+            "device type" => info.device_type = Some(value),
+            "firmware version" => info.firmware_version = Some(value),
+            "form factor" => info.form_factor = Some(value),
+            // Serial numbers and capability details are intentionally not retained.
+            _ => {}
+        }
+    }
+    info
+}
+
+fn usb_reader_for_card(reader: Option<&str>, yubico: bool) -> Option<UsbReaderDetails> {
+    let reader = normalize_usb_label(reader.unwrap_or_default());
+    let devices = std::fs::read_dir("/sys/bus/usb/devices").ok()?;
+    let mut readers = Vec::new();
+    for entry in devices.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some((bus, port)) = name.split_once('-') else {
+            continue;
+        };
+        if bus.is_empty() || port.is_empty() {
+            continue;
+        }
+
+        if !is_ccid_usb_device(&path) {
+            continue;
+        }
+
+        let vendor_id = std::fs::read_to_string(path.join("idVendor"))
+            .ok()
+            .and_then(|value| u16::from_str_radix(value.trim(), 16).ok());
+        let product_id = std::fs::read_to_string(path.join("idProduct"))
+            .ok()
+            .and_then(|value| u16::from_str_radix(value.trim(), 16).ok());
+        let (Some(vendor_id), Some(product_id)) = (vendor_id, product_id) else {
+            continue;
+        };
+        let product = std::fs::read_to_string(path.join("product")).unwrap_or_default();
+        let product = safe_card_text(product.trim());
+        let manufacturer = std::fs::read_to_string(path.join("manufacturer")).unwrap_or_default();
+        let manufacturer = safe_card_text(manufacturer.trim());
+        let display_name = if manufacturer.is_empty()
+            || normalize_usb_label(&product).starts_with(&normalize_usb_label(&manufacturer))
+        {
+            product.clone()
+        } else {
+            format!("{manufacturer} {product}")
+        };
+        let normalized_product = normalize_usb_label(&product);
+        let normalized_display_name = normalize_usb_label(&display_name);
+        let reader_match = !reader.is_empty()
+            && normalized_product.len() >= 4
+            && (reader.contains(&normalized_product)
+                || reader.contains(&normalized_display_name));
+        let location = format!("Bus {bus} · port {port}");
+        readers.push((
+            UsbReaderDetails {
+                product: display_name,
+                vendor_id,
+                product_id,
+                location,
+            },
+            reader_match,
+        ));
+    }
+
+    let mut matching = readers
+        .iter()
+        .filter(|(_, reader_match)| *reader_match)
+        .map(|(details, _)| details)
+        .collect::<Vec<_>>();
+    if matching.len() == 1 {
+        return matching.pop().cloned();
+    }
+
+    if yubico {
+        let mut yubico_readers = readers
+            .iter()
+            .filter(|(details, _)| details.vendor_id == 0x1050)
+            .map(|(details, _)| details)
+            .collect::<Vec<_>>();
+        if yubico_readers.len() == 1 {
+            return yubico_readers.pop().cloned();
+        }
+    }
+
+    if readers.len() == 1 {
+        return readers.pop().map(|(details, _)| details);
+    }
+
+    None
+}
+
+fn is_ccid_usb_device(path: &std::path::Path) -> bool {
+    let Ok(interfaces) = std::fs::read_dir(path) else {
+        return false;
+    };
+    interfaces.flatten().any(|interface| {
+        std::fs::read_to_string(interface.path().join("bInterfaceClass"))
+            .is_ok_and(|class| class.trim().eq_ignore_ascii_case("0b"))
+    })
+}
+
+fn connected_yubikey_usb_paths() -> HashSet<String> {
+    let Ok(devices) = std::fs::read_dir("/sys/bus/usb/devices") else {
+        return HashSet::new();
+    };
+    devices
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let vendor_id = std::fs::read_to_string(path.join("idVendor")).ok()?;
+            if !vendor_id.trim().eq_ignore_ascii_case("1050") || !is_ccid_usb_device(&path) {
+                return None;
+            }
+            let canonical = path.canonicalize().ok()?;
+            let devpath = canonical.strip_prefix("/sys").ok()?.to_string_lossy().into_owned();
+            Some(devpath)
+        })
+        .collect()
+}
+
+fn update_yubikey_usb_presence(event: &[String], known_devices: &mut HashSet<String>) -> Option<bool> {
+    let property = |name: &str| {
+        event
+            .iter()
+            .find_map(|line| line.strip_prefix(name))
+    };
+    if property("SUBSYSTEM=") != Some("usb")
+        || property("DEVTYPE=") != Some("usb_device")
+    {
+        return None;
+    }
+    let devpath = property("DEVPATH=")?;
+    match property("ACTION=")? {
+        "add"
+            if property("ID_VENDOR_ID=").is_some_and(|vendor| vendor.eq_ignore_ascii_case("1050"))
+                && property("ID_USB_INTERFACES=")
+                    .is_some_and(|interfaces| interfaces.split(':').any(|class| class.starts_with("0b"))) =>
+        {
+            known_devices.insert(devpath.to_owned()).then_some(true)
+        }
+        "remove" if known_devices.remove(devpath) => Some(!known_devices.is_empty()),
+        _ => None,
+    }
+}
+
+fn normalize_usb_label(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
 fn parse_card_status(output: &str) -> ParsedCardStatus {
     let mut application = None;
     let mut reader = None;
@@ -2769,17 +3322,6 @@ fn hex_digit(value: u8) -> Option<u8> {
     }
 }
 
-fn yubi_connection_title(status: YubiConnection) -> &'static str {
-    match status {
-        YubiConnection::Checking => "Checking card status…",
-        YubiConnection::Connected => "Smartcard detected",
-        YubiConnection::NotDetected => "No card detected",
-        YubiConnection::NoReader => "No smartcard reader available",
-        YubiConnection::Busy => "Card service is busy",
-        YubiConnection::Unavailable => "Card status unavailable",
-    }
-}
-
 fn card_event_title(event: CardEvent) -> &'static str {
     match event {
         CardEvent::PinentryOpened => "System PIN or passphrase prompt opened",
@@ -2856,6 +3398,61 @@ fn resize_handle(
         handle = handle.h(px(height));
     }
     handle
+}
+
+#[cfg(test)]
+mod card_detection_tests {
+    use super::*;
+
+    fn usb_event(action: &str, vendor: &str, interfaces: &str) -> Vec<String> {
+        vec![
+            format!("ACTION={action}"),
+            "SUBSYSTEM=usb".into(),
+            "DEVTYPE=usb_device".into(),
+            "DEVPATH=/devices/pci0000:00/usb3/3-2".into(),
+            format!("ID_VENDOR_ID={vendor}"),
+            format!("ID_USB_INTERFACES={interfaces}"),
+        ]
+    }
+
+    #[test]
+    fn udev_detects_insert_remove_and_reinsert() {
+        let mut devices = HashSet::new();
+        let inserted = usb_event("add", "1050", ":030101:0b0000:");
+        // Removal events need not include vendor/interface metadata.
+        let removed = usb_event("remove", "", "");
+        for event in [&inserted, &removed, &inserted] {
+            let expected = event != &removed;
+            assert_eq!(
+                update_yubikey_usb_presence(event, &mut devices),
+                Some(expected)
+            );
+            assert_eq!(devices.len(), usize::from(expected));
+        }
+    }
+
+    #[test]
+    fn udev_ignores_duplicates_and_unrelated_devices() {
+        let mut devices = HashSet::new();
+        assert_eq!(
+            update_yubikey_usb_presence(
+                &usb_event("add", "1234", ":0b0000:"), &mut devices
+            ),
+            None
+        );
+        assert_eq!(
+            update_yubikey_usb_presence(
+                &usb_event("add", "1050", ":030101:"), &mut devices
+            ),
+            None
+        );
+        let inserted = usb_event("add", "1050", ":0b0000:");
+        assert_eq!(update_yubikey_usb_presence(&inserted, &mut devices), Some(true));
+        assert_eq!(update_yubikey_usb_presence(&inserted, &mut devices), None);
+        let removed = usb_event("remove", "", "");
+        assert_eq!(update_yubikey_usb_presence(&removed, &mut devices), Some(false));
+        assert_eq!(update_yubikey_usb_presence(&removed, &mut devices), None);
+    }
 }
 
 fn main() {
