@@ -1775,9 +1775,19 @@ impl PassApp {
                     })
                     .child(
                         div()
+                            .id("home-logo")
                             .flex()
                             .items_center()
                             .gap(px(14.))
+                            .cursor_pointer()
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                cx.stop_propagation();
+                            })
+                            .on_click(cx.listener(|app, _, window, cx| {
+                                app.navigation.go_to(Page::Entries);
+                                app.search_focus.focus(window);
+                                cx.notify();
+                            }))
                             .child(
                                 div()
                                     .w(px(32.))
