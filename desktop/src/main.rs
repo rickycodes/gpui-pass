@@ -1,5 +1,14 @@
 #![forbid(unsafe_code)]
 
+mod diagnostics;
+use diagnostics::trace;
+
+mod card_refresh;
+use card_refresh::{CardProbe, CardRefresh, ProbeResult};
+
+mod navigation;
+use navigation::{Navigation, Page};
+
 mod operation_status;
 mod entry_editor;
 mod search;
@@ -117,7 +126,7 @@ enum YubiConnection {
     Unavailable,
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct CardDetails {
     application: String,
     reader: Option<String>,
@@ -216,7 +225,7 @@ pub(crate) struct PassApp {
     generation_digits: bool,
     generation_separators: bool,
     generator_slider_bounds: Option<Bounds<gpui::Pixels>>,
-    generator_open: bool,
+    navigation: Navigation,
     confirming_delete: Option<Entry>,
     saving: Option<(
         Cancellation,
@@ -224,22 +233,22 @@ pub(crate) struct PassApp {
         Receiver<Result<(Entry, Secret), Error>>,
     )>,
     saved_entry_name: Option<String>,
-    yubikey_open: bool,
     yubikey_history: VecDeque<YubiRecord>,
     last_yubikey_observation: Option<Instant>,
     yubikey_connection: YubiConnection,
     yubikey_details: Option<CardDetails>,
-    yubikey_check: Option<Receiver<CardProbeResult>>,
+    yubikey_check: Option<CardProbe<CardProbeResult>>,
     yubikey_last_checked: Option<Instant>,
     yubikey_info: Option<YubiKeyInfo>,
-    yubikey_info_check: Option<Receiver<YubiKeyInfo>>,
+    yubikey_info_check: Option<CardProbe<YubiKeyInfo>>,
     usb_reader_details: Option<UsbReaderDetails>,
     card_detail_retry_at: Option<Instant>,
-    card_detail_retry_count: u8,
+    card_refresh: CardRefresh,
     card_watcher: Option<CardWatcher>,
     card_watcher_supported: Option<bool>,
     card_watcher_retry_at: Option<Instant>,
     card_refresh_pending: bool,
+    card_poll_paused: bool,
     usb_card_watcher: Option<UsbCardWatcher>,
     usb_watcher_retry_at: Option<Instant>,
     usb_yubikey_present: Option<bool>,
@@ -303,11 +312,10 @@ impl PassApp {
             generation_digits: true,
             generation_separators: true,
             generator_slider_bounds: None,
-            generator_open: false,
+            navigation: Navigation::default(),
             confirming_delete: None,
             saving: None,
             saved_entry_name: None,
-            yubikey_open: false,
             yubikey_history: VecDeque::new(),
             last_yubikey_observation: None,
             yubikey_connection: YubiConnection::Checking,
@@ -318,11 +326,12 @@ impl PassApp {
             yubikey_info_check: None,
             usb_reader_details: None,
             card_detail_retry_at: None,
-            card_detail_retry_count: 0,
+            card_refresh: CardRefresh::default(),
             card_watcher: None,
             card_watcher_supported: None,
             card_watcher_retry_at: None,
             card_refresh_pending: false,
+            card_poll_paused: false,
             usb_card_watcher: None,
             usb_watcher_retry_at: None,
             usb_yubikey_present: None,
@@ -559,6 +568,17 @@ impl PassApp {
     }
 
     fn start_yubikey_check(&mut self) {
+        // A refresh request is not a physical card change. Coalesce requests
+        // without making the running probe's result stale.
+        if self.yubikey_check.is_some() { return; }
+        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.saving.is_some() {
+            if !self.card_refresh_pending {
+                trace!("probe.deferred ykman={} reveal={} saving={}",
+                    self.yubikey_info_check.is_some(), self.reveal.is_some(), self.saving.is_some());
+            }
+            self.card_refresh_pending = true;
+            return;
+        }
         // Keep the initial loading state, then leave the last result on screen while the
         // background probe runs. An absent key should not flash "Checking" on every retry.
         if self.yubikey_last_checked.is_none()
@@ -568,10 +588,13 @@ impl PassApp {
         }
         let executable = self.gpg.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.yubikey_check = Some(receiver);
+        self.card_refresh_pending = false;
+        let probe = CardProbe::new("gpg", self.card_refresh.generation(), receiver);
+        let probe_id = probe.id();
+        self.yubikey_check = Some(probe);
         std::thread::spawn(move || {
-            let result = check_card_status(&executable);
-            eprintln!(
+            let result = check_card_status(&executable, probe_id);
+            trace!(
                 "[card-detect] GnuPG probe completed: state={:?}, details={}",
                 result.connection,
                 result.details.is_some()
@@ -649,6 +672,8 @@ impl PassApp {
                             let _ = sender.send(CardWatchEvent::Status(present));
                         }
                         if line.starts_with("ERR ") {
+                            let code = line.split_whitespace().nth(1).and_then(|value| value.parse::<u32>().ok());
+                            trace!("watcher.error kind=gpg code={code:?}");
                             let _ = sender.send(CardWatchEvent::Failed);
                             break;
                         }
@@ -735,11 +760,14 @@ impl PassApp {
         } else {
             YubiConnection::NotDetected
         };
+        if self.usb_yubikey_present != Some(true) {
+            self.card_refresh.observe(present);
+        }
         if self.yubikey_connection != connection {
             self.yubikey_connection = connection;
             self.yubikey_details = None;
             if !present {
-                self.yubikey_open = false;
+                self.navigation.card_unavailable();
             }
             cx.notify();
         }
@@ -766,9 +794,11 @@ impl PassApp {
             return;
         }
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.yubikey_info_check = Some(receiver);
+        let probe = CardProbe::new("ykman-hid", self.card_refresh.generation(), receiver);
+        let probe_id = probe.id();
+        self.yubikey_info_check = Some(probe);
         std::thread::spawn(move || {
-            let _ = sender.send(query_yubikey_info());
+            let _ = sender.send(query_yubikey_info(probe_id));
         });
     }
 
@@ -778,18 +808,17 @@ impl PassApp {
         if self.usb_yubikey_present == Some(present) {
             return;
         }
-        eprintln!("[card-detect] USB YubiKey presence: {present}");
         self.usb_yubikey_present = Some(present);
+        self.card_refresh.observe(present);
+        trace!("card.presence source=usb present={present} generation={}", self.card_refresh.generation());
         if present {
             self.card_detail_retry_at = None;
-            self.card_detail_retry_count = 0;
             self.usb_reader_details = usb_reader_for_card(None, true);
         } else {
             self.usb_reader_details = None;
             self.yubikey_info = None;
-            self.yubikey_info_check = None;
+            // Keep tracking the old worker until it stops touching the device.
             self.card_detail_retry_at = None;
-            self.card_detail_retry_count = 0;
         }
         self.apply_card_presence_hint(present, cx);
     }
@@ -809,9 +838,13 @@ impl PassApp {
                 }
             }
         }
-        if self.reveal.is_some() || self.saving.is_some() {
-            return;
+        let paused = self.reveal.is_some() || self.saving.is_some();
+        if paused != self.card_poll_paused {
+            self.card_poll_paused = paused;
+            trace!("card.poll paused={} reveal={} saving={} details={}", paused,
+                self.reveal.is_some(), self.saving.is_some(), self.yubikey_details.is_some());
         }
+        if paused { return; }
         let watch_events = self
             .card_watcher
             .as_ref()
@@ -819,9 +852,12 @@ impl PassApp {
             .unwrap_or_default();
         for event in watch_events {
             match event {
-                CardWatchEvent::Ready => self.card_watcher_supported = Some(true),
+                CardWatchEvent::Ready => {
+                    if self.card_watcher_supported != Some(true) { trace!("watcher.ready kind=gpg"); }
+                    self.card_watcher_supported = Some(true);
+                },
                 CardWatchEvent::Status(present) => {
-                    eprintln!("[card-detect] GnuPG device event: {present:?}");
+                    trace!("card.presence source=gpg present={present:?} usb_present={:?}", self.usb_yubikey_present);
                     self.card_watcher_supported = Some(true);
                     if let Some(present) = present {
                         // A live USB event is authoritative for a YubiKey's physical
@@ -839,6 +875,7 @@ impl PassApp {
                     }
                 }
                 CardWatchEvent::Failed => {
+                    trace!("watcher.failed kind=gpg");
                     self.card_watcher_supported = Some(false);
                     self.card_watcher = None;
                     self.card_watcher_retry_at =
@@ -857,131 +894,41 @@ impl PassApp {
                     self.apply_yubikey_usb_presence(present, cx);
                 }
                 UsbCardEvent::Failed => {
+                    trace!("watcher.failed kind=usb");
                     self.usb_card_watcher = None;
                     self.usb_watcher_retry_at =
                         Some(Instant::now() + Duration::from_secs(2));
                 }
             }
         }
-        if let Some(info) = self
-            .yubikey_info_check
-            .as_ref()
-            .and_then(|receiver| receiver.try_recv().ok())
+        if let Some(completion) = self.yubikey_info_check.as_ref()
+            .and_then(|probe| probe.poll(&self.card_refresh))
         {
             self.yubikey_info_check = None;
-            if self.usb_yubikey_present == Some(true)
-                && self.yubikey_info.as_ref() != Some(&info)
-            {
-                self.yubikey_info = Some(info);
-                cx.notify();
+            if let ProbeResult::Current(info) = completion {
+                if self.usb_yubikey_present == Some(true)
+                    && self.yubikey_info.as_ref() != Some(&info)
+                {
+                    self.yubikey_info = Some(info);
+                    cx.notify();
+                }
             }
         }
-        if let Some(result) = self
-            .yubikey_check
-            .as_ref()
-            .and_then(|receiver| receiver.try_recv().ok())
+        if let Some(completion) = self.yubikey_check.as_ref()
+            .and_then(|probe| probe.poll(&self.card_refresh))
         {
             self.yubikey_check = None;
             self.yubikey_last_checked = Some(Instant::now());
-            let refresh_after_event = self.card_refresh_pending;
             self.card_refresh_pending = false;
-            eprintln!(
-                "[card-detect] Applying probe: state={:?}, details={}, superseded={}",
-                result.connection,
-                result.details.is_some(),
-                refresh_after_event
-            );
-            // A busy service is inconclusive. Keep the last known connection in that case
-            // so the status link doesn't flicker while the key is in use.
-            if refresh_after_event {
-                // A probe started before the latest device event can report a stale state.
-                // Keep the event's immediate presence update and probe again against the
-                // current reader state.
-                eprintln!("[card-detect] Discarding stale probe and retrying");
+            let result = match completion {
+                ProbeResult::Current(result) => Some(result),
+                ProbeResult::Stale | ProbeResult::Disconnected => None,
+            };
+            if let Some(result) = result {
+                self.apply_card_probe(result, cx);
+            } else {
+                trace!("[card-detect] Discarding obsolete or disconnected probe");
                 self.start_yubikey_check();
-            } else if self.usb_yubikey_present == Some(true)
-                && (result.connection != YubiConnection::Connected || result.details.is_none())
-            {
-                // USB confirms the physical key is present. Scdaemon may need a moment
-                // after reinsertion before it can return OpenPGP application details.
-                self.yubikey_connection = YubiConnection::Connected;
-                self.yubikey_details = None;
-                if self.card_detail_retry_count < 3 {
-                    eprintln!("[card-detect] GnuPG details unavailable; scheduling retry");
-                    let delay_ms = 250_u64 * (1 << self.card_detail_retry_count);
-                    self.card_detail_retry_count += 1;
-                    self.card_detail_retry_at =
-                        Some(Instant::now() + Duration::from_millis(delay_ms));
-                } else {
-                    self.card_detail_retry_at = None;
-                    eprintln!("[card-detect] GnuPG details unavailable; retry limit reached");
-                }
-                cx.notify();
-            } else if self.usb_yubikey_present == Some(true) {
-                self.card_detail_retry_at = None;
-                self.card_detail_retry_count = 0;
-                let changed = self.yubikey_details.as_ref().map(|details| {
-                    (
-                        &details.application,
-                        &details.reader,
-                        &details.version,
-                        &details.manufacturer,
-                        &details.key_attributes,
-                        details.pin_retries,
-                        details.signature_count,
-                    )
-                }) != result.details.as_ref().map(|details| {
-                    (
-                        &details.application,
-                        &details.reader,
-                        &details.version,
-                        &details.manufacturer,
-                        &details.key_attributes,
-                        details.pin_retries,
-                        details.signature_count,
-                    )
-                });
-                self.yubikey_connection = YubiConnection::Connected;
-                self.yubikey_details = result.details;
-                if changed {
-                    cx.notify();
-                }
-                self.start_yubikey_info_probe();
-            } else if result.connection != YubiConnection::Busy {
-                let changed = self.yubikey_connection != result.connection
-                    || self.yubikey_details.as_ref().map(|details| {
-                        (
-                            &details.application,
-                            &details.reader,
-                            &details.version,
-                            &details.manufacturer,
-                            &details.key_attributes,
-                            details.pin_retries,
-                            details.signature_count,
-                        )
-                    }) != result.details.as_ref().map(|details| {
-                        (
-                            &details.application,
-                            &details.reader,
-                            &details.version,
-                            &details.manufacturer,
-                            &details.key_attributes,
-                            details.pin_retries,
-                            details.signature_count,
-                        )
-                    });
-                self.yubikey_connection = result.connection;
-                self.yubikey_details = result.details;
-                if self.yubikey_connection != YubiConnection::Connected {
-                    self.yubikey_open = false;
-                }
-                if changed {
-                    cx.notify();
-                }
-            } else if self.yubikey_connection != YubiConnection::Connected {
-                self.yubikey_connection = YubiConnection::Busy;
-                self.yubikey_details = None;
-                cx.notify();
             }
         }
         if self.card_watcher.is_none()
@@ -1026,6 +973,46 @@ impl PassApp {
             self.start_yubikey_check();
             cx.notify();
         }
+    }
+
+    fn apply_card_probe(&mut self, result: CardProbeResult, cx: &mut Context<Self>) {
+        trace!("[card-detect] Applying current probe: state={:?}, details={}",
+            result.connection, result.details.is_some());
+        if self.usb_yubikey_present == Some(true)
+            && (result.connection != YubiConnection::Connected || result.details.is_none())
+        {
+            // A miss during enumeration does not invalidate physical presence or
+            // details already obtained for this same insertion.
+            self.yubikey_connection = YubiConnection::Connected;
+            if self.yubikey_details.is_none() {
+                let delay = self.card_refresh.retry_delay();
+                self.card_detail_retry_at = Some(Instant::now() + delay);
+                trace!("[card-detect] Card details not ready; retrying in {}ms", delay.as_millis());
+            }
+            cx.notify();
+            return;
+        }
+        // Busy is inconclusive, so keep any already connected card on screen.
+        if result.connection == YubiConnection::Busy {
+            if self.yubikey_connection != YubiConnection::Connected {
+                self.yubikey_connection = YubiConnection::Busy;
+                self.yubikey_details = None;
+                cx.notify();
+            }
+            return;
+        }
+        let changed = self.yubikey_connection != result.connection
+            || self.yubikey_details != result.details;
+        self.yubikey_connection = result.connection;
+        self.yubikey_details = result.details;
+        if self.yubikey_connection != YubiConnection::Connected {
+            self.navigation.card_unavailable();
+        } else if self.yubikey_details.is_some() {
+            self.card_detail_retry_at = None;
+            self.card_refresh.completed();
+            self.start_yubikey_info_probe();
+        }
+        if changed { cx.notify(); }
     }
 
     fn capture_yubikey_status(&mut self, cx: &mut Context<Self>) {
@@ -1130,7 +1117,7 @@ impl PassApp {
             cx.notify();
             return;
         }
-        if self.generator_open {
+        if self.navigation.generator_open() {
             self.close_generator(cx);
             return;
         }
@@ -1346,13 +1333,12 @@ impl PassApp {
     fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.saving.is_some() { return; }
         self.cancel_edit(cx);
-        self.yubikey_open = false;
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
         self.generator_name_focus.focus(window);
         self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
-        self.generator_open = true;
+        self.navigation.open_generator();
         cx.notify();
     }
 
@@ -1364,7 +1350,7 @@ impl PassApp {
             cx.notify();
             return;
         }
-        self.generator_open = false;
+        self.navigation.close_generator();
         self.clear_generated(cx);
         cx.notify();
     }
@@ -2138,7 +2124,7 @@ impl PassApp {
                     )
                     .child(button("yubikey-back", "Back to entries", false).on_click(
                         cx.listener(|app, _, _, cx| {
-                            app.yubikey_open = false;
+                            app.navigation.go_to(Page::Entries);
                             cx.notify();
                         }),
                     )),
@@ -2523,7 +2509,7 @@ impl PassApp {
 
 impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let main_content = if self.yubikey_open {
+        let main_content = if self.navigation.page() == Page::CardDetails {
             self.yubikey_view(cx)
         } else {
             div()
@@ -2549,7 +2535,7 @@ impl Render for PassApp {
                 app.open_generator(window, cx)
             }))
             .on_action(cx.listener(|app, _: &Reveal, window, cx| {
-                if !app.generator_open
+                if !app.navigation.generator_open()
                     && app.confirming_delete.is_none()
                     && !app.generator_name_focus.is_focused(window)
                 {
@@ -2706,13 +2692,13 @@ impl Render for PassApp {
                                     div()
                                     .id("open-yubikey-status")
                                     .text_size(px(12.))
-                                    .text_color(rgb(if self.yubikey_open { 0xd7ebbb } else { WHITE }))
+                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { 0xd7ebbb } else { WHITE }))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
                                     })
                                     .on_click(cx.listener(|app, _, _, cx| {
-                                        app.yubikey_open = true;
+                                        app.navigation.go_to(Page::CardDetails);
                                         cx.notify();
                                     }))
                                     .child("Card status ↗"),
@@ -2749,7 +2735,7 @@ impl Render for PassApp {
                         ),
                     ),
             )
-            .when(self.generator_open, |view| {
+            .when(self.navigation.generator_open(), |view| {
                 view.child(self.generator_view(window, cx))
             })
             .when(self.confirming_delete.is_some(), |view| {
@@ -2846,13 +2832,18 @@ impl Render for PassApp {
     }
 }
 
-fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
+fn check_card_status(executable: &std::path::Path, probe_id: u64) -> CardProbeResult {
+    trace!("probe.query id={probe_id} mode=card-status-all");
     let Ok(mut child) = Command::new(executable)
         .args([
             "--batch",
             "--no-tty",
             "--with-colons",
+            "--status-fd=2",
+            // Plain card-status only LEARNs the current session. The explicit
+            // all form issues SERIALNO first, rescanning readers after replug.
             "--card-status",
+            "all",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -2865,6 +2856,7 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
         };
     };
 
+    trace!("probe.spawned id={probe_id} child_pid={}", child.id());
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -2876,6 +2868,7 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
         }
     };
     if status.is_none() {
+        trace!("probe.timeout id={probe_id} phase=process elapsed_ms={}", started.elapsed().as_millis());
         let _ = child.kill();
         let _ = child.wait();
         return CardProbeResult {
@@ -2884,6 +2877,8 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
         };
     }
 
+    trace!("probe.exited id={probe_id} exit_code={:?} elapsed_ms={} phase=collect_output",
+        status.and_then(|status| status.code()), started.elapsed().as_millis());
     // Parse only an allowlist of useful fields. GnuPG also returns serials, cardholder data,
     // login data, and key fingerprints; those values are intentionally discarded.
     let output = match child.wait_with_output() {
@@ -2895,6 +2890,8 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
             };
         }
     };
+    trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
+        output.stdout.len(), output.stderr.len(), started.elapsed().as_millis());
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined_output = format!("{stdout}\n{stderr}");
@@ -2911,11 +2908,10 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
                 details: None,
             };
         }
-        // GnuPG's successful exit is authoritative for presence; detail records vary
-        // between card applications and GnuPG versions.
+        // The all form can successfully return no records when no card was found.
         ParsedCardStatus::Unrecognized if output.status.success() => {
             return CardProbeResult {
-                connection: YubiConnection::Connected,
+                connection: YubiConnection::NotDetected,
                 details: None,
             };
         }
@@ -2923,6 +2919,16 @@ fn check_card_status(executable: &std::path::Path) -> CardProbeResult {
     }
 
     // Diagnostics are consulted only to classify failures and are never retained or displayed.
+    for line in stderr.lines() {
+        for status in ["ERROR", "FAILURE", "SC_OP_FAILURE"] {
+            if line.strip_prefix("[GNUPG:] ").and_then(|line| line.strip_prefix(status))
+                .is_some_and(|rest| rest.starts_with(' '))
+            {
+                let code = line.split_whitespace().last().and_then(|value| value.parse::<u32>().ok());
+                trace!("probe.gpg_error id={probe_id} status={status} code={code:?}");
+            }
+        }
+    }
     let diagnostic = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
     let connection = if diagnostic.contains("no agent running")
         || diagnostic.contains("can't connect to the agent")
@@ -2968,10 +2974,13 @@ struct UsbReaderDetails {
     location: String,
 }
 
-fn query_yubikey_info() -> YubiKeyInfo {
-    let mut command = Command::new("ykman");
+fn query_yubikey_info(probe_id: u64) -> YubiKeyInfo {
+    // The ykman CLI enumerates PC/SC, starting pcscd on systems with socket
+    // activation. pcscd can then claim CCID on replug until its idle timeout,
+    // starving GnuPG's built-in driver. Restrict metadata reads to FIDO HID.
+    let mut command = Command::new("python3");
     let Ok(mut child) = command
-        .arg("info")
+        .args(["-c", include_str!("yubikey_info.py")])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -2980,6 +2989,7 @@ fn query_yubikey_info() -> YubiKeyInfo {
         return YubiKeyInfo::default();
     };
 
+    trace!("probe.spawned id={probe_id} child_pid={}", child.id());
     let started = Instant::now();
     let status = loop {
         match child.try_wait() {
@@ -2990,6 +3000,8 @@ fn query_yubikey_info() -> YubiKeyInfo {
             _ => break None,
         }
     };
+    trace!("probe.exited id={probe_id} exit_code={:?} elapsed_ms={} phase=collect_output",
+        status.and_then(|status| status.code()), started.elapsed().as_millis());
     if !status.is_some_and(|status| status.success()) {
         let _ = child.kill();
         let _ = child.wait();
@@ -2999,6 +3011,8 @@ fn query_yubikey_info() -> YubiKeyInfo {
     let Ok(output) = child.wait_with_output() else {
         return YubiKeyInfo::default();
     };
+    trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
+        output.stdout.len(), output.stderr.len(), started.elapsed().as_millis());
     if !output.status.success() {
         return YubiKeyInfo::default();
     }
@@ -3171,6 +3185,28 @@ fn normalize_usb_label(value: &str) -> String {
 }
 
 fn parse_card_status(output: &str) -> ParsedCardStatus {
+    // card-status all may return several cards. Select the first available
+    // record; never combine one reader's version with another card's PIN data.
+    let mut start = 0;
+    let mut offset = 0;
+    let mut reader_seen = false;
+    for line in output.split_inclusive('\n') {
+        let label = line.split_once(':').map(|(label, _)| label.trim().trim_matches('.').trim());
+        if label.is_some_and(|label| label.eq_ignore_ascii_case("reader")) {
+            if reader_seen {
+                if let ParsedCardStatus::Detected(details) = parse_one_card_status(&output[start..offset]) {
+                    return ParsedCardStatus::Detected(details);
+                }
+                start = offset;
+            }
+            reader_seen = true;
+        }
+        offset += line.len();
+    }
+    parse_one_card_status(&output[start..])
+}
+
+fn parse_one_card_status(output: &str) -> ParsedCardStatus {
     let mut application = None;
     let mut reader = None;
     let mut version = None;
@@ -3429,6 +3465,41 @@ fn resize_handle(
 mod card_detection_tests {
     use super::*;
 
+    #[test]
+    fn multiple_card_records_are_not_merged() {
+        let output = "Reader:First:\nversion:0304:\nvendor:0006:Yubico:\npinretry:3:0:3:\nReader:Second:\nversion:0200:\nvendor:1234:Other:\nsigcount:999:\n";
+        let ParsedCardStatus::Detected(details) = parse_card_status(output) else {
+            panic!("expected first card details");
+        };
+        assert_eq!(details.reader.as_deref(), Some("First"));
+        assert_eq!(details.manufacturer.as_deref(), Some("Yubico"));
+        assert_eq!(details.pin_retries, Some([3, 0, 3]));
+        assert_eq!(details.signature_count, None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_query_requests_a_reader_rescan_and_handles_no_cards() {
+        use std::{fs, os::unix::fs::PermissionsExt};
+        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("gpui-pass-card-probe-{}-{unique}", std::process::id()));
+        fs::create_dir(&root).unwrap();
+        let executable = root.join("gpg");
+        let fixture = |body: &str| {
+            fs::write(&executable, format!("#!/usr/bin/python3\nimport sys\nassert sys.argv[-2:] == ['--card-status', 'all']\n{body}\n")).unwrap();
+            fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        };
+        fixture("print('Reader:Fixture:\\nversion:0304:')");
+        let result = check_card_status(&executable, 0);
+        assert_eq!(result.connection, YubiConnection::Connected);
+        assert_eq!(result.details.unwrap().reader.as_deref(), Some("Fixture"));
+        fixture("sys.exit(0)");
+        let result = check_card_status(&executable, 0);
+        assert_eq!(result.connection, YubiConnection::NotDetected);
+        assert!(result.details.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
     fn usb_event(action: &str, vendor: &str, interfaces: &str) -> Vec<String> {
         vec![
             format!("ACTION={action}"),
@@ -3493,6 +3564,7 @@ fn main() {
         eprintln!("Could not disable process dumps; refusing to open the password client.");
         std::process::exit(1);
     }
+    diagnostics::init();
     Application::new().run(move |cx: &mut App| {
         cx.bind_keys([
             KeyBinding::new("escape", Hide, Some("Pass")),

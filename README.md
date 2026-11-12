@@ -90,7 +90,13 @@ For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME s
 
 YubiKey support uses the same chain as an existing GnuPG-backed `pass` setup: `gpg → gpg-agent → scdaemon → OpenPGP card`. The client inherits `GNUPGHOME` and uses the existing keyring and card key stubs. It does not move, import, export, or recreate your private key, or start a separate managed agent.
 
-When available, the card view also shows YubiKey model, firmware, and form factor from `ykman`, plus the matching USB bus/port location from Linux sysfs. Serial numbers are not displayed. Other smartcards continue to use the details reported by GnuPG.
+When available, the card view also shows YubiKey model, firmware, and form factor
+using the `ykman` Python library through the FIDO HID interface, plus the matching
+USB bus/port location from Linux sysfs. This optional query requires Python 3,
+the library, and access to the key's FIDO interface. It never falls back to
+PC/SC, which can compete with GnuPG's built-in CCID driver after reconnection.
+Serial numbers are not displayed. Other smartcards continue to use the details
+reported by GnuPG.
 
 PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. A compact status block with a subtle background gives PIN and security-key guidance during reveal. The 30-second display timer begins after successful decryption, not while unlocking the card.
 
@@ -101,6 +107,17 @@ Your current `pass` setup is the intended prerequisite. A terminal-only pinentry
 YubiKey hardware behavior has been tested on Linux, including card insertion/removal, reveal, PIN and touch handling, and retry after reconnect.
 
 The app follows your existing agent/card policy; it does not force a fresh PIN or touch for every reveal. Removing a card does not currently hide an entry already revealed in memory; normal hide/focus/timeout rules apply.
+
+Card diagnostics are written automatically to `$XDG_STATE_HOME/gpui-pass/diagnostics.log`,
+or `~/.local/state/gpui-pass/diagnostics.log` when `XDG_STATE_HOME` is unset.
+The startup terminal output prints the actual path. Set `GPUI_PASS_LOG` to override it.
+The log records timestamps, process/probe IDs, insertion generations, subprocess
+timing, output byte counts, numeric GnuPG errors, retry decisions, and pauses for
+reveal/save operations. It excludes entry contents, PINs, card serials, key
+fingerprints, and raw subprocess output. Each log rotates at 1 MiB, keeping one
+previous file (`diagnostics.log.1`); newly created files are readable only by the
+current user. Events are also printed to stderr. Logs can be inspected directly
+after reproducing a problem without copying terminal output.
 
 ## Compatibility and future platforms
 
