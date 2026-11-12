@@ -220,9 +220,11 @@ pub(crate) struct PassApp {
     demo: bool,
     load: Option<Receiver<LoadedStore>>,
     reveal: Option<(RevealRequest, Receiver<Result<Secret, Error>>)>,
+    copy_pending: Option<(Entry, OperationProgress, Receiver<Result<Secret, Error>>)>,
     generated: Option<(Secret, Instant)>,
     generated_visible: bool,
     copied_password: Option<Zeroizing<String>>,
+    pass_clipboard: Option<(Zeroizing<String>, Option<ClipboardItem>, Instant)>,
     generation_words: usize,
     generator_mode: GeneratorMode,
     generation_digits: bool,
@@ -308,9 +310,11 @@ impl PassApp {
             demo: options.demo,
             load: None,
             reveal: None,
+            copy_pending: None,
             generated: None,
             generated_visible: false,
             copied_password: None,
+            pass_clipboard: None,
             generation_words: 6,
             generator_mode: GeneratorMode::PassDefault,
             generation_digits: true,
@@ -384,6 +388,7 @@ impl PassApp {
             Duration::from_millis(100)
         } else if self.session.revealed(Instant::now()).is_some()
             || self.generated.is_some()
+            || self.pass_clipboard.is_some()
             || self.message_until.is_some()
         {
             Duration::from_millis(250)
@@ -483,6 +488,19 @@ impl PassApp {
             }
             cx.notify();
         }
+        if let Some(result) = self.copy_pending.as_ref().and_then(|(_, _, receiver)| receiver.try_recv().ok()) {
+            let (entry, _, _) = self.copy_pending.take().expect("copy request available");
+            if self.active && self.session.selected() == Some(&entry) {
+                match result {
+                    Ok(secret) => {
+                        self.copy_to_clipboard(secret.expose().to_owned(), cx);
+                        self.set_message("Entry copied to clipboard.".into());
+                    }
+                    Err(error) => self.set_message(error.to_string()),
+                }
+            }
+            cx.notify();
+        }
         if self
             .message_until
             .is_some_and(|until| Instant::now() >= until)
@@ -497,6 +515,10 @@ impl PassApp {
             .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
         {
             self.clear_generated(cx);
+            cx.notify();
+        }
+        if self.pass_clipboard.as_ref().is_some_and(|(_, _, deadline)| Instant::now() >= *deadline) {
+            self.restore_pass_clipboard(cx);
             cx.notify();
         }
         if self.session.expire(Instant::now()) {
@@ -544,6 +566,7 @@ impl PassApp {
                     self.saved_entry_name = Some(name);
                     if !self.close_after_save && self.active {
                         let text = secret.expose().to_owned();
+                        self.pass_clipboard = None;
                         cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
                         self.copied_password = Some(Zeroizing::new(text));
                         self.generated = Some((secret, Instant::now() + Duration::from_secs(30)));
@@ -1037,6 +1060,11 @@ impl PassApp {
                     .map(|observation| (observation, "Reveal entry"))
             })
             .or_else(|| {
+                self.copy_pending.as_ref().and_then(|(_, progress, _)| {
+                    progress.card_observation().map(|observation| (observation, "Copy entry"))
+                })
+            })
+            .or_else(|| {
                 self.saving.as_ref().and_then(|(_, progress, _)| {
                     progress.card_observation().map(|observation| {
                         let operation = if self.saving_edit {
@@ -1103,6 +1131,7 @@ impl PassApp {
         self.cancel_edit(cx);
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
+        self.copy_pending = None;
         self.clear_generated(cx);
         self.clear_message();
         cx.notify();
@@ -1139,6 +1168,7 @@ impl PassApp {
         }
         self.session.hide();
         self.reveal = None;
+        self.copy_pending = None;
         self.clear_generated(cx);
         self.clear_message();
         cx.notify();
@@ -1704,6 +1734,7 @@ impl PassApp {
                         .on_click(cx.listener(|app, _, _, cx| {
                             if let Some((secret, _)) = &app.generated {
                                 let text = secret.expose().to_owned();
+                                app.pass_clipboard = None;
                                 cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
                                 app.copied_password = Some(Zeroizing::new(text));
                                 cx.notify();
@@ -1884,6 +1915,39 @@ impl PassApp {
         }
     }
 
+    fn copy_to_clipboard(&mut self, content: String, cx: &mut Context<Self>) {
+        let current = cx.read_from_clipboard();
+        let previous = if let Some((expected, previous, _)) = self.pass_clipboard.take() {
+            if current.as_ref().and_then(|item| item.text()).is_some_and(|text| text == expected.as_str()) {
+                previous
+            } else {
+                current
+            }
+        } else {
+            current
+        };
+        let timeout = std::env::var("PASSWORD_STORE_CLIP_TIME")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(45);
+        cx.write_to_clipboard(ClipboardItem::new_string(content.clone()));
+        self.pass_clipboard = Some((
+            Zeroizing::new(content),
+            previous,
+            Instant::now() + Duration::from_secs(timeout),
+        ));
+    }
+
+    fn restore_pass_clipboard(&mut self, cx: &mut Context<Self>) {
+        let Some((expected, previous, _)) = self.pass_clipboard.take() else { return; };
+        let is_ours = cx.read_from_clipboard()
+            .and_then(|item| item.text().map(Zeroizing::new))
+            .is_some_and(|text| text.as_str() == expected.as_str());
+        if is_ours {
+            cx.write_to_clipboard(previous.unwrap_or_else(|| ClipboardItem::new_string(String::new())));
+        }
+    }
+
     fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window);
         if self.device_verification.running() || self.session.is_pending() || !window.is_window_active() {
@@ -1927,6 +1991,34 @@ impl PassApp {
             receiver
         };
         self.reveal = Some((request, result));
+        cx.notify();
+    }
+
+    fn copy_selected(&mut self, cx: &mut Context<Self>) {
+        if self.copy_pending.is_some() || self.device_verification.running() { return; }
+        let Some(entry) = self.session.selected().cloned() else { return; };
+        self.clear_generated(cx);
+        self.clear_message();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let progress = OperationProgress::new(OperationStatus::working(
+            "Copying entry",
+            "The entry stays hidden. Follow the system prompt; if your YubiKey blinks, touch its gold contact to continue.",
+        ));
+        if self.demo {
+            let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
+            let _ = sender.send(secret);
+        } else if let (Ok(gpg), Some(store)) = (Gpg::new(&self.gpg), self.store.clone()) {
+            let worker_entry = entry.clone();
+            let worker_progress = progress.clone();
+            std::thread::spawn(move || { let _ = sender.send(gpg.decrypt_with_progress(&store, &worker_entry, &Cancellation::default(), &worker_progress)); });
+            self.copy_pending = Some((entry, progress, receiver));
+            cx.notify();
+            return;
+        } else {
+            self.set_message("Open a password store before copying an entry.".into());
+            return;
+        }
+        self.copy_pending = Some((entry, progress, receiver));
         cx.notify();
     }
 
@@ -2501,6 +2593,8 @@ impl PassApp {
                 .when(!self.editing_entry, |controls| controls
                     .child(button("edit-entry", "Edit entry", true)
                         .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx))))
+                    .child(button("copy-password", if self.copy_pending.is_some() { "Copying…" } else { "Copy entry" }, false)
+                        .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))))
                     .child(
                         danger_button("delete-entry", "Delete")
                             .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
@@ -2517,6 +2611,8 @@ impl PassApp {
                 );
             body = body.child(controls);
             if let Some(status) = self.session.pending_status().or_else(|| {
+                self.copy_pending.as_ref().map(|(_, progress, _)| progress.snapshot())
+            }).or_else(|| {
                 self.saving
                     .as_ref()
                     .map(|(_, progress, _)| progress.snapshot())

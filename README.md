@@ -11,13 +11,17 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Browse nested `.gpg` entries in an existing store.
 - Search entry and folder names without decrypting content.
 - Explicit reveal: first-line password plus arbitrary remaining entry content.
+- Copy the complete entry directly to the clipboard without displaying it.
+- Restore the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), unless another app has changed the clipboard first.
 - Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
-- Cancel pending reveals and reject obsolete or background completion results.
+- Cancel pending reveals and reject obsolete or background reveal/copy results.
 - Generate memorable phrases from randomly selected whole words or use pass's random-character generator defaults. Name entries with folders such as `Email/example.com`.
 - Remove an individual encrypted entry after a confirmation prompt; folder deletion is not implemented.
 - Folder picker, explicit `--store`, and an isolated `--demo` mode.
 
 Generated entries are encrypted by GnuPG to the recipients resolved from the nearest `.gpg-id` (or `PASSWORD_STORE_KEY`) and created without overwriting an existing entry. Individual entries can be removed after confirmation; this does not erase Git history or backups. The random mode follows `pass` defaults: 25 characters from punctuation and alphanumeric characters, with `PASSWORD_STORE_GENERATED_LENGTH` and `PASSWORD_STORE_CHARACTER_SET` overrides. The character-set parser supports common POSIX classes and safe literal ASCII characters. Signed recipient policies are rejected for generated writes until signature verification is implemented. Automatic Git commits/sync, export, and key management are deferred. Saving a generated password copies it to the clipboard automatically; the displayed generated password and clipboard value expire after 30 seconds. The bundled EFF Short Word List #2 is attributed in [assets/EFF-WORDLIST-LICENSE.md](assets/EFF-WORDLIST-LICENSE.md).
+
+Copying an existing entry decrypts it in the background and copies its complete contents, including all lines; the entry never enters the revealed-entry view. The app restores the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), matching `pass`'s default timeout. If the clipboard changes before timeout, the app leaves the newer contents alone. Set the variable in the desktop launch environment to change the delay.
 
 ## Linux build and run
 
@@ -108,7 +112,7 @@ discards the temporary non-discoverable credential and attestation response.
 Unplugging or cancelling discards the result. The offline trust snapshot and
 its provenance are documented in [assets/YUBICO-ATTESTATION.md](assets/YUBICO-ATTESTATION.md).
 
-PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. A compact status block with a subtle background gives PIN and security-key guidance during reveal. The 30-second display timer begins after successful decryption, not while unlocking the card.
+PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. A compact status block with a subtle background gives PIN and security-key guidance during reveal and copy. Copy status appears in the entry pane, so you can follow the system prompt and touch a blinking YubiKey without revealing the password. The 30-second display timer begins after successful reveal decryption, not while unlocking the card.
 
 The helper follows allowlisted `--status-fd` events for pinentry launch, card insertion, card-busy progress, agent contention, and decryption. Only fixed application messages reach the UI; raw diagnostics and key/card metadata are discarded. GnuPG does not supply a universal touch-required event, and some versions/backends do not forward card-busy progress during private-key decryption. If no actionable status arrives after two seconds, the helper gives conditional guidance: **if your YubiKey is blinking, touch its gold contact**, and complete any open system prompt first. Card-busy guidance is conditional too; a busy card does not prove a touch is required. No competing card probes or global touch-detector service are used. See [GnuPG status documentation](https://raw.githubusercontent.com/gpg/gnupg/master/doc/DETAILS).
 
@@ -133,7 +137,7 @@ after reproducing a problem without copying terminal output.
 
 `src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.
 
-The shared status helper lives in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`) and `desktop/src/operation_status.rs` (the compact status block). Each operation receives a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Reveal is its first consumer. Later generation/export/sync operations can use the same reporter and view without adding GnuPG-specific rendering. Obsolete reveal workers cannot replace a newer operation's status.
+The shared status helper lives in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`) and `desktop/src/operation_status.rs` (the compact status block). Reveal, hidden copy, and save operations each receive a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Obsolete reveal and copy workers cannot replace a newer operation's status or copy a result for a different selection.
 
 Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
 
@@ -141,4 +145,4 @@ The prototype rejects symlinks, multiply linked files, traversal, backslashes, a
 
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 
-See [roadmap.md](roadmap.md) for planned work and [SECURITY.md](SECURITY.md) for the security boundary and limitations.
+See [ROADMAP.md](ROADMAP.md) for planned work and [SECURITY.md](SECURITY.md) for the security boundary and limitations.
