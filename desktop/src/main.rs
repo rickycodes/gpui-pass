@@ -1,5 +1,8 @@
 #![forbid(unsafe_code)]
 
+mod device_verification;
+use device_verification::{DeviceVerification, State as VerificationState};
+
 mod diagnostics;
 use diagnostics::trace;
 
@@ -244,6 +247,7 @@ pub(crate) struct PassApp {
     usb_reader_details: Option<UsbReaderDetails>,
     card_detail_retry_at: Option<Instant>,
     card_refresh: CardRefresh,
+    device_verification: DeviceVerification,
     card_watcher: Option<CardWatcher>,
     card_watcher_supported: Option<bool>,
     card_watcher_retry_at: Option<Instant>,
@@ -327,6 +331,7 @@ impl PassApp {
             usb_reader_details: None,
             card_detail_retry_at: None,
             card_refresh: CardRefresh::default(),
+            device_verification: DeviceVerification::default(),
             card_watcher: None,
             card_watcher_supported: None,
             card_watcher_retry_at: None,
@@ -431,6 +436,7 @@ impl PassApp {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
+        if self.device_verification.poll(self.card_refresh.generation()) { cx.notify(); }
         self.capture_yubikey_status(cx);
         self.poll_yubikey_connection(cx);
         if let Some(result) = self
@@ -571,7 +577,7 @@ impl PassApp {
         // A refresh request is not a physical card change. Coalesce requests
         // without making the running probe's result stale.
         if self.yubikey_check.is_some() { return; }
-        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.saving.is_some() {
+        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.saving.is_some() || self.device_verification.running() {
             if !self.card_refresh_pending {
                 trace!("probe.deferred ykman={} reveal={} saving={}",
                     self.yubikey_info_check.is_some(), self.reveal.is_some(), self.saving.is_some());
@@ -767,6 +773,7 @@ impl PassApp {
             self.yubikey_connection = connection;
             self.yubikey_details = None;
             if !present {
+                self.device_verification.invalidate();
                 self.navigation.card_unavailable();
             }
             cx.notify();
@@ -783,7 +790,9 @@ impl PassApp {
     }
 
     fn start_yubikey_info_probe(&mut self) {
-        if self.yubikey_info.is_some()
+        if self.device_verification.running()
+            || self.reveal.is_some() || self.saving.is_some()
+            || self.yubikey_info.is_some()
             || self.yubikey_info_check.is_some()
             || self.usb_yubikey_present != Some(true)
             || !self
@@ -815,6 +824,7 @@ impl PassApp {
             self.card_detail_retry_at = None;
             self.usb_reader_details = usb_reader_for_card(None, true);
         } else {
+            self.device_verification.invalidate();
             self.usb_reader_details = None;
             self.yubikey_info = None;
             // Keep tracking the old worker until it stops touching the device.
@@ -838,11 +848,11 @@ impl PassApp {
                 }
             }
         }
-        let paused = self.reveal.is_some() || self.saving.is_some();
+        let paused = self.reveal.is_some() || self.saving.is_some() || self.device_verification.running();
         if paused != self.card_poll_paused {
             self.card_poll_paused = paused;
-            trace!("card.poll paused={} reveal={} saving={} details={}", paused,
-                self.reveal.is_some(), self.saving.is_some(), self.yubikey_details.is_some());
+            trace!("card.poll paused={} reveal={} saving={} verification={} details={}", paused,
+                self.reveal.is_some(), self.saving.is_some(), self.device_verification.running(), self.yubikey_details.is_some());
         }
         if paused { return; }
         let watch_events = self
@@ -1006,6 +1016,7 @@ impl PassApp {
         self.yubikey_connection = result.connection;
         self.yubikey_details = result.details;
         if self.yubikey_connection != YubiConnection::Connected {
+            self.device_verification.invalidate();
             self.navigation.card_unavailable();
         } else if self.yubikey_details.is_some() {
             self.card_detail_retry_at = None;
@@ -1333,6 +1344,7 @@ impl PassApp {
     fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.saving.is_some() { return; }
         self.cancel_edit(cx);
+        self.device_verification.cancel();
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
@@ -1775,7 +1787,7 @@ impl PassApp {
                     })
                     .child(
                         div()
-                            .id("home-logo")
+                            .id("generator-home-logo")
                             .flex()
                             .items_center()
                             .gap(px(14.))
@@ -1784,7 +1796,9 @@ impl PassApp {
                                 cx.stop_propagation();
                             })
                             .on_click(cx.listener(|app, _, window, cx| {
+                                app.device_verification.cancel();
                                 app.navigation.go_to(Page::Entries);
+                                app.close_generator(cx);
                                 app.search_focus.focus(window);
                                 cx.notify();
                             }))
@@ -1872,7 +1886,7 @@ impl PassApp {
 
     fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window);
-        if self.session.is_pending() || !window.is_window_active() {
+        if self.device_verification.running() || self.session.is_pending() || !window.is_window_active() {
             return;
         }
         if self.session.revealed(Instant::now()).is_some() {
@@ -2102,8 +2116,26 @@ impl PassApp {
             .into_any_element()
     }
 
+    fn verify_device(&mut self, cx: &mut Context<Self>) {
+        if self.device_verification.running() { return; }
+        if self.reveal.is_some() || self.saving.is_some() || self.yubikey_info_check.is_some() || self.yubikey_check.is_some() {
+            self.device_verification.busy();
+        } else if let Some(usb) = self.usb_reader_details.as_ref().filter(|usb| usb.vendor_id == 0x1050) {
+            self.device_verification.start(self.card_refresh.generation(), usb.product_id);
+        } else {
+            self.device_verification.unavailable();
+        }
+        cx.notify();
+    }
+
     fn yubikey_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let latest = self.yubikey_history.front().copied();
+        let is_yubikey = self.usb_reader_details.as_ref()
+            .is_some_and(|usb| usb.vendor_id == 0x1050)
+            || self.yubikey_info.is_some()
+            || self.yubikey_details.as_ref()
+                .and_then(|details| details.manufacturer.as_ref())
+                .is_some_and(|manufacturer| manufacturer.eq_ignore_ascii_case("Yubico"));
         let mut page = div()
             .id("yubikey-status-page")
             .flex_1()
@@ -2132,13 +2164,40 @@ impl PassApp {
                                     .child("Smartcard status"),
                             ),
                     )
-                    .child(button("yubikey-back", "Back to entries", false).on_click(
-                        cx.listener(|app, _, _, cx| {
-                            app.navigation.go_to(Page::Entries);
-                            cx.notify();
-                        }),
-                    )),
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .when(is_yubikey, |actions| actions.child(
+                                button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify Device" }, true)
+                                    .on_click(cx.listener(|app, _, _, cx| app.verify_device(cx))),
+                            ))
+                            .when(self.device_verification.running(), |actions| actions.child(
+                                button("cancel-verification", "Cancel", false).on_click(cx.listener(|app, _, _, cx| {
+                                    app.device_verification.cancel();
+                                    cx.notify();
+                                })),
+                            ))
+                            .child(button("yubikey-back", "Back to entries", false).on_click(
+                                cx.listener(|app, _, _, cx| {
+                                    app.device_verification.cancel();
+                                    app.navigation.go_to(Page::Entries);
+                                    cx.notify();
+                                }),
+                            )),
+                    ),
             );
+
+        let verification = self.device_verification.state();
+        if verification != VerificationState::Idle {
+            page = page.child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(if verification == VerificationState::Verified { GREEN } else { MUTED }))
+                    .child(verification.message()),
+            );
+        }
 
         let mut rows = div()
             .max_w(px(760.))
@@ -2649,6 +2708,15 @@ impl Render for PassApp {
                             .flex()
                             .items_center()
                             .gap(px(14.))
+                            .id("home-logo")
+                            .cursor_pointer()
+                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .on_click(cx.listener(|app, _, window, cx| {
+                                app.device_verification.cancel();
+                                app.navigation.go_to(Page::Entries);
+                                app.search_focus.focus(window);
+                                cx.notify();
+                            }))
                             .child(
                                 div()
                                     .w(px(32.))

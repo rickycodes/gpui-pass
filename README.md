@@ -98,6 +98,16 @@ PC/SC, which can compete with GnuPG's built-in CCID driver after reconnection.
 Serial numbers are not displayed. Other smartcards continue to use the details
 reported by GnuPG.
 
+**Verify Device** runs locally on the card status page. Touch the YubiKey when
+it blinks; the app verifies a fresh FIDO U2F challenge signature and validates
+the attestation certificate chain against bundled Yubico roots. It requires Linux,
+Python's `fido2` and `cryptography` packages, OpenSSL 3, and an accessible FIDO HID
+interface with U2F support. FIDO2-only devices report an unsupported result.
+Verification uses no PC/SC connection or network request, asks for no PIN, and
+discards the temporary non-discoverable credential and attestation response.
+Unplugging or cancelling discards the result. The offline trust snapshot and
+its provenance are documented in [assets/YUBICO-ATTESTATION.md](assets/YUBICO-ATTESTATION.md).
+
 PIN entry belongs to your system pinentry. The app explicitly uses `--pinentry-mode ask`; it never requests a PIN, sends one over stdin, or selects loopback entry. Your agent/scdaemon configuration and hardware touch policy stay in effect. A compact status block with a subtle background gives PIN and security-key guidance during reveal. The 30-second display timer begins after successful decryption, not while unlocking the card.
 
 The helper follows allowlisted `--status-fd` events for pinentry launch, card insertion, card-busy progress, agent contention, and decryption. Only fixed application messages reach the UI; raw diagnostics and key/card metadata are discarded. GnuPG does not supply a universal touch-required event, and some versions/backends do not forward card-busy progress during private-key decryption. If no actionable status arrives after two seconds, the helper gives conditional guidance: **if your YubiKey is blinking, touch its gold contact**, and complete any open system prompt first. Card-busy guidance is conditional too; a busy card does not prove a touch is required. No competing card probes or global touch-detector service are used. See [GnuPG status documentation](https://raw.githubusercontent.com/gpg/gnupg/master/doc/DETAILS).
