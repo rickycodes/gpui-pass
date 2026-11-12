@@ -233,7 +233,6 @@ pub(crate) struct PassApp {
     yubikey_last_checked: Option<Instant>,
     yubikey_info: Option<YubiKeyInfo>,
     yubikey_info_check: Option<Receiver<YubiKeyInfo>>,
-    yubikey_info_invalidated: bool,
     usb_reader_details: Option<UsbReaderDetails>,
     card_detail_retry_at: Option<Instant>,
     card_detail_retry_count: u8,
@@ -317,7 +316,6 @@ impl PassApp {
             yubikey_last_checked: None,
             yubikey_info: None,
             yubikey_info_check: None,
-            yubikey_info_invalidated: false,
             usb_reader_details: None,
             card_detail_retry_at: None,
             card_detail_retry_count: 0,
@@ -561,10 +559,6 @@ impl PassApp {
     }
 
     fn start_yubikey_check(&mut self) {
-        if self.yubikey_check.is_some() || self.yubikey_info_check.is_some() {
-            self.card_refresh_pending = true;
-            return;
-        }
         // Keep the initial loading state, then leave the last result on screen while the
         // background probe runs. An absent key should not flash "Checking" on every retry.
         if self.yubikey_last_checked.is_none()
@@ -772,7 +766,6 @@ impl PassApp {
             return;
         }
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.yubikey_info_invalidated = false;
         self.yubikey_info_check = Some(receiver);
         std::thread::spawn(move || {
             let _ = sender.send(query_yubikey_info());
@@ -794,9 +787,7 @@ impl PassApp {
         } else {
             self.usb_reader_details = None;
             self.yubikey_info = None;
-            // Keep the receiver until the worker exits; dropping it does not
-            // stop ykman and would allow competing GnuPG probes on reinsertion.
-            self.yubikey_info_invalidated = true;
+            self.yubikey_info_check = None;
             self.card_detail_retry_at = None;
             self.card_detail_retry_count = 0;
         }
@@ -878,8 +869,7 @@ impl PassApp {
             .and_then(|receiver| receiver.try_recv().ok())
         {
             self.yubikey_info_check = None;
-            if !self.yubikey_info_invalidated
-                && self.usb_yubikey_present == Some(true)
+            if self.usb_yubikey_present == Some(true)
                 && self.yubikey_info.as_ref() != Some(&info)
             {
                 self.yubikey_info = Some(info);
@@ -923,9 +913,8 @@ impl PassApp {
                     self.card_detail_retry_at =
                         Some(Instant::now() + Duration::from_millis(delay_ms));
                 } else {
-                    // Enumeration can outlast the initial short retry burst.
-                    // Keep trying quietly while USB confirms the key is present.
-                    self.card_detail_retry_at = Some(Instant::now() + Duration::from_secs(3));
+                    self.card_detail_retry_at = None;
+                    eprintln!("[card-detect] GnuPG details unavailable; retry limit reached");
                 }
                 cx.notify();
             } else if self.usb_yubikey_present == Some(true) {

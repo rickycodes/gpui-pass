@@ -27,9 +27,6 @@ and compatibility scripts.
   wiped on cancellation. Completed generation in an inactive window no longer copies
   or retains the generated password for display. Cancelling a nonexistent edit no
   longer erases the generator's entry name on focus loss.
-- **Card detail recovery could stop permanently.** Slow enumeration now gets quiet
-  retries after the initial short burst. An in-flight `ykman` worker remains tracked
-  across removal, its stale result is discarded, and new GnuPG probes wait for it.
 - **Sorting allocated repeatedly.** Store listing computes each sort key once.
 - **Stale state and messages.** Failed edits clear the saving flag, generation clears
   stale IME composition, and shared error messages apply to both creation and updates.
@@ -47,6 +44,11 @@ and compatibility scripts.
 - No GUI interaction or physical card reconnection was exercised during this pass.
 
 ## Larger follow-ups
+
+- The card retry and worker scheduling changes attempted in this review were
+  subsequently reverted after slow/hanging card-detail loads were reported.
+  Card monitoring uses the preceding implementation, including its unbuffered
+  event watcher. Investigate with live hardware before changing scheduling again.
 
 - Detect external edits before replacement to prevent overwriting another client's
   changes; concurrent update handling is already a documented limitation.
