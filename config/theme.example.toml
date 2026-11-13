@@ -24,6 +24,7 @@ nav_highlight = "#3a4a40"
 nav_muted = "#b8c4bb"
 nav_selected = "#d6e8d9"
 nav_hover = "#303640"
+nav_foreground = "#e5e9f0"
 selection = "#334c88a0"
 
 [spacing]

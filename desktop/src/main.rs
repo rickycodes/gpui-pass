@@ -1832,7 +1832,7 @@ impl PassApp {
                                 div()
                                     .text_size(px(20.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(self.theme.colors.surface))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
                                     .child("pass"),
                             )
                             .child(
@@ -1853,7 +1853,7 @@ impl PassApp {
                             .items_center()
                             .justify_center()
                             .text_size(px(22.))
-                            .text_color(rgb(self.theme.colors.surface))
+                            .text_color(rgb(self.theme.colors.nav_foreground))
                             .cursor_pointer()
                             .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
                             .on_mouse_down(
@@ -2810,7 +2810,7 @@ impl Render for PassApp {
                                 div()
                                     .text_size(px(22.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(self.theme.colors.surface))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
                                     .child("pass"),
                             ),
                     )
@@ -2830,7 +2830,7 @@ impl Render for PassApp {
                                 div()
                                     .id("open-generator")
                                     .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.surface))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
@@ -2845,7 +2845,7 @@ impl Render for PassApp {
                                     div()
                                     .id("open-yubikey-status")
                                     .text_size(px(12.))
-                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { self.theme.colors.nav_selected } else { self.theme.colors.surface }))
+                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { self.theme.colors.nav_selected } else { self.theme.colors.nav_foreground }))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
@@ -2861,7 +2861,7 @@ impl Render for PassApp {
                                 div()
                                     .id("refresh")
                                     .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.surface))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();

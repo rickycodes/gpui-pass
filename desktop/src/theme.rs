@@ -34,6 +34,7 @@ pub struct Colors {
     pub nav_muted: u32,
     pub nav_selected: u32,
     pub nav_background: u32,
+    pub nav_foreground: u32,
     pub nav_hover: u32,
     pub selection: u32,
 }
@@ -76,6 +77,7 @@ impl Default for Theme {
                 nav_muted: 0xc7d6be,
                 nav_selected: 0xd7ebbb,
                 nav_background: 0x232d29,
+                nav_foreground: 0xfbfaf7,
                 nav_hover: 0x39433e,
                 selection: 0x334d8a68,
             },
@@ -125,6 +127,7 @@ struct ColorOverrides {
     nav_muted: Option<String>,
     nav_selected: Option<String>,
     nav_background: Option<String>,
+    nav_foreground: Option<String>,
     nav_hover: Option<String>,
     selection: Option<String>,
 }
@@ -297,6 +300,7 @@ impl ThemeOverrides {
         color!(nav_muted);
         color!(nav_selected);
         color!(nav_background);
+        color!(nav_foreground);
         color!(nav_hover);
         color!(selection);
 
