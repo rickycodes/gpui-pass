@@ -18,7 +18,7 @@ mod search;
 mod theme;
 
 use gpui::{
-    App, Application, Bounds, ClipboardItem, Context, CursorStyle, FocusHandle, FontWeight,
+    App, Application, Bounds, ClipboardItem, Context, CursorStyle, Div, FocusHandle, FontWeight,
     KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription, TitlebarOptions,
     UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas, div, prelude::*,
     px, rgb, size, uniform_list,
@@ -1455,6 +1455,34 @@ impl PassApp {
         cx.notify();
     }
 
+    fn brand_logotype(&self) -> Div {
+        div()
+            .flex()
+            .items_center()
+            .gap(px(14.))
+            .child(
+                div()
+                    .w(px(32.))
+                    .h(px(32.))
+                    .border_1()
+                    .border_color(rgb(self.theme.colors.nav_foreground))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .text_size(px(16.))
+                    .text_color(rgb(self.theme.colors.nav_foreground))
+                    .font_family(self.theme.mono_font)
+                    .child("/"),
+            )
+            .child(
+                div()
+                    .text_size(px(22.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(rgb(self.theme.colors.nav_foreground))
+                    .child("pass"),
+            )
+    }
+
     fn generator_view(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         let options = self.generator_options();
         let slider_left = ((self.generation_words - 4) as f32 / 4.) * 360.;
@@ -1814,7 +1842,6 @@ impl PassApp {
                             .ml(px(17.))
                             .flex()
                             .items_center()
-                            .gap(px(14.))
                             .cursor_pointer()
                             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                 cx.stop_propagation();
@@ -1826,26 +1853,7 @@ impl PassApp {
                                 app.search_focus.focus(window);
                                 cx.notify();
                             }))
-                            .child(
-                                div()
-                                    .w(px(32.))
-                                    .h(px(32.))
-                                    .border_1()
-                                    .border_color(rgb(self.theme.colors.nav_foreground))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .font_family(self.theme.mono_font)
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .child("/"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(20.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .child("pass"),
-                            )
+                            .child(self.brand_logotype())
                             .child(
                                 div()
                                     .ml(px(18.))
@@ -2817,7 +2825,6 @@ impl Render for PassApp {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(14.))
                             .id("home-logo")
                             .ml(px(17.))
                             .cursor_pointer()
@@ -2828,27 +2835,7 @@ impl Render for PassApp {
                                 app.search_focus.focus(window);
                                 cx.notify();
                             }))
-                            .child(
-                                div()
-                                    .w(px(32.))
-                                    .h(px(32.))
-                                    .border_1()
-                                    .border_color(rgb(self.theme.colors.nav_foreground))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(16.))
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .font_family(self.theme.mono_font)
-                                    .child("/"),
-                            )
-                            .child(
-                                div()
-                                    .text_size(px(22.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .child("pass"),
-                            ),
+                            .child(self.brand_logotype()),
                     )
                     .child(
                         div()
