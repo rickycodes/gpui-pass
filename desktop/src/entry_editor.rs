@@ -130,7 +130,7 @@ impl Element for EntryTextElement {
                         point(line_bounds.left() + shaped.x_for_index(overlap_start - range.start), line_bounds.top()),
                         point(line_bounds.left() + shaped.x_for_index(overlap_end - range.start), line_bounds.bottom()),
                     ),
-                    rgba(0x334d8a68),
+                    rgba(app.theme.colors.selection),
                 )
             });
             let cursor = (focused && selected.is_empty() && cursor_offset >= range.start && cursor_offset <= range.end)
@@ -139,7 +139,7 @@ impl Element for EntryTextElement {
                         point(line_bounds.left() + shaped.x_for_index(cursor_offset - range.start), line_bounds.top()),
                         size(px(1.5), line_bounds.size.height),
                     ),
-                    gpui::rgb(crate::theme::GREEN),
+                    gpui::rgb(app.theme.colors.accent),
                 ));
             layouts.push(LineLayout { range, bounds: line_bounds, shaped: shaped.clone() });
             prepared.push(PreparedLine { line: shaped, bounds: line_bounds, selection, cursor });

@@ -1,4 +1,4 @@
-use crate::{PassApp, theme::*};
+use crate::PassApp;
 use gpui::{
     Bounds, ClipboardItem, Context, ElementInputHandler, EntityInputHandler, Pixels, Point, UTF16Selection,
     Window, canvas, div, prelude::*, px, rgb,
@@ -73,13 +73,14 @@ impl PassApp {
             return div()
                 .id("entry-editor-field")
                 .track_focus(&self.generator_name_focus)
+                .rounded(px(self.theme.radii.field))
                 .w_full()
                 .min_w_0()
                 .flex()
                 .items_start()
                 .border_1()
-                .border_color(rgb(if focused { GREEN } else { LINE }))
-                .bg(rgb(PAPER))
+                .border_color(rgb(if focused { self.theme.colors.accent } else { self.theme.colors.border }))
+                .bg(rgb(self.theme.colors.background))
                 .cursor_text()
                 .on_mouse_down(
                     gpui::MouseButton::Left,
@@ -100,10 +101,10 @@ impl PassApp {
                         .w_full()
                         .min_w_0()
                         .overflow_x_scroll()
-                        .font_family(MONO)
+                        .font_family(self.theme.mono_font)
                         .text_size(px(18.))
                         .line_height(px(26.))
-                        .text_color(rgb(INK))
+                        .text_color(rgb(self.theme.colors.ink))
                         .child(crate::entry_editor::EntryTextElement { app: entity }),
                 )
                 .into_any_element();
@@ -123,22 +124,23 @@ impl PassApp {
             .flex()
             .items_center()
             .whitespace_nowrap()
-            .font_family(MONO)
+            .font_family(self.theme.mono_font)
             .text_size(px(13.));
         if self.generator_name.is_empty() {
             text = text
-                .when(focused, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
-                .child(div().text_color(rgb(MUTED)).child("e.g. Email/example.com"));
+                .when(focused, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(self.theme.colors.accent))))
+                .child(div().text_color(rgb(self.theme.colors.muted)).child("e.g. Email/example.com"));
         } else {
             text = text
                 .child(self.generator_name[..start].to_owned())
-                .when(start != end, |view| view.child(div().bg(rgb(TINT)).child(self.generator_name[start..end].to_owned())))
-                .when(focused && start == end, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN))))
+                .when(start != end, |view| view.child(div().bg(rgb(self.theme.colors.accent_surface)).child(self.generator_name[start..end].to_owned())))
+                .when(focused && start == end, |view| view.child(div().w(px(1.)).h(px(16.)).bg(rgb(self.theme.colors.accent))))
                 .child(self.generator_name[end..].to_owned());
         }
         div()
             .id("generator-entry-name")
             .track_focus(&self.generator_name_focus)
+            .rounded(px(self.theme.radii.field))
             .h(px(44.))
             .w_full()
             .min_w_0()
@@ -146,8 +148,8 @@ impl PassApp {
             .items_center()
             .px(px(12.))
             .border_1()
-            .border_color(rgb(if focused { GREEN } else { LINE }))
-            .bg(rgb(WHITE))
+            .border_color(rgb(if focused { self.theme.colors.accent } else { self.theme.colors.border }))
+            .bg(rgb(self.theme.colors.surface))
             .cursor_text()
             .on_mouse_down(
                 gpui::MouseButton::Left,
@@ -203,28 +205,29 @@ impl PassApp {
             .flex()
             .items_center()
             .whitespace_nowrap()
-            .font_family(MONO)
+            .font_family(self.theme.mono_font)
             .text_size(px(13.));
         if self.query.is_empty() {
             text = text
                 .when(focused, |view| {
-                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN)))
+                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(self.theme.colors.accent)))
                 })
-                .child(div().text_color(rgb(MUTED)).child("Search entries"));
+                .child(div().text_color(rgb(self.theme.colors.muted)).child("Search entries"));
         } else {
             text = text
                 .child(self.query[..start].to_owned())
                 .when(start != end, |view| {
-                    view.child(div().bg(rgb(TINT)).child(self.query[start..end].to_owned()))
+                    view.child(div().bg(rgb(self.theme.colors.accent_surface)).child(self.query[start..end].to_owned()))
                 })
                 .when(focused && start == end, |view| {
-                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(GREEN)))
+                    view.child(div().w(px(1.)).h(px(16.)).bg(rgb(self.theme.colors.accent)))
                 })
                 .child(self.query[end..].to_owned());
         }
         div()
             .id("search-field")
             .track_focus(&self.search_focus)
+            .rounded(px(self.theme.radii.field))
             .h(px(42.))
             .w_full()
             .flex()
@@ -232,8 +235,8 @@ impl PassApp {
             .gap(px(10.))
             .px(px(12.))
             .border_1()
-            .border_color(rgb(if focused { GREEN } else { LINE }))
-            .bg(rgb(WHITE))
+            .border_color(rgb(if focused { self.theme.colors.accent } else { self.theme.colors.border }))
+            .bg(rgb(self.theme.colors.surface))
             .cursor_text()
             .on_mouse_down(
                 gpui::MouseButton::Left,
@@ -252,7 +255,7 @@ impl PassApp {
                     cx.notify();
                 }),
             )
-            .child(div().text_size(px(16.)).text_color(rgb(MUTED)).child("⌕"))
+            .child(div().text_size(px(16.)).text_color(rgb(self.theme.colors.muted)).child("⌕"))
             .child(
                 div()
                     .relative()

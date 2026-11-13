@@ -36,7 +36,7 @@ use std::{
     sync::{Arc, Mutex, mpsc::{self, Receiver}},
     time::{Duration, Instant},
 };
-use theme::*;
+use theme::Theme;
 use zeroize::{Zeroize, Zeroizing};
 
 actions!(
@@ -196,6 +196,7 @@ enum GeneratorMode {
 }
 
 pub(crate) struct PassApp {
+    pub(crate) theme: Theme,
     session: Session,
     entries: Vec<Entry>,
     filtered: Vec<usize>,
@@ -286,6 +287,7 @@ impl PassApp {
         });
         search_focus.focus(window);
         let mut app = Self {
+            theme: Theme::default(),
             session: Session::default(),
             entries: Vec::new(),
             filtered: Vec::new(),
@@ -1290,19 +1292,16 @@ impl PassApp {
             .flex()
             .items_center()
             .justify_center()
-            .bg(rgb(PAPER))
+            .bg(rgb(self.theme.colors.background))
             .child(
-                div()
+                self.theme.panel()
                     .w(px(520.))
                     .max_w(px(520.))
                     .p(px(32.))
-                    .border_1()
-                    .border_color(rgb(LINE))
-                    .bg(rgb(WHITE))
                     .flex()
                     .flex_col()
                     .gap(px(20.))
-                    .child(label("REMOVE PASSWORD ENTRY"))
+                    .child(self.theme.label("REMOVE PASSWORD ENTRY"))
                     .child(
                         div()
                             .text_size(px(24.))
@@ -1313,7 +1312,7 @@ impl PassApp {
                         div()
                             .text_size(px(13.))
                             .line_height(px(21.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .child("This removes the encrypted entry from the current store. It does not erase copies in Git history or backups."),
                     )
                     .child(
@@ -1321,30 +1320,16 @@ impl PassApp {
                             .flex()
                             .justify_end()
                             .gap(px(10.))
-                            .child(button("cancel-delete", "Cancel", false).on_click(
+                            .child(self.theme.button("cancel-delete", "Cancel", false).on_click(
                                 cx.listener(|app, _, _, cx| {
                                     app.confirming_delete = None;
                                     cx.notify();
                                 }),
                             ))
                             .child(
-                                div()
-                                    .id("confirm-delete")
-                                    .h(px(40.))
-                                    .px(px(18.))
-                                    .border_1()
-                                    .border_color(rgb(ERROR))
-                                    .bg(rgb(ERROR))
-                                    .text_color(rgb(WHITE))
-                                    .text_size(px(12.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(rgb(0x80352d)))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .on_click(cx.listener(|app, _, _, cx| app.confirm_delete(cx)))
-                                    .child("Delete entry"),
+                                self.theme
+                                    .destructive_button("confirm-delete", "Delete entry")
+                                    .on_click(cx.listener(|app, _, _, cx| app.confirm_delete(cx))),
                             ),
                     ),
             )
@@ -1498,7 +1483,7 @@ impl PassApp {
                     .right_0()
                     .top(px(11.))
                     .h(px(3.))
-                    .bg(rgb(LINE)),
+                    .bg(rgb(self.theme.colors.border)),
             )
             .child(
                 div()
@@ -1507,7 +1492,7 @@ impl PassApp {
                     .top(px(11.))
                     .w(px(slider_left))
                     .h(px(3.))
-                    .bg(rgb(GREEN)),
+                    .bg(rgb(self.theme.colors.accent)),
             )
             .child(
                 div()
@@ -1516,8 +1501,8 @@ impl PassApp {
                     .top(px(5.))
                     .size(px(15.))
                     .border_1()
-                    .border_color(rgb(GREEN))
-                    .bg(rgb(WHITE)),
+                    .border_color(rgb(self.theme.colors.accent))
+                    .bg(rgb(self.theme.colors.surface)),
             )
             .child(
                 canvas(
@@ -1539,34 +1524,31 @@ impl PassApp {
                 div()
                     .flex()
                     .justify_between()
-                    .font_family(MONO)
+                    .font_family(self.theme.mono_font)
                     .text_size(px(9.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child("4 WORDS")
                     .child("8 WORDS"),
             );
 
-        let mut panel = div()
+        let mut panel = self.theme.panel()
             .w(px(640.))
             .max_w(px(640.))
             .p(px(36.))
-            .border_1()
-            .border_color(rgb(LINE))
-            .bg(rgb(WHITE))
             .flex()
             .flex_col()
             .gap(px(24.))
-            .child(label("ENTRY NAME"))
+            .child(self.theme.label("ENTRY NAME"))
             .child(self.generator_name_field(window, cx))
             .when(self.saving.is_some(), |panel| {
                 let status = self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()).unwrap();
-                panel.child(operation_status::panel(status))
+                panel.child(operation_status::panel(status, &self.theme))
             })
             .child(
                 div().flex().items_center().gap(px(8.))
-                    .child(button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
+                    .child(self.theme.button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
                         .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::PassDefault; cx.notify(); })))
-                    .child(button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
+                    .child(self.theme.button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
                         .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::Memorable; cx.notify(); })))
             )
             .when(self.generator_mode == GeneratorMode::Memorable, |panel| panel
@@ -1580,7 +1562,7 @@ impl PassApp {
                             .flex()
                             .flex_col()
                             .gap(px(8.))
-                            .child(label("PASSWORD GENERATOR"))
+                            .child(self.theme.label("PASSWORD GENERATOR"))
                             .child(
                                 div()
                                     .text_size(px(28.))
@@ -1594,7 +1576,7 @@ impl PassApp {
                     .max_w(px(500.))
                     .text_size(px(13.))
                     .line_height(px(21.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child("Choose the number of random whole words. More words make a stronger phrase; digits and punctuation add variety."),
             )
             .child(
@@ -1607,9 +1589,9 @@ impl PassApp {
                     .child(
                         div()
                             .min_w(px(126.))
-                            .font_family(MONO)
+                            .font_family(self.theme.mono_font)
                             .text_size(px(11.))
-                            .text_color(rgb(GREEN))
+                            .text_color(rgb(self.theme.colors.accent))
                             .child(format!("{} WORDS  ·  {:.0} BITS", options.words, options.entropy_bits())),
                     ),
             )
@@ -1625,7 +1607,7 @@ impl PassApp {
                             .items_center()
                             .gap(px(8.))
                             .text_size(px(12.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .cursor_pointer()
                             .on_click(cx.listener(|app, _, _, cx| {
                                 app.generation_digits = !app.generation_digits;
@@ -1641,7 +1623,7 @@ impl PassApp {
                             .items_center()
                             .gap(px(8.))
                             .text_size(px(12.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .cursor_pointer()
                             .on_click(cx.listener(|app, _, _, cx| {
                                 app.generation_separators = !app.generation_separators;
@@ -1658,7 +1640,7 @@ impl PassApp {
                     .max_w(px(500.))
                     .text_size(px(13.))
                     .line_height(px(21.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child("Random characters using pass’s default punctuation and letters. Respects PASSWORD_STORE_GENERATED_LENGTH and PASSWORD_STORE_CHARACTER_SET when set."),
             )
         });
@@ -1671,8 +1653,8 @@ impl PassApp {
             panel = panel.child(
                 div()
                     .border_1()
-                    .border_color(rgb(LINE))
-                    .bg(rgb(TINT))
+                    .border_color(rgb(self.theme.colors.border))
+                    .bg(rgb(self.theme.colors.accent_surface))
                     .p(px(18.))
                     .flex()
                     .items_center()
@@ -1684,7 +1666,7 @@ impl PassApp {
                             .min_w_0()
                             .overflow_x_scroll()
                             .whitespace_nowrap()
-                            .font_family(MONO)
+                            .font_family(self.theme.mono_font)
                             .text_size(px(16.))
                             .child(if self.generated_visible {
                                 secret.expose().to_owned()
@@ -1693,7 +1675,7 @@ impl PassApp {
                             }),
                     )
                     .child(
-                        button(
+                        self.theme.button(
                             "toggle-generated-visibility",
                             if self.generated_visible {
                                 "Hide"
@@ -1710,9 +1692,9 @@ impl PassApp {
                     .child(
                         div()
                             .flex_shrink_0()
-                            .font_family(MONO)
+                            .font_family(self.theme.mono_font)
                             .text_size(px(9.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .child(format!("HIDES IN {remaining:02}s")),
                     ),
             );
@@ -1722,7 +1704,7 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        button(
+                        self.theme.button(
                             "copy-generated",
                             if self.generator_mode == GeneratorMode::Memorable {
                                 "Copy phrase"
@@ -1741,7 +1723,7 @@ impl PassApp {
                             }
                         })),
                     )
-                    .child(div().text_size(px(11.)).text_color(rgb(MUTED)).child(
+                    .child(div().text_size(px(11.)).text_color(rgb(self.theme.colors.muted)).child(
                         if self.saved_entry_name.is_some() {
                             "Saved · copied to clipboard; clears in 30 seconds."
                         } else {
@@ -1754,13 +1736,13 @@ impl PassApp {
                 div()
                     .h(px(76.))
                     .border_1()
-                    .border_color(rgb(LINE))
-                    .bg(rgb(PAPER))
+                    .border_color(rgb(self.theme.colors.border))
+                    .bg(rgb(self.theme.colors.background))
                     .flex()
                     .items_center()
                     .justify_center()
                     .text_size(px(12.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child(if self.saving.is_some() {
                         "Encrypting and saving entry…"
                     } else {
@@ -1778,11 +1760,11 @@ impl PassApp {
                         .max_w(px(380.))
                         .text_size(px(11.))
                         .line_height(px(17.))
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(self.theme.colors.muted))
                         .child("Creates a new encrypted entry. Existing entries are never overwritten."),
                 )
                 .child(
-                    button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
+                    self.theme.button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
                         .on_click(cx.listener(|app, _, _, cx| app.save_generated(cx))),
                 ),
         );
@@ -1796,7 +1778,7 @@ impl PassApp {
             .bottom_0()
             .flex()
             .flex_col()
-            .bg(rgb(PAPER))
+            .bg(rgb(self.theme.colors.background))
             .child(
                 div()
                     .id("generator-titlebar")
@@ -1807,7 +1789,7 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .bg(rgb(INK))
+                    .bg(rgb(self.theme.colors.nav_background))
                     .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
                         if event.click_count == 2 {
                             window.toggle_fullscreen();
@@ -1838,26 +1820,26 @@ impl PassApp {
                                     .w(px(32.))
                                     .h(px(32.))
                                     .border_1()
-                                    .border_color(rgb(0x809287))
+                                    .border_color(rgb(self.theme.colors.nav_border))
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .font_family(MONO)
-                                    .text_color(rgb(0xe0edcb))
+                                    .font_family(self.theme.mono_font)
+                                    .text_color(rgb(self.theme.colors.nav_highlight))
                                     .child("/"),
                             )
                             .child(
                                 div()
                                     .text_size(px(20.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(WHITE))
+                                    .text_color(rgb(self.theme.colors.surface))
                                     .child("pass"),
                             )
                             .child(
                                 div()
                                     .ml(px(18.))
                                     .text_size(px(11.))
-                                    .text_color(rgb(0xc7d6be))
+                                    .text_color(rgb(self.theme.colors.nav_muted))
                                     .child("PASSWORD GENERATOR"),
                             ),
                     )
@@ -1866,14 +1848,14 @@ impl PassApp {
                             .id("close-generator")
                             .size(px(34.))
                             .border_1()
-                            .border_color(rgb(0x809287))
+                            .border_color(rgb(self.theme.colors.nav_border))
                             .flex()
                             .items_center()
                             .justify_center()
                             .text_size(px(22.))
-                            .text_color(rgb(WHITE))
+                            .text_color(rgb(self.theme.colors.surface))
                             .cursor_pointer()
-                            .hover(|style| style.bg(rgb(0x39433e)))
+                            .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
                             .on_mouse_down(
                                 gpui::MouseButton::Left,
                                 cx.listener(|app, _, _, cx| {
@@ -2061,12 +2043,12 @@ impl PassApp {
             .h(px(76.))
             .overflow_hidden()
             .border_b_1()
-            .border_color(rgb(LINE))
+            .border_color(rgb(self.theme.colors.border))
             .border_l_2()
-            .border_color(rgb(if active { GREEN } else { LINE }))
-            .bg(rgb(if active { TINT } else { PAPER }))
+            .border_color(rgb(if active { self.theme.colors.accent } else { self.theme.colors.border }))
+            .bg(rgb(if active { self.theme.colors.accent_surface } else { self.theme.colors.background }))
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(0xebeee6)))
+            .hover(|style| style.bg(rgb(self.theme.colors.hover)))
             .on_click(cx.listener(move |app, _, window, cx| {
                 app.focus.focus(window);
                 app.choose(index, cx);
@@ -2093,7 +2075,7 @@ impl PassApp {
                     .w_full()
                     .truncate()
                     .text_size(px(11.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child(if entry.folder().is_empty() {
                         "Root".to_owned()
                     } else {
@@ -2111,8 +2093,8 @@ impl PassApp {
             .flex()
             .flex_col()
             .border_r_1()
-            .border_color(rgb(LINE))
-            .bg(rgb(PAPER))
+            .border_color(rgb(self.theme.colors.border))
+            .bg(rgb(self.theme.colors.background))
             .child(
                 div()
                     .px(px(22.))
@@ -2121,12 +2103,12 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(label("YOUR ENTRIES"))
+                    .child(self.theme.label("YOUR ENTRIES"))
                     .child(
                         div()
-                            .font_family(MONO)
+                            .font_family(self.theme.mono_font)
                             .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .child(format!("{:02}", self.filtered.len())),
                     ),
             )
@@ -2162,7 +2144,7 @@ impl PassApp {
                             div()
                                 .p(px(24.))
                                 .text_size(px(13.))
-                                .text_color(rgb(MUTED))
+                                .text_color(rgb(self.theme.colors.muted))
                                 .child(if self.load.is_some() {
                                     "Reading entry names…"
                                 } else if self.query.is_empty() {
@@ -2177,11 +2159,11 @@ impl PassApp {
                 div()
                     .p(px(22.))
                     .border_t_1()
-                    .border_color(rgb(LINE))
+                    .border_color(rgb(self.theme.colors.border))
                     .flex()
                     .flex_col()
                     .gap(px(8.))
-                    .child(label(if self.demo {
+                    .child(self.theme.label(if self.demo {
                         "DEMO STORE"
                     } else {
                         "CURRENT STORE"
@@ -2189,8 +2171,8 @@ impl PassApp {
                     .child(
                         div()
                             .text_size(px(11.))
-                            .font_family(MONO)
-                            .text_color(rgb(MUTED))
+                            .font_family(self.theme.mono_font)
+                            .text_color(rgb(self.theme.colors.muted))
                             .overflow_hidden()
                             .child(self.path_label()),
                     )
@@ -2199,7 +2181,7 @@ impl PassApp {
                             .id("open-store")
                             .mt(px(8.))
                             .text_size(px(12.))
-                            .text_color(rgb(GREEN))
+                            .text_color(rgb(self.theme.colors.accent))
                             .cursor_pointer()
                             .on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx)))
                             .child("Open another store  ↗"),
@@ -2238,7 +2220,7 @@ impl PassApp {
             .flex()
             .flex_col()
             .gap(px(26.))
-            .bg(rgb(WHITE))
+            .bg(rgb(self.theme.colors.surface))
             .child(
                 div()
                     .flex()
@@ -2262,16 +2244,16 @@ impl PassApp {
                             .items_center()
                             .gap(px(12.))
                             .when(is_yubikey, |actions| actions.child(
-                                button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify Device" }, true)
+                                self.theme.button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify Device" }, true)
                                     .on_click(cx.listener(|app, _, _, cx| app.verify_device(cx))),
                             ))
                             .when(self.device_verification.running(), |actions| actions.child(
-                                button("cancel-verification", "Cancel", false).on_click(cx.listener(|app, _, _, cx| {
+                                self.theme.button("cancel-verification", "Cancel", false).on_click(cx.listener(|app, _, _, cx| {
                                     app.device_verification.cancel();
                                     cx.notify();
                                 })),
                             ))
-                            .child(button("yubikey-back", "Back to entries", false).on_click(
+                            .child(self.theme.button("yubikey-back", "Back to entries", false).on_click(
                                 cx.listener(|app, _, _, cx| {
                                     app.device_verification.cancel();
                                     app.navigation.go_to(Page::Entries);
@@ -2286,7 +2268,7 @@ impl PassApp {
             page = page.child(
                 div()
                     .text_size(px(12.))
-                    .text_color(rgb(if verification == VerificationState::Verified { GREEN } else { MUTED }))
+                    .text_color(rgb(if verification == VerificationState::Verified { self.theme.colors.accent } else { self.theme.colors.muted }))
                     .child(verification.message()),
             );
         }
@@ -2299,53 +2281,53 @@ impl PassApp {
         let mut has_details = false;
         if let Some(usb) = &self.usb_reader_details {
             rows = rows
-                .child(yubi_info_row(
+                .child(yubi_info_row(&self.theme,
                     "USB device",
                     format!("{} · {:04x}:{:04x}", usb.product, usb.vendor_id, usb.product_id),
                 ))
-                .child(yubi_info_row("USB location", usb.location.clone()));
+                .child(yubi_info_row(&self.theme, "USB location", usb.location.clone()));
             has_details = true;
         }
         if let Some(info) = &self.yubikey_info {
             if let Some(device_type) = &info.device_type {
-                rows = rows.child(yubi_info_row("Device", device_type.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Device", device_type.clone()));
                 has_details = true;
             }
             if let Some(form_factor) = &info.form_factor {
-                rows = rows.child(yubi_info_row("Form factor", form_factor.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Form factor", form_factor.clone()));
                 has_details = true;
             }
             if let Some(firmware_version) = &info.firmware_version {
-                rows = rows.child(yubi_info_row("Firmware", firmware_version.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Firmware", firmware_version.clone()));
                 has_details = true;
             }
         }
         if let Some(details) = &self.yubikey_details {
-            rows = rows.child(yubi_info_row("Application", details.application.clone()));
+            rows = rows.child(yubi_info_row(&self.theme, "Application", details.application.clone()));
             has_details = true;
             if let Some(reader) = &details.reader {
-                rows = rows.child(yubi_info_row("Reader", reader.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Reader", reader.clone()));
             }
             if let Some(version) = &details.version {
-                rows = rows.child(yubi_info_row("Card version", version.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Card version", version.clone()));
             }
             if let Some(manufacturer) = &details.manufacturer {
-                rows = rows.child(yubi_info_row("Manufacturer", manufacturer.clone()));
+                rows = rows.child(yubi_info_row(&self.theme, "Manufacturer", manufacturer.clone()));
             }
             if !details.key_attributes.is_empty() {
-                rows = rows.child(yubi_info_row(
+                rows = rows.child(yubi_info_row(&self.theme,
                     "Key algorithms",
                     details.key_attributes.join(" · "),
                 ));
             }
             if let Some(retries) = details.pin_retries {
-                rows = rows.child(yubi_info_row(
+                rows = rows.child(yubi_info_row(&self.theme,
                     "PIN retries",
                     format!("{} · {} · {}", retries[0], retries[1], retries[2]),
                 ));
             }
             if let Some(count) = details.signature_count {
-                rows = rows.child(yubi_info_row("Signature count", count.to_string()));
+                rows = rows.child(yubi_info_row(&self.theme, "Signature count", count.to_string()));
             }
         }
         if has_details {
@@ -2354,7 +2336,7 @@ impl PassApp {
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(label("CARD DETAILS"))
+                    .child(self.theme.label("CARD DETAILS"))
                     .child(rows),
             );
         }
@@ -2365,7 +2347,7 @@ impl PassApp {
                 div()
                     .max_w(px(760.))
                     .text_size(px(12.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child(if self.yubikey_check.is_some()
                         || self.card_detail_retry_at.is_some()
                     {
@@ -2381,7 +2363,7 @@ impl PassApp {
                 div()
                     .max_w(px(760.))
                     .text_size(px(11.))
-                    .text_color(rgb(MUTED))
+                    .text_color(rgb(self.theme.colors.muted))
                     .child(format!(
                         "Recent activity: {} · {}",
                         card_event_title(record.observation.event),
@@ -2419,7 +2401,7 @@ impl PassApp {
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgb(WHITE));
+            .bg(rgb(self.theme.colors.surface));
         if let Some(entry) = entry {
             let folder = if entry.folder().is_empty() {
                 "Root"
@@ -2435,7 +2417,7 @@ impl PassApp {
                         .flex()
                         .flex_col()
                         .gap(px(17.))
-                        .child(label(format!("STORE   /   {}", folder.to_uppercase())))
+                        .child(self.theme.label(format!("STORE   /   {}", folder.to_uppercase())))
                         .child(
                             div()
                                 .flex()
@@ -2451,19 +2433,19 @@ impl PassApp {
                                 .child(
                                     div()
                                         .border_1()
-                                        .border_color(rgb(LINE))
+                                        .border_color(rgb(self.theme.colors.border))
                                         .px(px(10.))
                                         .py(px(6.))
-                                        .font_family(MONO)
+                                        .font_family(self.theme.mono_font)
                                         .text_size(px(10.))
-                                        .text_color(rgb(MUTED))
+                                        .text_color(rgb(self.theme.colors.muted))
                                         .child(".gpg"),
                                 ),
                         )
                         .child(
                             div()
                                 .text_size(px(12.))
-                                .text_color(rgb(MUTED))
+                                .text_color(rgb(self.theme.colors.muted))
                                 .child(entry.name().to_owned()),
                         ),
                 )
@@ -2474,17 +2456,17 @@ impl PassApp {
                         .flex()
                         .items_center()
                         .border_b_1()
-                        .border_color(rgb(LINE))
+                        .border_color(rgb(self.theme.colors.border))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap(px(7.))
-                                .child(div().size(px(5.)).bg(rgb(GREEN)))
+                                .child(div().size(px(5.)).bg(rgb(self.theme.colors.accent)))
                                 .child(
                                     div()
                                         .text_size(px(11.))
-                                        .text_color(rgb(MUTED))
+                                        .text_color(rgb(self.theme.colors.muted))
                                         .child("Encrypted on disk"),
                                 ),
                         )
@@ -2504,12 +2486,12 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(label("PASSWORD"))
+                    .child(self.theme.label("PASSWORD"))
                     .child(
                         div()
-                            .font_family(MONO)
+                            .font_family(self.theme.mono_font)
                             .text_size(px(10.))
-                            .text_color(rgb(if revealed.is_some() { GREEN } else { MUTED }))
+                            .text_color(rgb(if revealed.is_some() { self.theme.colors.accent } else { self.theme.colors.muted }))
                             .child(if revealed.is_some() {
                                 format!("HIDES IN {:02}s", self.seconds)
                             } else if pending {
@@ -2519,11 +2501,8 @@ impl PassApp {
                             }),
                     ),
             );
-            let mut password = div()
-                .border_1()
-                .border_color(rgb(LINE))
-                .bg(rgb(PAPER))
-                .p(px(22.))
+            let mut password = self.theme.panel()
+                .bg(rgb(self.theme.colors.background))
                 .w_full()
                 .min_w_0()
                 .min_h(px(84.));
@@ -2534,7 +2513,7 @@ impl PassApp {
                 password = password.child(
                     div()
                         .id("password-text")
-                        .font_family(MONO)
+                        .font_family(self.theme.mono_font)
                         .text_size(px(18.))
                         .line_height(px(26.))
                         .child(text.chars().take(16_384).collect::<String>()),
@@ -2548,14 +2527,14 @@ impl PassApp {
                         .child(
                             div()
                                 .text_size(px(24.))
-                                .text_color(rgb(0x8c968b))
+                                .text_color(rgb(self.theme.colors.placeholder))
                                 .child("••••••••••••"),
                         )
                         .child(
                             div()
-                                .font_family(MONO)
+                                .font_family(self.theme.mono_font)
                                 .text_size(px(10.))
-                                .text_color(rgb(MUTED))
+                                .text_color(rgb(self.theme.colors.muted))
                                 .child("CONCEALED"),
                         ),
                 );
@@ -2566,7 +2545,7 @@ impl PassApp {
                 .items_center()
                 .gap(px(18.))
                 .child(
-                    button(
+                    self.theme.button(
                         "reveal",
                         if pending {
                             "Cancel reveal"
@@ -2586,23 +2565,23 @@ impl PassApp {
                     })),
                 )
                 .when(self.editing_entry, |controls| controls
-                    .child(button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
+                    .child(self.theme.button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
                         .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx))))
-                    .child(button("cancel-entry-edit", "Cancel", false)
+                    .child(self.theme.button("cancel-entry-edit", "Cancel", false)
                         .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx)))))
                 .when(!self.editing_entry, |controls| controls
-                    .child(button("edit-entry", "Edit entry", true)
+                    .child(self.theme.button("edit-entry", "Edit entry", true)
                         .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx))))
-                    .child(button("copy-password", if self.copy_pending.is_some() { "Copying…" } else { "Copy entry" }, false)
+                    .child(self.theme.button("copy-password", if self.copy_pending.is_some() { "Copying…" } else { "Copy entry" }, false)
                         .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))))
                     .child(
-                        danger_button("delete-entry", "Delete")
+                        self.theme.danger_button("delete-entry", "Delete")
                             .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
                     ))
                 .child(
                     div()
                         .text_size(px(11.))
-                        .text_color(rgb(MUTED))
+                        .text_color(rgb(self.theme.colors.muted))
                         .child(if pending {
                             "Esc to cancel"
                         } else {
@@ -2617,7 +2596,7 @@ impl PassApp {
                     .as_ref()
                     .map(|(_, progress, _)| progress.snapshot())
             }) {
-                body = body.child(operation_status::panel(status));
+                body = body.child(operation_status::panel(status, &self.theme));
             }
 
             if let Some(secret) = revealed {
@@ -2625,24 +2604,24 @@ impl PassApp {
                     body = body.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(MUTED))
+                            .text_color(rgb(self.theme.colors.muted))
                             .child("Long content is truncated in this preview."),
                     );
                 }
             } else if !pending {
-                body = body.child(div().mt(px(16.)).pt(px(24.)).border_t_1().border_color(rgb(LINE)).flex().flex_col().gap(px(10.))
-                    .child(label("ONLY WHEN YOU NEED IT"))
-                    .child(div().max_w(px(385.)).text_size(px(13.)).line_height(px(23.)).text_color(rgb(MUTED))
+                body = body.child(div().mt(px(16.)).pt(px(24.)).border_t_1().border_color(rgb(self.theme.colors.border)).flex().flex_col().gap(px(10.))
+                    .child(self.theme.label("ONLY WHEN YOU NEED IT"))
+                    .child(div().max_w(px(385.)).text_size(px(13.)).line_height(px(23.)).text_color(rgb(self.theme.colors.muted))
                         .child("Reveal this entry for 30 seconds. It hides when you leave the window or choose another entry.")));
             }
             detail = detail.child(body);
         } else {
             detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
-                .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(GREEN)).child("[ / ]"))
+                .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.theme.colors.accent)).child("[ / ]"))
                 .child(div().text_size(px(30.)).child(if self.load.is_some() { "Opening your store." } else if !self.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
-                .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(MUTED))
+                .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.theme.colors.muted))
                     .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                .child(button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
+                .child(self.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
 );
         }
         detail
@@ -2651,17 +2630,17 @@ impl PassApp {
                     .px(px(46.))
                     .py(px(20.))
                     .border_t_1()
-                    .border_color(rgb(LINE))
+                    .border_color(rgb(self.theme.colors.border))
                     .flex()
                     .justify_between()
                     .child(if let Some(message) = &self.message {
                         div()
                             .max_w(px(560.))
                             .text_size(px(11.))
-                            .text_color(rgb(ERROR))
+                            .text_color(rgb(self.theme.colors.danger))
                             .child(message.clone())
                     } else {
-                        label(if self.demo {
+                        self.theme.label(if self.demo {
                             "FICTIONAL DATA"
                         } else {
                             "LOCAL STORE"
@@ -2689,8 +2668,8 @@ impl Render for PassApp {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(PAPER))
-            .text_color(rgb(INK))
+            .bg(rgb(self.theme.colors.background))
+            .text_color(rgb(self.theme.colors.ink))
             .font_family("DejaVu Sans")
             .text_size(px(14.))
             .key_context("Pass")
@@ -2790,7 +2769,7 @@ impl Render for PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .bg(rgb(INK))
+                    .bg(rgb(self.theme.colors.nav_background))
                     .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
                         if event.click_count == 2 {
                             window.toggle_fullscreen();
@@ -2818,20 +2797,20 @@ impl Render for PassApp {
                                     .w(px(32.))
                                     .h(px(32.))
                                     .border_1()
-                                    .border_color(rgb(0x809287))
+                                    .border_color(rgb(self.theme.colors.nav_border))
                                     .flex()
                                     .items_center()
                                     .justify_center()
                                     .text_size(px(16.))
-                                    .text_color(rgb(0xe0edcb))
-                                    .font_family(MONO)
+                                    .text_color(rgb(self.theme.colors.nav_highlight))
+                                    .font_family(self.theme.mono_font)
                                     .child("/"),
                             )
                             .child(
                                 div()
                                     .text_size(px(22.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(WHITE))
+                                    .text_color(rgb(self.theme.colors.surface))
                                     .child("pass"),
                             ),
                     )
@@ -2843,15 +2822,15 @@ impl Render for PassApp {
                             .child(
                                 div()
                                     .text_size(px(10.))
-                                    .font_family(MONO)
-                                    .text_color(rgb(0xc7d6be))
+                                    .font_family(self.theme.mono_font)
+                                    .text_color(rgb(self.theme.colors.nav_muted))
                                     .child(if self.demo { "DEMO / 01" } else { "LOCAL / 01" }),
                             )
                             .child(
                                 div()
                                     .id("open-generator")
                                     .text_size(px(12.))
-                                    .text_color(rgb(WHITE))
+                                    .text_color(rgb(self.theme.colors.surface))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
@@ -2866,7 +2845,7 @@ impl Render for PassApp {
                                     div()
                                     .id("open-yubikey-status")
                                     .text_size(px(12.))
-                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { 0xd7ebbb } else { WHITE }))
+                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { self.theme.colors.nav_selected } else { self.theme.colors.surface }))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
@@ -2882,7 +2861,7 @@ impl Render for PassApp {
                                 div()
                                     .id("refresh")
                                     .text_size(px(12.))
-                                    .text_color(rgb(WHITE))
+                                    .text_color(rgb(self.theme.colors.surface))
                                     .cursor_pointer()
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
@@ -2902,9 +2881,9 @@ impl Render for PassApp {
                     .items_center()
                     .justify_between()
                     .border_t_1()
-                    .border_color(rgb(LINE))
+                    .border_color(rgb(self.theme.colors.border))
                     .child(
-                        div().text_size(px(10.)).text_color(rgb(MUTED)).child(
+                        div().text_size(px(10.)).text_color(rgb(self.theme.colors.muted)).child(
                             "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl G  Generate     Esc  Hide",
                         ),
                     ),
@@ -3569,14 +3548,14 @@ fn card_event_title(event: CardEvent) -> &'static str {
     }
 }
 
-fn yubi_info_row(title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
+fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
     let detail: SharedString = detail.into();
     div()
         .flex()
         .items_start()
         .gap(px(18.))
         .border_b_1()
-        .border_color(rgb(LINE))
+        .border_color(rgb(theme.colors.border))
         .py(px(13.))
         .child(
             div()
@@ -3591,7 +3570,7 @@ fn yubi_info_row(title: &'static str, detail: impl Into<SharedString>) -> gpui::
                 .max_w(px(560.))
                 .text_size(px(12.))
                 .line_height(px(19.))
-                .text_color(rgb(MUTED))
+                .text_color(rgb(theme.colors.muted))
                 .child(detail),
         )
 }
