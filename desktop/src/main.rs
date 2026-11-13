@@ -19,9 +19,10 @@ mod theme;
 
 use gpui::{
     App, Application, Bounds, ClipboardItem, Context, CursorStyle, Div, FocusHandle, FontWeight,
+    Image, ImageFormat,
     KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription, TitlebarOptions,
     UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas, div, prelude::*,
-    px, rgb, size, uniform_list,
+    img, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
     Cancellation, CardEvent, CardObservation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
@@ -33,11 +34,48 @@ use std::{
     ops::Range,
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, Mutex, mpsc::{self, Receiver}},
+    sync::{Arc, LazyLock, Mutex, mpsc::{self, Receiver}},
     time::{Duration, Instant},
 };
 use theme::Theme;
 use zeroize::{Zeroize, Zeroizing};
+
+static YUBIKEY_5_NFC_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5-nfc.webp")).to_vec(),
+    ))
+});
+static YUBIKEY_5C_NFC_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c-nfc.webp")).to_vec(),
+    ))
+});
+static YUBIKEY_5C_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c.webp")).to_vec(),
+    ))
+});
+static YUBIKEY_5_NANO_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5-nano.webp")).to_vec(),
+    ))
+});
+static YUBIKEY_5C_NANO_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c-nano.webp")).to_vec(),
+    ))
+});
+static YUBIKEY_5CI_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
+    Arc::new(Image::from_bytes(
+        ImageFormat::Webp,
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5ci.webp")).to_vec(),
+    ))
+});
 
 actions!(
     pass,
@@ -2306,6 +2344,62 @@ impl PassApp {
                     ),
             );
 
+        if let Some(info) = &self.yubikey_info
+            && let (Some(device_type), Some(image)) = (
+                info.device_type.as_deref(),
+                yubikey_product_image(info.device_type.as_deref()),
+            )
+        {
+            let firmware = info
+                .firmware_version
+                .as_deref()
+                .map(|version| format!("Firmware {version}"))
+                .unwrap_or_else(|| "Connected to this computer".to_owned());
+            page = page.child(
+                div()
+                    .w_full()
+                    .max_w(px(760.))
+                    .p(px(20.))
+                    .border_1()
+                    .border_color(rgb(self.theme.colors.border))
+                    .rounded(px(self.theme.radii.panel))
+                    .bg(rgb(self.theme.colors.background))
+                    .flex()
+                    .items_center()
+                    .gap(px(28.))
+                    .child(
+                        div()
+                            .size(px(190.))
+                            .rounded(px(10.))
+                            .bg(rgb(0xf2f0eb))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(img(image).size(px(176.))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(10.))
+                            .child(self.theme.label("CONNECTED DEVICE"))
+                            .child(
+                                div()
+                                    .text_size(px(24.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(rgb(self.theme.colors.ink))
+                                    .child(device_type.to_owned()),
+                            )
+                            .child(
+                                div()
+                                    .text_size(px(12.))
+                                    .text_color(rgb(self.theme.colors.muted))
+                                    .child(firmware),
+                            ),
+                    ),
+            );
+        }
+
         let verification = self.device_verification.state();
         if verification != VerificationState::Idle {
             page = page.child(
@@ -3186,6 +3280,21 @@ struct YubiKeyInfo {
     device_type: Option<String>,
     firmware_version: Option<String>,
     form_factor: Option<String>,
+}
+
+fn yubikey_product_image(device_type: Option<&str>) -> Option<Arc<Image>> {
+    let device_type = device_type?.trim();
+    [
+        ("YubiKey 5Ci", &*YUBIKEY_5CI_IMAGE),
+        ("YubiKey 5C Nano", &*YUBIKEY_5C_NANO_IMAGE),
+        ("YubiKey 5 Nano", &*YUBIKEY_5_NANO_IMAGE),
+        ("YubiKey 5C NFC", &*YUBIKEY_5C_NFC_IMAGE),
+        ("YubiKey 5 NFC", &*YUBIKEY_5_NFC_IMAGE),
+        ("YubiKey 5C", &*YUBIKEY_5C_IMAGE),
+    ]
+    .into_iter()
+    .find(|(model, _)| device_type.eq_ignore_ascii_case(model))
+    .map(|(_, image)| Arc::clone(image))
 }
 
 #[derive(Clone)]
