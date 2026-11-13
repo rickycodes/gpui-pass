@@ -1571,12 +1571,19 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(self.theme.label("ENTRY NAME"))
+                    .child(
+                        div()
+                            .text_size(px(22.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .text_color(rgb(self.theme.colors.ink))
+                            .child("Password generator"),
+                    )
                     .child(
                         self.theme.button("close-generator", "← Back", false)
                             .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
                     ),
             )
+            .child(self.theme.label("ENTRY NAME"))
             .child(self.generator_name_field(window, cx))
             .when(self.saving.is_some(), |panel| {
                 let status = self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()).unwrap();
@@ -1853,14 +1860,7 @@ impl PassApp {
                                 app.search_focus.focus(window);
                                 cx.notify();
                             }))
-                            .child(self.brand_logotype())
-                            .child(
-                                div()
-                                    .ml(px(18.))
-                                    .text_size(px(11.))
-                                    .text_color(rgb(self.theme.colors.nav_muted))
-                                    .child("PASSWORD GENERATOR"),
-                            ),
+                            .child(self.brand_logotype()),
                     )
                     .child(
                         div()
