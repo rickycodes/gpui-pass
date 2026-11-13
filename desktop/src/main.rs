@@ -1538,7 +1538,17 @@ impl PassApp {
             .flex()
             .flex_col()
             .gap(px(24.))
-            .child(self.theme.label("ENTRY NAME"))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(self.theme.label("ENTRY NAME"))
+                    .child(
+                        self.theme.button("close-generator", "← Back", false)
+                            .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
+                    ),
+            )
             .child(self.generator_name_field(window, cx))
             .when(self.saving.is_some(), |panel| {
                 let status = self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()).unwrap();
@@ -1849,29 +1859,6 @@ impl PassApp {
                             .flex()
                             .items_center()
                             .gap(px(9.))
-                            .child(
-                                div()
-                                    .id("close-generator")
-                                    .h(px(30.))
-                                    .px(px(10.))
-                                    .border_1()
-                                    .border_color(rgb(self.theme.colors.nav_border))
-                                    .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .text_size(px(11.))
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .cursor_pointer()
-                                    .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
-                                    .on_mouse_down(
-                                        gpui::MouseButton::Left,
-                                        cx.listener(|app, _, _, cx| {
-                                            cx.stop_propagation();
-                                            app.close_generator(cx);
-                                        }),
-                                    )
-                                    .child("Done"),
-                            )
                             .child(
                                 div()
                                     .id("generator-minimize-window")
