@@ -16,7 +16,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 3. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
 4. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.
 5. **Add a copy shortcut.** Provide a keyboard shortcut for copying the selected entry without revealing it.
-6. **Add backup and export flows.** Keep encrypted backups distinct from plaintext exports. Make destinations and overwrite behavior clear, and protect plaintext export files with restrictive permissions.
+6. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
 7. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
 
 ## Later
