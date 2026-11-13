@@ -1785,7 +1785,7 @@ impl PassApp {
                     .w_full()
                     .h(px(48.))
                     .flex_shrink_0()
-                    .px(px(26.))
+                    .px(px(9.))
                     .flex()
                     .items_center()
                     .justify_between()
@@ -1801,6 +1801,7 @@ impl PassApp {
                     .child(
                         div()
                             .id("generator-home-logo")
+                            .ml(px(17.))
                             .flex()
                             .items_center()
                             .gap(px(14.))
@@ -1845,25 +1846,72 @@ impl PassApp {
                     )
                     .child(
                         div()
-                            .id("close-generator")
-                            .size(px(34.))
-                            .border_1()
-                            .border_color(rgb(self.theme.colors.nav_border))
                             .flex()
                             .items_center()
-                            .justify_center()
-                            .text_size(px(22.))
-                            .text_color(rgb(self.theme.colors.nav_foreground))
-                            .cursor_pointer()
-                            .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
-                            .on_mouse_down(
-                                gpui::MouseButton::Left,
-                                cx.listener(|app, _, _, cx| {
-                                    cx.stop_propagation();
-                                    app.close_generator(cx);
-                                }),
+                            .gap(px(9.))
+                            .child(
+                                div()
+                                    .id("close-generator")
+                                    .h(px(30.))
+                                    .px(px(10.))
+                                    .border_1()
+                                    .border_color(rgb(self.theme.colors.nav_border))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(11.))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(|app, _, _, cx| {
+                                            cx.stop_propagation();
+                                            app.close_generator(cx);
+                                        }),
+                                    )
+                                    .child("Done"),
                             )
-                            .child("×"),
+                            .child(
+                                div()
+                                    .id("generator-minimize-window")
+                                    .size(px(30.))
+                                    .border_1()
+                                    .border_color(rgb(self.theme.colors.nav_border))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(17.))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                                    )
+                                    .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
+                                    .child("−"),
+                            )
+                            .child(
+                                div()
+                                    .id("generator-close-window")
+                                    .size(px(30.))
+                                    .border_1()
+                                    .border_color(rgb(self.theme.colors.nav_border))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(20.))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
+                                    .cursor_pointer()
+                                    .hover(|style| style.bg(rgb(self.theme.colors.danger_hover)))
+                                    .on_mouse_down(
+                                        gpui::MouseButton::Left,
+                                        cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                                    )
+                                    .on_click(cx.listener(|_, _, _, cx| cx.quit()))
+                                    .child("×"),
+                            ),
                     ),
             )
             .child(
@@ -2765,7 +2813,7 @@ impl Render for PassApp {
                     .w_full()
                     .h(px(48.))
                     .flex_shrink_0()
-                    .px(px(26.))
+                    .px(px(9.))
                     .flex()
                     .items_center()
                     .justify_between()
@@ -2784,6 +2832,7 @@ impl Render for PassApp {
                             .items_center()
                             .gap(px(14.))
                             .id("home-logo")
+                            .ml(px(17.))
                             .cursor_pointer()
                             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                             .on_click(cx.listener(|app, _, window, cx| {
@@ -2868,6 +2917,52 @@ impl Render for PassApp {
                                     })
                                     .on_click(cx.listener(|app, _, _, cx| app.refresh(cx)))
                                     .child("↻  Refresh"),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(9.))
+                                    .child(
+                                        div()
+                                            .id("minimize-window")
+                                            .size(px(30.))
+                                            .border_1()
+                                            .border_color(rgb(self.theme.colors.nav_border))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_size(px(17.))
+                                            .text_color(rgb(self.theme.colors.nav_foreground))
+                                            .cursor_pointer()
+                                            .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
+                                            .on_mouse_down(
+                                                gpui::MouseButton::Left,
+                                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                                            )
+                                            .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
+                                            .child("−"),
+                                    )
+                                    .child(
+                                        div()
+                                            .id("close-window")
+                                            .size(px(30.))
+                                            .border_1()
+                                            .border_color(rgb(self.theme.colors.nav_border))
+                                            .flex()
+                                            .items_center()
+                                            .justify_center()
+                                            .text_size(px(20.))
+                                            .text_color(rgb(self.theme.colors.nav_foreground))
+                                            .cursor_pointer()
+                                            .hover(|style| style.bg(rgb(self.theme.colors.danger_hover)))
+                                            .on_mouse_down(
+                                                gpui::MouseButton::Left,
+                                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                                            )
+                                            .on_click(cx.listener(|_, _, _, cx| cx.quit()))
+                                            .child("×"),
+                                    ),
                             ),
                     ),
             )
