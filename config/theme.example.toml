@@ -1,0 +1,37 @@
+# Copy to $XDG_CONFIG_HOME/gpui-pass/theme.toml
+# (or ~/.config/gpui-pass/theme.toml when XDG_CONFIG_HOME is unset).
+# Any omitted values keep the built-in defaults.
+
+[colors]
+background = "#20242b"
+surface = "#292f38"
+ink = "#e5e9f0"
+muted = "#a8b0bd"
+border = "#424a57"
+accent = "#82c7a5"
+accent_hover = "#6bb58f"
+accent_surface = "#34463e"
+danger = "#f08080"
+danger_border = "#7c4147"
+danger_surface = "#452e34"
+danger_surface_hover = "#56363d"
+danger_hover = "#c65f68"
+hover = "#363d48"
+placeholder = "#858f9e"
+nav_background = "#181c22"
+nav_border = "#424a57"
+nav_highlight = "#3a4a40"
+nav_muted = "#b8c4bb"
+nav_selected = "#d6e8d9"
+nav_hover = "#303640"
+selection = "#334c88a0"
+
+[spacing]
+control_height = 42.0
+control_horizontal = 20.0
+panel_padding = 24.0
+
+[radii]
+control = 6.0
+panel = 10.0
+field = 6.0

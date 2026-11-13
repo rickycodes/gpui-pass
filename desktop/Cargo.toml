@@ -12,6 +12,8 @@ publish = false
 gpui = "=0.2.2"
 gpui-pass-core = { path = ".." }
 zeroize = "=1.8.2"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [patch.crates-io]
 # GPUI's zed-async-tar still requires xattr 0.2; adapt its Linux errno to current libc.

@@ -287,7 +287,7 @@ impl PassApp {
         });
         search_focus.focus(window);
         let mut app = Self {
-            theme: Theme::default(),
+            theme: Theme::load_user(),
             session: Session::default(),
             entries: Vec::new(),
             filtered: Vec::new(),

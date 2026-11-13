@@ -25,6 +25,10 @@ Copying an existing entry decrypts it in the background and copies its complete 
 
 ## Linux build and run
 
+### Theme configuration
+
+The app loads an optional TOML theme at `$XDG_CONFIG_HOME/gpui-pass/theme.toml`, or `~/.config/gpui-pass/theme.toml` when `XDG_CONFIG_HOME` is unset. Missing values inherit the built-in theme. Invalid or unknown values cause the file to be ignored and the built-in theme to be used. Copy [config/theme.example.toml](config/theme.example.toml) as a starting point. Colors use `#RRGGBB`; the translucent `selection` color uses `#RRGGBBAA`. Spacing and radius values are in GPUI logical pixels and are range checked. Changes apply after restarting the app.
+
 Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan graphics support. Configure graphical pinentry through your normal `gpg-agent` setup. Running the client does not require the `pass` CLI.
 
 The desktop is a separate Cargo package so security tests do not depend on GPUI:
