@@ -264,6 +264,7 @@ pub(crate) struct PassApp {
     generated_visible: bool,
     copied_password: Option<Zeroizing<String>>,
     pass_clipboard: Option<(Zeroizing<String>, Option<ClipboardItem>, Instant)>,
+    clipboard_seconds: Option<u64>,
     generation_words: usize,
     generator_mode: GeneratorMode,
     generation_digits: bool,
@@ -355,6 +356,7 @@ impl PassApp {
             generated_visible: false,
             copied_password: None,
             pass_clipboard: None,
+            clipboard_seconds: None,
             generation_words: 6,
             generator_mode: GeneratorMode::PassDefault,
             generation_digits: true,
@@ -559,6 +561,16 @@ impl PassApp {
         }
         if self.pass_clipboard.as_ref().is_some_and(|(_, _, deadline)| Instant::now() >= *deadline) {
             self.restore_pass_clipboard(cx);
+            cx.notify();
+        }
+        let clipboard_seconds = self.pass_clipboard.as_ref().map(|(_, _, deadline)| {
+            deadline
+                .saturating_duration_since(Instant::now())
+                .as_secs()
+                .saturating_add(1)
+        });
+        if self.clipboard_seconds != clipboard_seconds {
+            self.clipboard_seconds = clipboard_seconds;
             cx.notify();
         }
         if self.session.expire(Instant::now()) {
@@ -2801,6 +2813,53 @@ impl Render for PassApp {
                 .child(self.details(window, cx))
                 .into_any_element()
         };
+        let footer = if let Some((_, _, deadline)) = &self.pass_clipboard {
+            let seconds = deadline.saturating_duration_since(Instant::now()).as_secs().saturating_add(1);
+            let entry_name = self.session.selected().map(|entry| entry.name()).unwrap_or("entry");
+            div()
+                .h(px(38.))
+                .flex_shrink_0()
+                .px(px(24.))
+                .flex()
+                .items_center()
+                .justify_between()
+                .border_t_1()
+                .border_color(rgb(self.theme.colors.border))
+                .bg(rgb(self.theme.colors.surface))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(10.))
+                        .text_size(px(11.))
+                        .text_color(rgb(self.theme.colors.ink))
+                        .child(format!("Copied {entry_name}"))
+                        .child(div().text_color(rgb(self.theme.colors.muted)).child(format!("Clipboard restores in {seconds}s"))),
+                )
+                .child(
+                    self.theme.button("restore-clipboard-now", "Restore now", false)
+                        .h(px(28.))
+                        .on_click(cx.listener(|app, _, _, cx| app.restore_pass_clipboard(cx))),
+                )
+        } else if self.device_verification.running() {
+            notification_bar(&self.theme, "Waiting for YubiKey touch…")
+        } else if let Some(status) = self.last_operation_status {
+            notification_bar(&self.theme, status.detail)
+        } else {
+            div()
+                .h(px(30.))
+                .flex_shrink_0()
+                .px(px(24.))
+                .flex()
+                .items_center()
+                .border_t_1()
+                .border_color(rgb(self.theme.colors.border))
+                .child(
+                    div().text_size(px(10.)).text_color(rgb(self.theme.colors.muted)).child(
+                        "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl G  Generate     Esc  Hide",
+                    ),
+                )
+        };
         div()
             .size_full()
             .flex()
@@ -3035,22 +3094,7 @@ impl Render for PassApp {
                     ),
             )
             .child(main_content)
-            .child(
-                div()
-                    .h(px(30.))
-                    .flex_shrink_0()
-                    .px(px(24.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .border_t_1()
-                    .border_color(rgb(self.theme.colors.border))
-                    .child(
-                        div().text_size(px(10.)).text_color(rgb(self.theme.colors.muted)).child(
-                            "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl G  Generate     Esc  Hide",
-                        ),
-                    ),
-            )
+            .child(footer)
             .when(self.navigation.generator_open(), |view| {
                 view.child(self.generator_view(window, cx))
             })
@@ -3724,6 +3768,24 @@ fn card_event_title(event: CardEvent) -> &'static str {
         CardEvent::CardBusy => "GnuPG reported a busy card",
         CardEvent::AgentBusy => "GnuPG agent is busy",
     }
+}
+
+fn notification_bar(theme: &Theme, message: &'static str) -> Div {
+    div()
+        .h(px(38.))
+        .flex_shrink_0()
+        .px(px(24.))
+        .flex()
+        .items_center()
+        .border_t_1()
+        .border_color(rgb(theme.colors.border))
+        .bg(rgb(theme.colors.surface))
+        .child(
+            div()
+                .text_size(px(11.))
+                .text_color(rgb(theme.colors.ink))
+                .child(message),
+        )
 }
 
 fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
