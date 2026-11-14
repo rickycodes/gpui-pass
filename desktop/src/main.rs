@@ -12,7 +12,6 @@ use card_refresh::{CardProbe, CardRefresh, ProbeResult};
 mod navigation;
 use navigation::{Navigation, Page};
 
-mod operation_status;
 mod entry_editor;
 mod search;
 mod theme;
@@ -638,6 +637,10 @@ impl PassApp {
             cx.notify();
         }
         let status = self.session.pending_status().or_else(|| {
+            self.copy_pending
+                .as_ref()
+                .map(|(_, progress, _)| progress.snapshot())
+        }).or_else(|| {
             self.saving
                 .as_ref()
                 .map(|(_, progress, _)| progress.snapshot())
@@ -1635,10 +1638,6 @@ impl PassApp {
             )
             .child(self.theme.label("ENTRY NAME"))
             .child(self.generator_name_field(window, cx))
-            .when(self.saving.is_some(), |panel| {
-                let status = self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()).unwrap();
-                panel.child(operation_status::panel(status, &self.theme))
-            })
             .child(
                 div().flex().items_center().gap(px(8.))
                     .child(self.theme.button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
@@ -2412,16 +2411,6 @@ impl PassApp {
             );
         }
 
-        let verification = self.device_verification.state();
-        if verification != VerificationState::Idle {
-            page = page.child(
-                div()
-                    .text_size(px(12.))
-                    .text_color(rgb(if verification == VerificationState::Verified { self.theme.colors.accent } else { self.theme.colors.muted }))
-                    .child(verification.message()),
-            );
-        }
-
         let mut rows = div()
             .max_w(px(760.))
             .flex()
@@ -2738,16 +2727,6 @@ impl PassApp {
                         }),
                 );
             body = body.child(controls);
-            if let Some(status) = self.session.pending_status().or_else(|| {
-                self.copy_pending.as_ref().map(|(_, progress, _)| progress.snapshot())
-            }).or_else(|| {
-                self.saving
-                    .as_ref()
-                    .map(|(_, progress, _)| progress.snapshot())
-            }) {
-                body = body.child(operation_status::panel(status, &self.theme));
-            }
-
             if let Some(secret) = revealed {
                 if secret.expose().len() > 16_384 {
                     body = body.child(
@@ -2782,19 +2761,7 @@ impl PassApp {
                     .border_color(rgb(self.theme.colors.border))
                     .flex()
                     .justify_between()
-                    .child(if let Some(message) = &self.message {
-                        div()
-                            .max_w(px(560.))
-                            .text_size(px(11.))
-                            .text_color(rgb(self.theme.colors.danger))
-                            .child(message.clone())
-                    } else {
-                        self.theme.label(if self.demo {
-                            "FICTIONAL DATA"
-                        } else {
-                            "LOCAL STORE"
-                        })
-                    }),
+                    .child(self.theme.label(if self.demo { "FICTIONAL DATA" } else { "LOCAL STORE" })),
             )
             .into_any_element()
     }
@@ -2817,24 +2784,24 @@ impl Render for PassApp {
             let seconds = deadline.saturating_duration_since(Instant::now()).as_secs().saturating_add(1);
             let entry_name = self.session.selected().map(|entry| entry.name()).unwrap_or("entry");
             div()
-                .h(px(38.))
+                .h(px(48.))
                 .flex_shrink_0()
                 .px(px(24.))
                 .flex()
                 .items_center()
                 .justify_between()
                 .border_t_1()
-                .border_color(rgb(self.theme.colors.border))
-                .bg(rgb(self.theme.colors.surface))
+                .border_color(rgb(self.theme.colors.accent))
+                .bg(rgb(self.theme.colors.accent))
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .gap(px(10.))
                         .text_size(px(11.))
-                        .text_color(rgb(self.theme.colors.ink))
+                        .text_color(rgb(notification_foreground(&self.theme)))
                         .child(format!("Copied {entry_name}"))
-                        .child(div().text_color(rgb(self.theme.colors.muted)).child(format!("Clipboard restores in {seconds}s"))),
+                        .child(div().text_color(rgb(notification_foreground(&self.theme))).child(format!("Clipboard restores in {seconds}s"))),
                 )
                 .child(
                     self.theme.button("restore-clipboard-now", "Restore now", false)
@@ -2843,11 +2810,15 @@ impl Render for PassApp {
                 )
         } else if self.device_verification.running() {
             notification_bar(&self.theme, "Waiting for YubiKey touch…")
+        } else if self.device_verification.state() != VerificationState::Idle {
+            notification_bar(&self.theme, self.device_verification.state().message())
         } else if let Some(status) = self.last_operation_status {
             notification_bar(&self.theme, status.detail)
+        } else if let Some(message) = &self.message {
+            notification_bar(&self.theme, message.clone())
         } else {
             div()
-                .h(px(30.))
+                .h(px(48.))
                 .flex_shrink_0()
                 .px(px(24.))
                 .flex()
@@ -3770,22 +3741,34 @@ fn card_event_title(event: CardEvent) -> &'static str {
     }
 }
 
-fn notification_bar(theme: &Theme, message: &'static str) -> Div {
+fn notification_bar(theme: &Theme, message: impl Into<SharedString>) -> Div {
     div()
-        .h(px(38.))
+        .h(px(48.))
         .flex_shrink_0()
         .px(px(24.))
         .flex()
         .items_center()
         .border_t_1()
-        .border_color(rgb(theme.colors.border))
-        .bg(rgb(theme.colors.surface))
+        .border_color(rgb(theme.colors.accent))
+        .bg(rgb(theme.colors.accent))
         .child(
             div()
-                .text_size(px(11.))
-                .text_color(rgb(theme.colors.ink))
-                .child(message),
+                .text_size(px(13.))
+                .text_color(rgb(notification_foreground(theme)))
+                .child(message.into()),
         )
+}
+
+fn notification_foreground(theme: &Theme) -> u32 {
+    let color = theme.colors.accent;
+    let red = (color >> 16) & 0xff;
+    let green = (color >> 8) & 0xff;
+    let blue = color & 0xff;
+    if red * 299 + green * 587 + blue * 114 > 140_000 {
+        0x18221d
+    } else {
+        0xffffff
+    }
 }
 
 fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
