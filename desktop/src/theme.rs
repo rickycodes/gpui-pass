@@ -178,7 +178,7 @@ impl Theme {
 
     pub fn label(&self, text: impl Into<SharedString>) -> Div {
         div()
-            .text_size(px(10.))
+            .text_size(px(11.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(rgb(self.colors.muted))
             .child(text.into())
@@ -206,7 +206,7 @@ impl Theme {
                 colors.surface
             }))
             .text_color(rgb(if primary { colors.surface } else { colors.ink }))
-            .text_size(px(12.))
+            .text_size(px(13.))
             .font_weight(FontWeight::MEDIUM)
             .cursor_pointer()
             .hover(move |style| {

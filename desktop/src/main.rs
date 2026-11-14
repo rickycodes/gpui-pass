@@ -28,6 +28,7 @@ use gpui_pass_core::{
     RevealRequest, Secret, Session, Store, default_store_path, harden_process,
 };
 use std::{
+    borrow::Cow,
     io::{BufRead, BufReader},
     collections::{HashSet, VecDeque},
     ops::Range,
@@ -2837,8 +2838,8 @@ impl Render for PassApp {
             .flex_col()
             .bg(rgb(self.theme.colors.background))
             .text_color(rgb(self.theme.colors.ink))
-            .font_family("DejaVu Sans")
-            .text_size(px(14.))
+            .font_family("Inter")
+            .text_size(px(15.))
             .key_context("Pass")
             .track_focus(&self.focus)
             .on_action(cx.listener(|app, _: &Hide, _, cx| app.hide(cx)))
@@ -3942,6 +3943,11 @@ fn main() {
     }
     diagnostics::init();
     Application::new().run(move |cx: &mut App| {
+        cx.text_system()
+            .add_fonts(vec![Cow::Borrowed(
+                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/fonts/InterVariable.ttf")).as_slice(),
+            )])
+            .expect("load bundled Inter font");
         cx.bind_keys([
             KeyBinding::new("escape", Hide, Some("Pass")),
             KeyBinding::new("ctrl-g", OpenGenerator, Some("Pass")),
