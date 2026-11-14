@@ -20,6 +20,17 @@ This roadmap describes the next product work. It has no delivery dates; order re
 7. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
 8. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
 
+## Additional planned features
+
+- **Credential rotation sessions.** Keep the current password available while generating and copying a replacement. Replace the stored entry only after the user confirms that the change succeeded on the target service; cancellation preserves the original entry. Build on the safe write and conflict handling above.
+- **A view for typing passwords by hand.** Display explicitly revealed passwords in numbered character groups, with a highlighted group and keyboard navigation. Useful where pasting is difficult; retain the existing hide, focus-loss, and timeout behavior.
+- **Awareness of external store changes.** Refresh when `pass`, scripts, or other applications change the store, and indicate which encrypted entries were added, changed, or removed without decrypting them. Detect changes to an entry being edited and preserve the user's work while resolving the conflict.
+- **Generator profiles by folder.** Remember generation preferences such as length, character restrictions, or memorable phrases for selected store folders. Keep these preferences in app config without changing the entry format.
+- **A persistent clipboard indicator.** Show the copied entry's name and a countdown until clipboard restoration across navigation, with a "Restore now" action. Preserve newer clipboard contents if another application has changed them.
+- **Export one entry for another recipient.** Encrypt a separate copy of a selected entry to a chosen public key for manual transfer. Confirm the recipient before exporting and preserve the original entry and its recipient policy.
+- **Named store profiles.** Save shortcuts to multiple stores with clear names and visual identities, and remember the last selection and search separately for each store.
+- **Links to entries.** Support local links that open the app with an entry selected for an explicit copy or reveal. Validate the target within the selected store; links contain no secret contents and never trigger automatic decryption.
+
 ## Later
 
 - Add native macOS support after validating GnuPG discovery, pinentry, fonts, and keyboard behavior.
