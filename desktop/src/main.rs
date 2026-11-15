@@ -1856,7 +1856,7 @@ impl PassApp {
                         .text_size(px(11.))
                         .line_height(px(17.))
                         .text_color(rgb(self.theme.colors.muted))
-                        .child("Creates a new encrypted entry. Existing entries are never overwritten."),
+                        .child("New entries never overwrite existing entries."),
                 )
                 .child(
                     self.theme.button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
@@ -2077,7 +2077,7 @@ impl PassApp {
         let (sender, receiver) = mpsc::sync_channel(1);
         let progress = OperationProgress::new(OperationStatus::working(
             "Copying entry",
-            "The entry stays hidden. Follow the system prompt; if your YubiKey blinks, touch its gold contact to continue.",
+            "Follow the system prompt. If your YubiKey blinks, touch its gold contact.",
         ));
         if self.demo {
             let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
@@ -2717,16 +2717,14 @@ impl PassApp {
                         self.theme.danger_button("delete-entry", "Delete")
                             .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
                     ))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(rgb(self.theme.colors.muted))
-                        .child(if pending {
-                            "Esc to cancel"
-                        } else {
-                            "Enter to reveal · Esc to hide"
-                        }),
-                );
+                .when(pending, |controls| {
+                    controls.child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(self.theme.colors.muted))
+                            .child("Esc to cancel"),
+                    )
+                });
             body = body.child(controls);
             if let Some(secret) = revealed {
                 if secret.expose().len() > 16_384 {
@@ -2737,11 +2735,6 @@ impl PassApp {
                             .child("Long content is truncated in this preview."),
                     );
                 }
-            } else if !pending {
-                body = body.child(div().mt(px(16.)).pt(px(24.)).border_t_1().border_color(rgb(self.theme.colors.border)).flex().flex_col().gap(px(10.))
-                    .child(self.theme.label("ONLY WHEN YOU NEED IT"))
-                    .child(div().max_w(px(385.)).text_size(px(13.)).line_height(px(23.)).text_color(rgb(self.theme.colors.muted))
-                        .child("Reveal this entry for 30 seconds. It hides when you leave the window or choose another entry.")));
             }
             detail = detail.child(body);
         } else {
