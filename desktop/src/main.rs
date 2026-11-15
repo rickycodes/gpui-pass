@@ -1642,6 +1642,7 @@ impl PassApp {
             .max_w(px(640.))
             .p(px(36.))
             .flex()
+            .flex_shrink_0()
             .flex_col()
             .gap(px(24.))
             .child(
@@ -1985,12 +1986,16 @@ impl PassApp {
             )
             .child(
                 div()
+                    .id("generator-content-scroll")
                     .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .flex()
                     .items_start()
                     .justify_center()
                     .px(px(32.))
                     .pt(px(48.))
+                    .pb(px(48.))
                     .child(panel),
             )
             .into_any_element()
