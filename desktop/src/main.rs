@@ -40,6 +40,8 @@ use std::{
 use theme::Theme;
 use zeroize::{Zeroize, Zeroizing};
 
+const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(6);
+
 static YUBIKEY_5_NFC_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
@@ -290,6 +292,8 @@ pub(crate) struct PassApp {
     card_detail_retry_at: Option<Instant>,
     card_refresh: CardRefresh,
     device_verification: DeviceVerification,
+    verification_state_seen: VerificationState,
+    verification_notification_until: Option<Instant>,
     card_watcher: Option<CardWatcher>,
     card_watcher_supported: Option<bool>,
     card_watcher_retry_at: Option<Instant>,
@@ -378,6 +382,8 @@ impl PassApp {
             card_detail_retry_at: None,
             card_refresh: CardRefresh::default(),
             device_verification: DeviceVerification::default(),
+            verification_state_seen: VerificationState::Idle,
+            verification_notification_until: None,
             card_watcher: None,
             card_watcher_supported: None,
             card_watcher_retry_at: None,
@@ -484,6 +490,20 @@ impl PassApp {
 
     fn tick(&mut self, cx: &mut Context<Self>) {
         if self.device_verification.poll(self.card_refresh.generation()) { cx.notify(); }
+        let verification_state = self.device_verification.state();
+        if verification_state != self.verification_state_seen {
+            self.verification_state_seen = verification_state;
+            self.verification_notification_until = if matches!(verification_state, VerificationState::Idle | VerificationState::Pending) {
+                None
+            } else {
+                Some(Instant::now() + NOTIFICATION_TIMEOUT)
+            };
+            cx.notify();
+        }
+        if self.verification_notification_until.is_some_and(|until| Instant::now() >= until) {
+            self.verification_notification_until = None;
+            cx.notify();
+        }
         self.capture_yubikey_status(cx);
         self.poll_yubikey_connection(cx);
         if let Some(result) = self
@@ -1152,7 +1172,7 @@ impl PassApp {
 
     fn set_message(&mut self, message: String) {
         self.message = Some(message);
-        self.message_until = Some(Instant::now() + Duration::from_secs(6));
+        self.message_until = Some(Instant::now() + NOTIFICATION_TIMEOUT);
     }
 
     fn clear_message(&mut self) {
@@ -1220,6 +1240,10 @@ impl PassApp {
         if self.editing_entry {
             self.cancel_edit(cx);
             cx.notify();
+            return;
+        }
+        if self.navigation.page() == Page::CardDetails {
+            self.leave_card_status(cx);
             return;
         }
         self.session.hide();
@@ -2295,6 +2319,14 @@ impl PassApp {
         cx.notify();
     }
 
+    fn leave_card_status(&mut self, cx: &mut Context<Self>) {
+        self.device_verification.cancel();
+        self.verification_state_seen = self.device_verification.state();
+        self.verification_notification_until = None;
+        self.navigation.go_to(Page::Entries);
+        cx.notify();
+    }
+
     fn yubikey_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let latest = self.yubikey_history.front().copied();
         let is_yubikey = self.usb_reader_details.as_ref()
@@ -2337,7 +2369,7 @@ impl PassApp {
                             .items_center()
                             .gap(px(12.))
                             .when(is_yubikey, |actions| actions.child(
-                                self.theme.button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify Device" }, true)
+                                self.theme.button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify" }, true)
                                     .on_click(cx.listener(|app, _, _, cx| app.verify_device(cx))),
                             ))
                             .when(self.device_verification.running(), |actions| actions.child(
@@ -2346,12 +2378,8 @@ impl PassApp {
                                     cx.notify();
                                 })),
                             ))
-                            .child(self.theme.button("yubikey-back", "Back to entries", false).on_click(
-                                cx.listener(|app, _, _, cx| {
-                                    app.device_verification.cancel();
-                                    app.navigation.go_to(Page::Entries);
-                                    cx.notify();
-                                }),
+                            .child(self.theme.button("yubikey-back", "← Back", false).on_click(
+                                cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
                             )),
                     ),
             );
@@ -2804,7 +2832,7 @@ impl Render for PassApp {
                 )
         } else if self.device_verification.running() {
             notification_bar(&self.theme, "Waiting for YubiKey touch…")
-        } else if self.device_verification.state() != VerificationState::Idle {
+        } else if self.verification_notification_until.is_some() {
             notification_bar(&self.theme, self.device_verification.state().message())
         } else if let Some(status) = self.last_operation_status {
             notification_bar(&self.theme, status.detail)
