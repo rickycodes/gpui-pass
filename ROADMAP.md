@@ -6,7 +6,9 @@ This roadmap describes the next product work. It has no delivery dates; order re
 
 - Browse and search an existing `pass` store, reveal multiline entries, and edit or delete individual entries.
 - Copy an entry's complete contents without revealing it, with `PASSWORD_STORE_CLIP_TIME` timeout and prior clipboard restoration.
+- Show a persistent bottom-bar clipboard indicator with the copied entry, restoration countdown, and a manual restore action.
 - Generate random passwords or memorable phrases and save them encrypted to the store's configured recipients.
+- Route transient copy, reveal, save, verification, and app feedback through a shared bottom notification bar, while leaving persistent card details on the card status page.
 - Use the existing GnuPG agent and OpenPGP card, with PIN and touch flows handled by the user's configured tools and copy/reveal progress shown in the app.
 
 ## Planned
@@ -26,7 +28,6 @@ This roadmap describes the next product work. It has no delivery dates; order re
 - **A view for typing passwords by hand.** Display explicitly revealed passwords in numbered character groups, with a highlighted group and keyboard navigation. Useful where pasting is difficult; retain the existing hide, focus-loss, and timeout behavior.
 - **Awareness of external store changes.** Refresh when `pass`, scripts, or other applications change the store, and indicate which encrypted entries were added, changed, or removed without decrypting them. Detect changes to an entry being edited and preserve the user's work while resolving the conflict.
 - **Generator profiles by folder.** Remember generation preferences such as length, character restrictions, or memorable phrases for selected store folders. Keep these preferences in app config without changing the entry format.
-- **A persistent clipboard indicator.** Show the copied entry's name and a countdown until clipboard restoration across navigation, with a "Restore now" action. Preserve newer clipboard contents if another application has changed them.
 - **Export one entry for another recipient.** Encrypt a separate copy of a selected entry to a chosen public key for manual transfer. Confirm the recipient before exporting and preserve the original entry and its recipient policy.
 - **Named store profiles.** Save shortcuts to multiple stores with clear names and visual identities, and remember the last selection and search separately for each store.
 - **Links to entries.** Support local links that open the app with an entry selected for an explicit copy or reveal. Validate the target within the selected store; links contain no secret contents and never trigger automatic decryption.
