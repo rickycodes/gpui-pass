@@ -2792,17 +2792,17 @@ impl Render for PassApp {
                 .items_center()
                 .justify_between()
                 .border_t_1()
-                .border_color(rgb(self.theme.colors.accent))
-                .bg(rgb(self.theme.colors.accent))
+                .border_color(rgb(self.theme.colors.border))
+                .bg(rgb(self.theme.colors.surface))
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .gap(px(10.))
                         .text_size(px(11.))
-                        .text_color(rgb(notification_foreground(&self.theme)))
+                        .text_color(rgb(self.theme.colors.ink))
                         .child(format!("Copied {entry_name}"))
-                        .child(div().text_color(rgb(notification_foreground(&self.theme))).child(format!("Clipboard restores in {seconds}s"))),
+                        .child(div().text_color(rgb(self.theme.colors.muted)).child(format!("Clipboard restores in {seconds}s"))),
                 )
                 .child(
                     self.theme.button("restore-clipboard-now", "Restore now", false)
@@ -3750,26 +3750,14 @@ fn notification_bar(theme: &Theme, message: impl Into<SharedString>) -> Div {
         .flex()
         .items_center()
         .border_t_1()
-        .border_color(rgb(theme.colors.accent))
-        .bg(rgb(theme.colors.accent))
+        .border_color(rgb(theme.colors.border))
+        .bg(rgb(theme.colors.accent_surface))
         .child(
             div()
                 .text_size(px(13.))
-                .text_color(rgb(notification_foreground(theme)))
+                .text_color(rgb(theme.colors.ink))
                 .child(message.into()),
         )
-}
-
-fn notification_foreground(theme: &Theme) -> u32 {
-    let color = theme.colors.accent;
-    let red = (color >> 16) & 0xff;
-    let green = (color >> 8) & 0xff;
-    let blue = color & 0xff;
-    if red * 299 + green * 587 + blue * 114 > 140_000 {
-        0x18221d
-    } else {
-        0xffffff
-    }
 }
 
 fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedString>) -> gpui::Div {
