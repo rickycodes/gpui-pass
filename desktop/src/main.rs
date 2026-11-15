@@ -324,6 +324,7 @@ pub(crate) struct PassApp {
     pub(crate) editing_entry: bool,
     pub(crate) editor_layout: Option<entry_editor::TextLayout>,
     saving_edit: bool,
+    edit_conflict: bool,
     revealed_revision: Option<EntryRevision>,
     edit_revision: Option<EntryRevision>,
     message: Option<String>,
@@ -415,6 +416,7 @@ impl PassApp {
             editing_entry: false,
             editor_layout: None,
             saving_edit: false,
+            edit_conflict: false,
             revealed_revision: None,
             edit_revision: None,
             message: None,
@@ -672,7 +674,13 @@ impl PassApp {
                 }
                 Err(error) => {
                     self.saving_edit = false;
-                    self.set_message(error.to_string());
+                    if matches!(&error, Error::EntryConflict) {
+                        self.edit_conflict = true;
+                        self.set_message(i18n::text("edit-conflict-notice"));
+                    } else {
+                        self.edit_conflict = false;
+                        self.set_message(error.to_string());
+                    }
                 },
             }
             let close = self.close_after_save;
@@ -1281,13 +1289,19 @@ impl PassApp {
 
     fn cancel_edit(&mut self, cx: &mut Context<Self>) {
         if !self.editing_entry { return; }
+        let had_conflict = self.edit_conflict;
         if self.saving_edit {
             if let Some((cancel, _, _)) = &self.saving {
                 cancel.cancel();
             }
         }
         self.editing_entry = false;
+        self.edit_conflict = false;
         self.edit_revision = None;
+        if had_conflict {
+            self.session.hide();
+            self.revealed_revision = None;
+        }
         self.generator_name.zeroize();
         self.generator_name_selection = 0..0;
         self.generator_name_anchor = None;
@@ -1327,9 +1341,37 @@ impl PassApp {
         self.generator_name_marked = None;
         self.edit_revision = self.revealed_revision;
         self.editing_entry = true;
+        self.edit_conflict = false;
         self.generator_name_bounds = None;
         self.editor_layout = None;
         self.generator_name_focus.focus(window);
+        cx.notify();
+    }
+
+    fn overwrite_conflicted_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.edit_conflict || self.saving.is_some() {
+            return;
+        }
+        let Some(entry) = self.session.selected() else { return; };
+        let Some(store) = self.store.as_ref() else { return; };
+        match store.entry_revision(entry) {
+            Ok(revision) => {
+                self.edit_revision = Some(revision);
+                self.save_edit(cx);
+            }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+            }
+        }
+    }
+
+    fn discard_conflicted_edit(&mut self, cx: &mut Context<Self>) {
+        if !self.edit_conflict || self.saving.is_some() {
+            return;
+        }
+        self.cancel_edit(cx);
+        self.set_message(i18n::text("edit-conflict-discarded"));
         cx.notify();
     }
 
@@ -2721,6 +2763,62 @@ impl PassApp {
                 );
             }
             body = body.child(password);
+            if self.editing_entry && self.edit_conflict {
+                body = body.child(
+                    div()
+                        .id("edit-conflict")
+                        .w_full()
+                        .rounded(px(self.theme.radii.panel))
+                        .border_1()
+                        .border_color(rgb(self.theme.colors.danger))
+                        .bg(rgb(self.theme.colors.surface))
+                        .p(px(18.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(12.))
+                        .child(
+                            div()
+                                .text_size(px(15.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .text_color(rgb(self.theme.colors.ink))
+                                .child(i18n::text("edit-conflict-title")),
+                        )
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .line_height(px(18.))
+                                .text_color(rgb(self.theme.colors.muted))
+                                .child(i18n::text("edit-conflict-help")),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(12.))
+                                .child(
+                                    self.theme
+                                        .danger_button(
+                                            "overwrite-conflicted-edit",
+                                            i18n::text("edit-conflict-overwrite"),
+                                        )
+                                        .on_click(cx.listener(|app, _, _, cx| {
+                                            app.overwrite_conflicted_edit(cx)
+                                        })),
+                                )
+                                .child(
+                                    self.theme
+                                        .button(
+                                            "discard-conflicted-edit",
+                                            i18n::text("edit-conflict-discard"),
+                                            false,
+                                        )
+                                        .on_click(cx.listener(|app, _, _, cx| {
+                                            app.discard_conflicted_edit(cx)
+                                        })),
+                                ),
+                        ),
+                );
+            }
             let controls = div()
                 .flex()
                 .items_center()
@@ -2746,8 +2844,9 @@ impl PassApp {
                     })),
                 )
                 .when(self.editing_entry, |controls| controls
-                    .child(self.theme.button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
-                        .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx))))
+                    .when(!self.edit_conflict, |controls| controls
+                        .child(self.theme.button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
+                            .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx)))))
                     .child(self.theme.button("cancel-entry-edit", "Cancel", false)
                         .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx)))))
                 .when(!self.editing_entry, |controls| controls

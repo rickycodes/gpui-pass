@@ -9,6 +9,50 @@ use std::{
 
 #[cfg(unix)]
 static ENTRY_WRITE_SERIALIZER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+#[cfg(unix)]
+const ENTRY_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+
+#[cfg(unix)]
+fn writer_lock_directory() -> Result<PathBuf, Error> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    let uid = rustix::process::geteuid().as_raw();
+    let runtime = env::var_os("XDG_RUNTIME_DIR")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from);
+    if let Some(runtime) = runtime.as_ref() {
+        let metadata = fs::symlink_metadata(runtime)?;
+        if !metadata.file_type().is_dir() || metadata.uid() != uid || metadata.mode() & 0o077 != 0 {
+            return Err(Error::UnsafeLockDirectory);
+        }
+    }
+    let directory = runtime
+        .as_ref()
+        .map(|path| path.join("gpui-pass-locks"))
+        .unwrap_or_else(|| env::temp_dir().join(format!("gpui-pass-locks-{uid}")));
+
+    match fs::DirBuilder::new().mode(0o700).create(&directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(Error::Io(error)),
+    }
+    let metadata = fs::symlink_metadata(&directory)?;
+    if !metadata.file_type().is_dir() || metadata.uid() != uid || metadata.mode() & 0o077 != 0 {
+        return Err(Error::UnsafeLockDirectory);
+    }
+    Ok(directory)
+}
+
+#[cfg(unix)]
+fn writer_lock_name(root: &Path, entry: &Entry) -> String {
+    use std::os::unix::ffi::OsStrExt;
+    // Stable FNV-1a 128-bit name: lock identity must agree across processes.
+    let mut hash = 0x6c62272e07bb014262b821756295c58du128;
+    for byte in root.as_os_str().as_bytes().iter().chain([0u8].iter()).chain(entry.relative_file().as_os_str().as_bytes()) {
+        hash ^= u128::from(*byte);
+        hash = hash.wrapping_mul(0x0000000001000000000000000000013bu128);
+    }
+    format!("{hash:032x}.lock")
+}
 
 const MAX_ENTRIES: usize = 50_000;
 const MAX_NODES: usize = 100_000;
@@ -417,6 +461,55 @@ impl Store {
         }
     }
 
+    #[cfg(unix)]
+    fn acquire_entry_write_lock(&self, entry: &Entry) -> Result<File, Error> {
+        use rustix::fs::{FlockOperation, Mode, OFlags, fcntl_lock, open, openat};
+        use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+        let runtime_directory = writer_lock_directory()?;
+        let directory = File::from(
+            open(
+                &runtime_directory,
+                OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::empty(),
+            )
+            .map_err(std::io::Error::from)?,
+        );
+        let lock_name = writer_lock_name(&self.root, entry);
+        let lock = File::from(
+            openat(
+                &directory,
+                std::ffi::OsStr::new(&lock_name),
+                OFlags::RDWR | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                Mode::RUSR | Mode::WUSR,
+            )
+            .map_err(std::io::Error::from)?,
+        );
+        let metadata = lock.metadata()?;
+        if !metadata.is_file()
+            || metadata.nlink() != 1
+            || metadata.uid() != rustix::process::geteuid().as_raw()
+        {
+            return Err(Error::UnsafeLockDirectory);
+        }
+        lock.set_permissions(fs::Permissions::from_mode(0o600))?;
+        let started = std::time::Instant::now();
+        loop {
+            match fcntl_lock(&lock, FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => return Ok(lock),
+                Err(error)
+                    if std::io::Error::from(error).kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    if started.elapsed() >= ENTRY_LOCK_TIMEOUT {
+                        return Err(Error::TimedOut);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(error) => return Err(Error::Io(std::io::Error::from(error))),
+            }
+        }
+    }
+
     fn write_entry(&self, entry: &Entry, ciphertext: &[u8], expected: Option<&EntryRevision>, policy: &RecipientPolicy) -> Result<(), Error> {
         #[cfg(unix)]
         {
@@ -464,13 +557,10 @@ impl Store {
                 parent = File::from(directory);
             }
 
-            // Serialize concurrent writes from this process around the final
-            // revision check and replacement.
-            let _process_lock = expected.map(|_| {
-                ENTRY_WRITE_SERIALIZER
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-            });
+            let _process_lock = ENTRY_WRITE_SERIALIZER
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _interprocess_lock = self.acquire_entry_write_lock(entry)?;
 
             let mut random = [0u8; 16];
             getrandom::fill(&mut random).map_err(|_| Error::RandomUnavailable)?;
@@ -553,6 +643,10 @@ impl Store {
                 fs::{AtFlags, FileType, Mode, OFlags, openat, statat, unlinkat},
                 io::Errno,
             };
+            let _process_lock = ENTRY_WRITE_SERIALIZER
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _interprocess_lock = self.acquire_entry_write_lock(entry)?;
             let parts: Vec<_> = entry.relative_file().components().collect();
             if parts.is_empty() || parts.len() > MAX_DEPTH + 1 {
                 return Err(Error::InvalidEntry);

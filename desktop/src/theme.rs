@@ -184,7 +184,7 @@ impl Theme {
             .child(text.into())
     }
 
-    pub fn button(&self, id: &'static str, text: &'static str, primary: bool) -> Stateful<Div> {
+    pub fn button(&self, id: &'static str, text: impl Into<SharedString>, primary: bool) -> Stateful<Div> {
         let colors = self.colors.clone();
         div()
             .id(id)
@@ -216,10 +216,10 @@ impl Theme {
                     colors.accent_surface
                 }))
             })
-            .child(text)
+            .child(text.into())
     }
 
-    pub fn danger_button(&self, id: &'static str, text: &'static str) -> Stateful<Div> {
+    pub fn danger_button(&self, id: &'static str, text: impl Into<SharedString>) -> Stateful<Div> {
         let colors = self.colors.clone();
         div()
             .id(id)
@@ -237,7 +237,7 @@ impl Theme {
             .font_weight(FontWeight::MEDIUM)
             .cursor_pointer()
             .hover(move |style| style.bg(rgb(colors.danger_surface_hover)))
-            .child(text)
+            .child(text.into())
     }
 
     pub fn destructive_button(&self, id: &'static str, text: &'static str) -> Stateful<Div> {

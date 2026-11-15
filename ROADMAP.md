@@ -14,7 +14,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 
 ## Planned
 
-1. **Complete safe write policy handling.** Signed `.gpg-id` policies are now verified against `PASSWORD_STORE_SIGNING_KEY`, and the policy snapshot is rechecked before committing a write. Edited entries use revision checks and a process-wide write mutex. Still needed: resolve conflicts in the UI and choose a stronger storage strategy; another process can still race the final check and rename.
+1. **Complete safe write policy handling.** Signed `.gpg-id` policies are verified against `PASSWORD_STORE_SIGNING_KEY`, with the policy snapshot rechecked before commit. Edited entries use revision checks, a bounded per-entry lock shared by app instances, and explicit conflict choices to overwrite the current version or discard edits and reveal it. Still needed: coordination with other store writers such as `pass`; they can race the final check and rename.
 2. **Create custom entries.** Add a secure in-app flow for creating user-written single-line or multiline entries, with explicit overwrite confirmation.
 3. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
 4. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.
