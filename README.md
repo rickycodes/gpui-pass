@@ -2,7 +2,7 @@
 
 A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
-**Status: implementation in progress.** The backend's 22 automated tests pass. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware. The real `pass` integration fixture is still blocked in this environment because it cannot start a disposable `gpg-agent`.
+**Status: implementation in progress.** The latest review passed 26 core tests, 14 desktop tests, 9 Python helper tests, and the disposable real `pass` integration fixture. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware in earlier work. See the [2026-11-14 review](docs/application-review-2026-11-14.md) for outstanding findings and verification limits.
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
@@ -92,7 +92,7 @@ cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 
 The integration fixture sets its own `GNUPGHOME` and `PASSWORD_STORE_DIR`, creates root and nested multi-recipient entries through `pass`, checks exact multiline plaintext in Rust, and checks unchanged ciphertext. It stops its own agent and removes its own temporary directory.
 
-For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture remains to be run. Visual verification must use fictional data.
+For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture passed outside the sandbox during the latest review. Visual verification must use fictional data.
 
 ## YubiKey / OpenPGP smartcards
 
@@ -141,7 +141,7 @@ after reproducing a problem without copying terminal output.
 
 `src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.
 
-The shared status helper lives in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`) and `desktop/src/operation_status.rs` (the compact status block). Reveal, hidden copy, and save operations each receive a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Obsolete reveal and copy workers cannot replace a newer operation's status or copy a result for a different selection.
+The shared status types live in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`); the desktop renders feedback in its bottom notification bar. Reveal, hidden copy, and save operations each receive a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. See the [2026-11-14 review](docs/application-review-2026-11-14.md) for outstanding copy cancellation, notification priority, and generator visibility issues.
 
 Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
 
