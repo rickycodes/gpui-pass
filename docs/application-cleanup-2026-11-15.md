@@ -60,9 +60,12 @@ Follow-up to the [2026-11-14 application review](application-review-2026-11-14.m
   trusted filesystem configuration. Clipboard ownership is determined by text
   equality, so an indistinguishable later copy of the same text cannot be
   distinguished from the app's copy.
-- No GUI interaction, normal-shutdown clipboard integration, or physical-card
-  testing was performed in this follow-up. Confirm the generator footer,
-  cancellation/pinentry behavior, window close, and clipboard changes on Linux.
+- After this review, the user manually exercised hidden copy, reveal/hide,
+  editing, and deletion with a hardware-backed store and YubiKey and reported
+  that they worked. This confirms those flows on that setup. The generator
+  footer, cancellation when changing selection or pressing Escape,
+  normal-shutdown restoration, external clipboard replacement, and the full
+  PIN/touch/reconnect matrix still need separate validation.
 
 ## Validation
 

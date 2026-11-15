@@ -23,6 +23,8 @@ Generated entries are encrypted by GnuPG to the recipients resolved from the nea
 
 Copying an existing entry decrypts it in the background and copies its complete contents, including all lines; the entry never enters the revealed-entry view. The app restores the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), matching `pass`'s default timeout. If the clipboard changes before timeout, the app leaves the newer contents alone. Generated-password and editor-selection copies use the same policy. Normal app exit restores a tracked copy if it still owns the clipboard; crashes or forced termination cannot guarantee cleanup. Set the variable in the desktop launch environment to change the delay. Invalid or clock-overflowing values fall back to 45 seconds.
 
+Manual hardware check: the user reports that hidden copy, reveal/hide, edit, and delete work with a hardware-backed store and YubiKey. See the [cleanup follow-up](docs/application-cleanup-2026-11-15.md) for the remaining GUI and hardware checks.
+
 ## Linux build and run
 
 ### Theme configuration
