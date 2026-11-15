@@ -10,6 +10,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 - Generate random passwords or memorable phrases and save them encrypted to the store's configured recipients.
 - Route transient copy, reveal, save, verification, and app feedback through a shared bottom notification bar, while leaving persistent card details on the card status page.
 - Use the existing GnuPG agent and OpenPGP card, with PIN and touch flows handled by the user's configured tools and copy/reveal progress shown in the app.
+- Start UI localization with an embedded `en-US` Fluent catalog; core navigation, generator guidance, editor-limit feedback, and clipboard status now use message IDs.
 
 ## Planned
 
@@ -21,6 +22,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 6. **Add configurable UI themes.** Move visual values into semantic design tokens and load an optional user theme config for colors, spacing, and corner radii. Keep the current appearance as the default; validate values and fall back safely when configuration is missing or invalid.
 7. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
 8. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
+9. **Expand localization.** Move remaining user-facing UI text into Fluent catalogs, add locale selection with `en-US` fallback, and add translated catalogs as they are ready to maintain. Keep logs, file formats, and password-store contents independent of UI locale.
 
 ## Additional planned features
 

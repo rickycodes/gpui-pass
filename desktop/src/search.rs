@@ -48,7 +48,7 @@ impl PassApp {
         };
         if self.editing_entry {
             let Some(next) = crate::editor_input::replace(&self.generator_name, start..end, &text) else {
-                self.set_message(crate::editor_input::EDIT_LIMIT_MESSAGE.into());
+                self.set_message(crate::i18n::text("editor-limit"));
                 cx.notify();
                 return start..start;
             };
@@ -217,7 +217,7 @@ impl PassApp {
                 .when(focused, |view| {
                     view.child(div().w(px(1.)).h(px(16.)).bg(rgb(self.theme.colors.accent)))
                 })
-                .child(div().text_color(rgb(self.theme.colors.muted)).child("Search entries"));
+                .child(div().text_color(rgb(self.theme.colors.muted)).child(crate::i18n::text("search-entries")));
         } else {
             text = text
                 .child(self.query[..start].to_owned())

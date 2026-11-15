@@ -3,9 +3,6 @@ use zeroize::Zeroizing;
 
 pub const MAX_EDIT_BYTES: usize = 16_384;
 pub const MAX_EDIT_LINES: usize = 512;
-pub const EDIT_LIMIT_MESSAGE: &str =
-    "Editor limit: 16 KiB and 512 lines. Your text was not changed.";
-
 pub fn supported(text: &str) -> bool {
     text.len() <= MAX_EDIT_BYTES
         && text.bytes().filter(|byte| *byte == b'\n').count() < MAX_EDIT_LINES

@@ -20,7 +20,9 @@ mod editor_input;
 mod entry_editor;
 mod search;
 mod theme;
+mod i18n;
 
+use fluent_bundle::FluentArgs;
 use gpui::{
     App, Application, Bounds, Context, CursorStyle, Div, FocusHandle, FontWeight,
     Image, ImageFormat,
@@ -1314,7 +1316,7 @@ impl PassApp {
             return;
         };
         if !editor_input::supported(secret.expose()) {
-            self.set_message(editor_input::EDIT_LIMIT_MESSAGE.into());
+            self.set_message(i18n::text("editor-limit"));
             cx.notify();
             return;
         }
@@ -1691,14 +1693,14 @@ impl PassApp {
                             .text_size(px(22.))
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(rgb(self.theme.colors.ink))
-                            .child("Password generator"),
+                            .child(i18n::text("password-generator")),
                     )
                     .child(
                         self.theme.button("close-generator", "← Back", false)
                             .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
                     ),
             )
-            .child(self.theme.label("ENTRY NAME"))
+            .child(self.theme.label(i18n::text("entry-name")))
             .child(self.generator_name_field(window, cx))
             .child(
                 div().flex().items_center().gap(px(8.))
@@ -1723,7 +1725,7 @@ impl PassApp {
                                 div()
                                     .text_size(px(28.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .child("A phrase worth remembering."),
+                                    .child(i18n::text("phrase-description")),
                             ),
                     )
             )
@@ -1733,7 +1735,7 @@ impl PassApp {
                     .text_size(px(13.))
                     .line_height(px(21.))
                     .text_color(rgb(self.theme.colors.muted))
-                    .child("Choose the number of random whole words. More words make a stronger phrase; digits and punctuation add variety."),
+                    .child(i18n::text("random-phrase-help")),
             )
             .child(
                 div()
@@ -1770,7 +1772,7 @@ impl PassApp {
                                 cx.notify();
                             }))
                             .child(if self.generation_digits { "☑" } else { "☐" })
-                            .child("Append a digit to each word"),
+                            .child(i18n::text("append-digit")),
                     )
                     .child(
                         div()
@@ -1786,7 +1788,7 @@ impl PassApp {
                                 cx.notify();
                             }))
                             .child(if self.generation_separators { "☑" } else { "☐" })
-                            .child("Separate words with punctuation"),
+                            .child(i18n::text("separate-words")),
                     ),
             ));
 
@@ -1797,7 +1799,7 @@ impl PassApp {
                     .text_size(px(13.))
                     .line_height(px(21.))
                     .text_color(rgb(self.theme.colors.muted))
-                    .child("Random characters using pass’s default punctuation and letters. Respects PASSWORD_STORE_GENERATED_LENGTH and PASSWORD_STORE_CHARACTER_SET when set."),
+                    .child(i18n::text("random-password-help")),
             )
         });
 
@@ -1916,7 +1918,7 @@ impl PassApp {
                         .text_size(px(11.))
                         .line_height(px(17.))
                         .text_color(rgb(self.theme.colors.muted))
-                        .child("New entries never overwrite existing entries."),
+                        .child(i18n::text("no-overwrite")),
                 )
                 .child(
                     self.theme.button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
@@ -2229,7 +2231,7 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(self.theme.label("YOUR ENTRIES"))
+                    .child(self.theme.label(i18n::text("your-entries")))
                     .child(
                         div()
                             .font_family(self.theme.mono_font)
@@ -2310,7 +2312,7 @@ impl PassApp {
                             .text_color(rgb(self.theme.colors.accent))
                             .cursor_pointer()
                             .on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx)))
-                            .child("Open another store  ↗"),
+                            .child(i18n::text("open-another-store")),
                     ),
             )
             .into_any_element()
@@ -2434,7 +2436,7 @@ impl PassApp {
                             .flex()
                             .flex_col()
                             .gap(px(10.))
-                            .child(self.theme.label("CONNECTED DEVICE"))
+                            .child(self.theme.label(i18n::text("connected-device")))
                             .child(
                                 div()
                                     .text_size(px(24.))
@@ -2515,7 +2517,7 @@ impl PassApp {
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(self.theme.label("CARD DETAILS"))
+                    .child(self.theme.label(i18n::text("card-details")))
                     .child(rows),
             );
         }
@@ -2646,7 +2648,7 @@ impl PassApp {
                                     div()
                                         .text_size(px(11.))
                                         .text_color(rgb(self.theme.colors.muted))
-                                        .child("Encrypted on disk"),
+                                        .child(i18n::text("encrypted-on-disk")),
                                 ),
                         )
                 );
@@ -2714,7 +2716,7 @@ impl PassApp {
                                 .font_family(self.theme.mono_font)
                                 .text_size(px(10.))
                                 .text_color(rgb(self.theme.colors.muted))
-                                .child("CONCEALED"),
+                                .child(i18n::text("concealed")),
                         ),
                 );
             }
@@ -2762,7 +2764,7 @@ impl PassApp {
                         div()
                             .text_size(px(11.))
                             .text_color(rgb(self.theme.colors.muted))
-                            .child("Esc to cancel"),
+                            .child(i18n::text("esc-to-cancel")),
                     )
                 });
             body = body.child(controls);
@@ -2844,8 +2846,16 @@ impl Render for PassApp {
                         .gap(px(10.))
                         .text_size(px(11.))
                         .text_color(rgb(self.theme.colors.ink))
-                        .child(format!("Copied {entry_name}"))
-                        .child(div().text_color(rgb(self.theme.colors.muted)).child(format!("Clipboard restores in {seconds}s"))),
+                        .child({
+                            let mut args = FluentArgs::new();
+                            args.set("entry", entry_name);
+                            i18n::text_with_args("copied-entry", &args)
+                        })
+                        .child(div().text_color(rgb(self.theme.colors.muted)).child({
+                            let mut args = FluentArgs::new();
+                            args.set("seconds", seconds.min(i64::MAX as u64) as i64);
+                            i18n::text_with_args("clipboard-restores-in", &args)
+                        })),
                 )
                 .child(
                     self.theme.button("restore-clipboard-now", "Restore now", false)
@@ -3021,7 +3031,7 @@ impl Render for PassApp {
                                     .on_click(cx.listener(|app, _, window, cx| {
                                         app.open_generator(window, cx)
                                     }))
-                                    .child("Generate ↗"),
+                                    .child(i18n::text("generate")),
                             )
                             .when(self.yubikey_connection == YubiConnection::Connected, |header| {
                                 header.child(
@@ -3037,7 +3047,7 @@ impl Render for PassApp {
                                         app.navigation.go_to(Page::CardDetails);
                                         cx.notify();
                                     }))
-                                    .child("Card status ↗"),
+                                    .child(i18n::text("card-status")),
                                 )
                             })
                             .child(
@@ -3050,7 +3060,7 @@ impl Render for PassApp {
                                         cx.stop_propagation();
                                     })
                                     .on_click(cx.listener(|app, _, _, cx| app.refresh(cx)))
-                                    .child("↻  Refresh"),
+                                    .child(i18n::text("refresh")),
                             )
                             .child(
                                 div()
