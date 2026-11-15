@@ -7,6 +7,9 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(unix)]
+static ENTRY_WRITE_SERIALIZER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const MAX_ENTRIES: usize = 50_000;
 const MAX_NODES: usize = 100_000;
 const MAX_DEPTH: usize = 32;
@@ -15,7 +18,7 @@ const MAX_RECIPIENTS_BYTES: usize = 65_536;
 fn parse_recipients(text: &str) -> Result<Vec<String>, Error> {
     let mut recipients = Vec::new();
     for line in text.lines() {
-        for recipient in line.split_whitespace() {
+        for recipient in line.split('#').next().unwrap_or_default().split_whitespace() {
             if recipient.len() > 256 || recipient.chars().any(char::is_control) {
                 return Err(Error::InvalidRecipients);
             }
@@ -32,6 +35,14 @@ fn parse_recipients(text: &str) -> Result<Vec<String>, Error> {
     } else {
         Ok(recipients)
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RecipientPolicy {
+    pub recipients: Vec<String>,
+    pub contents: Option<Vec<u8>>,
+    pub signature: Option<Vec<u8>>,
+    pub signing_keys: Vec<String>,
 }
 
 pub fn default_store_path() -> Result<PathBuf, Error> {
@@ -254,13 +265,25 @@ impl Store {
         Ok(file)
     }
 
-    pub(crate) fn recipients_for_entry(&self, entry: &Entry) -> Result<Vec<String>, Error> {
-        if env::var_os("PASSWORD_STORE_SIGNING_KEY").is_some_and(|value| !value.is_empty()) {
-            return Err(Error::SignedRecipientsUnsupported);
-        }
+    pub(crate) fn recipients_for_entry(&self, entry: &Entry) -> Result<RecipientPolicy, Error> {
         if let Some(keys) = env::var_os("PASSWORD_STORE_KEY").filter(|value| !value.is_empty()) {
-            return parse_recipients(&keys.to_string_lossy());
+            return Ok(RecipientPolicy {
+                recipients: parse_recipients(&keys.to_string_lossy())?,
+                contents: None,
+                signature: None,
+                signing_keys: Vec::new(),
+            });
         }
+        let signing_keys = match env::var_os("PASSWORD_STORE_SIGNING_KEY").filter(|value| !value.is_empty()) {
+            Some(value) => {
+                let keys: Vec<_> = value.to_string_lossy().split_whitespace().map(str::to_owned).collect();
+                if keys.is_empty() || keys.iter().any(|key| key.len() != 40 || !key.bytes().all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte))) {
+                    return Err(Error::InvalidSigningKey);
+                }
+                keys
+            }
+            None => Vec::new(),
+        };
         #[cfg(unix)]
         {
             use rustix::{
@@ -299,10 +322,41 @@ impl Store {
                 };
                 // A detached signature declares a signed recipient policy even
                 // when PASSWORD_STORE_SIGNING_KEY is absent in this process.
-                match rustix::fs::statat(directory, ".gpg-id.sig", rustix::fs::AtFlags::SYMLINK_NOFOLLOW) {
-                    Ok(_) => return Err(Error::SignedRecipientsUnsupported),
-                    Err(error) if error == Errno::NOENT => {},
+                let signature = match openat(
+                    directory,
+                    ".gpg-id.sig",
+                    OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+                    Mode::empty(),
+                ) {
+                    Ok(signature) => {
+                        let signature = File::from(signature);
+                        let metadata = signature.metadata()?;
+                        #[cfg(unix)]
+                        {
+                            use std::os::unix::fs::MetadataExt;
+                            if !metadata.is_file() || metadata.nlink() != 1 {
+                                return Err(Error::InvalidRecipients);
+                            }
+                        }
+                        if !metadata.is_file() || metadata.len() > MAX_RECIPIENTS_BYTES as u64 {
+                            return Err(Error::InvalidRecipients);
+                        }
+                        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+                        signature.take((MAX_RECIPIENTS_BYTES + 1) as u64).read_to_end(&mut bytes)
+                            .map_err(|_| Error::InvalidRecipients)?;
+                        if bytes.len() > MAX_RECIPIENTS_BYTES {
+                            return Err(Error::InvalidRecipients);
+                        }
+                        Some(bytes)
+                    }
+                    Err(error) if error == Errno::NOENT => None,
                     Err(_) => return Err(Error::InvalidRecipients),
+                };
+                if !signing_keys.is_empty() && signature.is_none() {
+                    return Err(Error::UnsignedRecipients);
+                }
+                if signing_keys.is_empty() && signature.is_some() {
+                    return Err(Error::RecipientSignatureRequired);
                 }
                 let metadata = config.metadata()?;
                 #[cfg(unix)]
@@ -323,9 +377,14 @@ impl Store {
                 if contents.len() > MAX_RECIPIENTS_BYTES {
                     return Err(Error::InvalidRecipients);
                 }
-                let contents =
+                let recipients_text =
                     std::str::from_utf8(&contents).map_err(|_| Error::InvalidRecipients)?;
-                return parse_recipients(contents);
+                return Ok(RecipientPolicy {
+                    recipients: parse_recipients(recipients_text)?,
+                    contents: Some(contents),
+                    signature,
+                    signing_keys,
+                });
             }
             Err(Error::MissingRecipients)
         }
@@ -337,14 +396,14 @@ impl Store {
     }
 
     /// Atomically create a new encrypted entry without following links or replacing a file.
-    pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
-        self.write_entry(entry, ciphertext, None)
+    pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8], policy: &RecipientPolicy) -> Result<(), Error> {
+        self.write_entry(entry, ciphertext, None, policy)
     }
 
     /// Atomically replace an existing encrypted entry within the pinned store.
-    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8], expected: &EntryRevision) -> Result<(), Error> {
+    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8], expected: &EntryRevision, policy: &RecipientPolicy) -> Result<(), Error> {
         self.check_revision(entry, expected)?;
-        self.write_entry(entry, ciphertext, Some(expected))
+        self.write_entry(entry, ciphertext, Some(expected), policy)
     }
 
     pub fn entry_revision(&self, entry: &Entry) -> Result<EntryRevision, Error> {
@@ -358,7 +417,7 @@ impl Store {
         }
     }
 
-    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], expected: Option<&EntryRevision>) -> Result<(), Error> {
+    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], expected: Option<&EntryRevision>, policy: &RecipientPolicy) -> Result<(), Error> {
         #[cfg(unix)]
         {
             use rustix::{
@@ -405,6 +464,14 @@ impl Store {
                 parent = File::from(directory);
             }
 
+            // Serialize concurrent writes from this process around the final
+            // revision check and replacement.
+            let _process_lock = expected.map(|_| {
+                ENTRY_WRITE_SERIALIZER
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+            });
+
             let mut random = [0u8; 16];
             getrandom::fill(&mut random).map_err(|_| Error::RandomUnavailable)?;
             let temporary = format!(
@@ -432,8 +499,14 @@ impl Store {
                 let mut file = file;
                 file.write_all(ciphertext)?;
                 file.sync_all()?;
+                let current_policy = self.recipients_for_entry(entry)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+                if current_policy != *policy {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "recipient policy changed"));
+                }
                 if let Some(expected) = expected {
-                    // Check the actual pinned destination, not a reopened parent path.
+                    // Check the current destination after taking the process
+                    // write mutex; a concurrent app save may have replaced it.
                     let destination = File::from(openat(&parent, *file_name,
                         OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
                         Mode::empty()).map_err(std::io::Error::from)?);
@@ -457,6 +530,9 @@ impl Store {
                 let _ = unlinkat(&parent, temporary_os, AtFlags::empty());
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
                     return Err(if expected.is_some() { Error::EntryConflict } else { Error::EntryAlreadyExists });
+                }
+                if error.kind() == std::io::ErrorKind::InvalidData {
+                    return Err(Error::RecipientPolicyChanged);
                 }
                 return Err(Error::Io(error));
             }

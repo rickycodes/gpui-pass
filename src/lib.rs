@@ -38,7 +38,11 @@ pub enum Error {
     InvalidWordList,
     MissingRecipients,
     InvalidRecipients,
-    SignedRecipientsUnsupported,
+    InvalidSigningKey,
+    RecipientSignatureRequired,
+    UnsignedRecipients,
+    InvalidRecipientSignature,
+    RecipientPolicyChanged,
     EntryAlreadyExists,
     EntryNotFound,
     EntryConflict,
@@ -64,7 +68,7 @@ impl fmt::Display for Error {
                 "GnuPG could not decrypt this entry. Check your key or YubiKey, and your system PIN prompt."
             }
             Self::Cancelled => "Operation cancelled.",
-            Self::TimedOut => "Unlock timed out. Check the PIN prompt or YubiKey touch request, then reveal again.",
+            Self::TimedOut => "The operation timed out. Check the PIN prompt or YubiKey touch request, then try again.",
             Self::SecretTooLarge => "This entry exceeds the 1 MiB reveal limit.",
             Self::InvalidText => "This entry is not UTF-8 text and cannot be displayed safely.",
             Self::InvalidGenerationLength => "Use 4 to 8 words, or a random length of 1 to 1024 with a supported character set.",
@@ -72,9 +76,11 @@ impl fmt::Display for Error {
             Self::InvalidWordList => "The bundled password word list is invalid.",
             Self::MissingRecipients => "No GnuPG recipients are configured for this folder.",
             Self::InvalidRecipients => "The nearest .gpg-id file is invalid or unsafe.",
-            Self::SignedRecipientsUnsupported => {
-                "This store requires signed .gpg-id verification, which is not supported for writes yet."
-            }
+            Self::InvalidSigningKey => "PASSWORD_STORE_SIGNING_KEY must contain full uppercase 40-character GPG fingerprints.",
+            Self::RecipientSignatureRequired => "This .gpg-id is signed. Set PASSWORD_STORE_SIGNING_KEY to trust its signing fingerprint before writing.",
+            Self::UnsignedRecipients => "PASSWORD_STORE_SIGNING_KEY is set, but the selected .gpg-id has no detached signature.",
+            Self::InvalidRecipientSignature => "The selected .gpg-id signature is invalid or was not made by a trusted signing key.",
+            Self::RecipientPolicyChanged => "The recipient policy changed while saving. Your entry was not written; retry after refreshing.",
             Self::EntryAlreadyExists => "An entry already exists at that name. Choose another name.",
             Self::EntryConflict => "This entry changed on disk. Your edit was not saved; keep your changes and reopen the entry to resolve the conflict.",
             Self::EntryNotFound => "This entry no longer exists. Refresh the store.",

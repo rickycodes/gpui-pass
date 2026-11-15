@@ -1,5 +1,6 @@
 use crate::{
     Entry, EntryRevision, Error, GeneratorOptions, OperationProgress, Store, generate_memorable_password,
+    store::RecipientPolicy,
     gpg_status::{CHECK_KEY, ENCRYPTING, StatusReader, UNLOCKING},
 };
 use std::{
@@ -19,6 +20,17 @@ use zeroize::Zeroizing;
 
 pub const MAX_SECRET_BYTES: usize = 1024 * 1024;
 const MAX_CIPHERTEXT_BYTES: usize = 2 * MAX_SECRET_BYTES;
+const SIGNATURE_VERIFY_TIMEOUT: Duration = Duration::from_secs(15);
+
+struct TemporaryFiles(Vec<PathBuf>);
+
+impl Drop for TemporaryFiles {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
 
 /// Plaintext has no Clone/Display implementation; Debug is always redacted.
 pub struct Secret(Zeroizing<Vec<u8>>);
@@ -159,12 +171,12 @@ impl Gpg {
     ) -> Result<(), Error> {
         if cancel.is_cancelled() { return Err(Error::Cancelled); }
         store.check_revision(entry, expected)?;
-        let recipients = store.recipients_for_entry(entry)?;
-        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress, false)?;
+        let policy = self.recipient_policy(store, entry)?;
+        let ciphertext = self.encrypt_secret(secret, &policy.recipients, cancel, progress, false)?;
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
-        store.replace_entry(entry, &ciphertext, expected)
+        store.replace_entry(entry, &ciphertext, expected, &policy)
     }
 
     fn encrypt_new_entry(
@@ -175,12 +187,112 @@ impl Gpg {
         cancel: &Cancellation,
         progress: &OperationProgress,
     ) -> Result<(), Error> {
-        let recipients = store.recipients_for_entry(entry)?;
-        let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress, true)?;
+        let policy = self.recipient_policy(store, entry)?;
+        let ciphertext = self.encrypt_secret(secret, &policy.recipients, cancel, progress, true)?;
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
-        store.create_entry(entry, &ciphertext)
+        store.create_entry(entry, &ciphertext, &policy)
+    }
+
+    fn recipient_policy(&self, store: &Store, entry: &Entry) -> Result<RecipientPolicy, Error> {
+        let policy = store.recipients_for_entry(entry)?;
+        if let Some(signature) = &policy.signature {
+            self.verify_recipient_signature(
+                policy.contents.as_deref().ok_or(Error::InvalidRecipients)?,
+                signature,
+                &policy.signing_keys,
+            )?;
+        }
+        Ok(policy)
+    }
+
+    #[cfg(unix)]
+    fn verify_recipient_signature(
+        &self,
+        contents: &[u8],
+        signature: &[u8],
+        trusted_keys: &[String],
+    ) -> Result<(), Error> {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).map_err(|_| Error::RandomUnavailable)?;
+        let name = random.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+        let signature_path = std::env::temp_dir().join(format!("gpui-pass-{name}.sig"));
+        let contents_path = std::env::temp_dir().join(format!("gpui-pass-{name}.data"));
+        let mut temporary = TemporaryFiles(Vec::new());
+        let mut signature_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&signature_path)?;
+        temporary.0.push(signature_path.clone());
+        signature_file.write_all(signature)?;
+        signature_file.sync_all()?;
+        drop(signature_file);
+        let mut contents_file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&contents_path)?;
+        temporary.0.push(contents_path.clone());
+        contents_file.write_all(contents)?;
+        contents_file.sync_all()?;
+        drop(contents_file);
+
+        let mut child = Command::new(&self.executable)
+            .args([
+                "--no-options", "--batch", "--no-tty", "--no-auto-key-retrieve",
+                "--no-auto-key-import", "--status-fd=1", "--verify",
+            ])
+            .arg(&signature_path)
+            .arg(&contents_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(Error::Io)?;
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed() < SIGNATURE_VERIFY_TIMEOUT => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(Error::TimedOut);
+                }
+                Err(error) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(Error::Io(error));
+                }
+            }
+        }
+        let output = child.wait_with_output()?;
+        if !output.status.success() {
+            return Err(Error::InvalidRecipientSignature);
+        }
+        let trusted = String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+            let Some(fields) = line.strip_prefix("[GNUPG:] VALIDSIG ") else { return false; };
+            fields.split_whitespace().last().is_some_and(|fingerprint| {
+                trusted_keys.iter().any(|trusted| trusted == fingerprint)
+            })
+        });
+        if trusted { Ok(()) } else { Err(Error::InvalidRecipientSignature) }
+    }
+
+    #[cfg(not(unix))]
+    fn verify_recipient_signature(
+        &self,
+        _: &[u8],
+        _: &[u8],
+        _: &[String],
+    ) -> Result<(), Error> {
+        Err(Error::UnsupportedPlatform)
     }
 
     #[cfg(unix)]
@@ -562,13 +674,13 @@ mod tests {
     }
 
     #[test]
-    fn detached_recipient_signatures_block_updates() {
+    fn detached_recipient_signatures_require_configured_trust_key() {
         let (dir, gpg, store, entry) = fake_gpg("raise AssertionError('must not encrypt')");
         fs::write(dir.path().join(".gpg-id"), b"fixture\n").unwrap();
         fs::write(dir.path().join(".gpg-id.sig"), b"signature").unwrap();
         let secret = Secret::from_bytes(Zeroizing::new(b"edited".to_vec())).unwrap();
         assert!(matches!(gpg.update_entry(&store, &entry, &secret, &Cancellation::default(),
-            &OperationProgress::new(ENCRYPTING)), Err(Error::SignedRecipientsUnsupported)));
+            &OperationProgress::new(ENCRYPTING)), Err(Error::RecipientSignatureRequired)));
         assert_eq!(fs::read(dir.path().join("entry.gpg")).unwrap(), b"ciphertext");
     }
 

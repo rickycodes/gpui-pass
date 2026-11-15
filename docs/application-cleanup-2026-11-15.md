@@ -42,9 +42,11 @@ Follow-up to the [2026-11-14 application review](application-review-2026-11-14.m
 
 ## Remaining work and limits
 
-- Revision checks are optimistic. There is still a narrow race between the
-  final comparison and rename when another writer does not cooperate. There
-  is no conflict merge/recovery UI or signed recipient-policy verification.
+- Signed recipient policies are verified against the configured full
+  fingerprints in `PASSWORD_STORE_SIGNING_KEY`, and the exact policy snapshot
+  is checked again before writing. A process-wide mutex serializes saves within
+  one app process, but another process can still race between the final
+  comparison and rename. There is no conflict merge/recovery UI.
   The legacy core `update_entry` API snapshots at call time; clients needing
   protection since read must use `decrypt_with_revision` and
   `update_entry_if_unchanged`, as the GUI does.
