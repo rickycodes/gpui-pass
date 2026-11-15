@@ -13,7 +13,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 
 ## Planned
 
-1. **Complete safe write policy handling.** Verify signed `.gpg-id` recipient policies before writing. Detect concurrent file changes before replacing an edited entry, and report conflicts without losing either version.
+1. **Complete safe write policy handling.** Verify signed `.gpg-id` recipient policies before writing. Build on the implemented optimistic revision checks with a stronger concurrent-write strategy and a conflict-resolution workflow; a non-cooperating writer can still race the final check and rename.
 2. **Create custom entries.** Add a secure in-app flow for creating user-written single-line or multiline entries, with explicit overwrite confirmation.
 3. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
 4. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.

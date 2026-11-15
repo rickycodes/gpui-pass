@@ -1,6 +1,6 @@
 use crate::PassApp;
 use gpui::{
-    Bounds, ClipboardItem, Context, ElementInputHandler, EntityInputHandler, Pixels, Point, UTF16Selection,
+    Bounds, Context, ElementInputHandler, EntityInputHandler, Pixels, Point, UTF16Selection,
     Window, canvas, div, prelude::*, px, rgb,
 };
 use std::ops::Range;
@@ -38,19 +38,24 @@ impl PassApp {
             .unwrap_or_else(|| self.generator_name_selection.clone());
         let start = range.start.min(range.end);
         let end = range.end.max(range.start);
-        let limit: usize = if self.editing_entry { 16_384 } else { 512 };
-        let room = limit.saturating_sub(
-            self.generator_name[..start].chars().count()
-                + self.generator_name[end..].chars().count(),
-        );
-        let text: String = text
-            .chars()
-            .filter(|c| !c.is_control() || (self.editing_entry && *c == '\n'))
-            .take(room)
-            .collect();
-        self.generator_name.replace_range(start..end, &text);
+        let text = if self.editing_entry {
+            zeroize::Zeroizing::new(text.to_owned())
+        } else {
+            let room = 512_usize.saturating_sub(
+                self.generator_name[..start].chars().count() + self.generator_name[end..].chars().count(),
+            );
+            zeroize::Zeroizing::new(text.chars().filter(|c| !c.is_control()).take(room).collect::<String>())
+        };
         if self.editing_entry {
+            let Some(next) = crate::editor_input::replace(&self.generator_name, start..end, &text) else {
+                self.set_message(crate::editor_input::EDIT_LIMIT_MESSAGE.into());
+                cx.notify();
+                return start..start;
+            };
+            self.generator_name = next;
             self.editor_layout = None;
+        } else {
+            self.generator_name.replace_range(start..end, &text);
         }
         let inserted = start..start + text.len();
         self.generator_name_selection = inserted.end..inserted.end;
@@ -560,13 +565,13 @@ impl PassApp {
         self.generator_name_anchor = None;
     }
 
-    pub(crate) fn copy_edit_selection(&self, window: &Window, cx: &mut Context<Self>) {
+    pub(crate) fn copy_edit_selection(&mut self, window: &Window, cx: &mut Context<Self>) {
         if self.editing_entry && self.generator_name_focus.is_focused(window)
             && !self.generator_name_selection.is_empty()
         {
-            cx.write_to_clipboard(ClipboardItem::new_string(
-                self.generator_name[self.generator_name_selection.clone()].to_owned(),
-            ));
+            let text = self.generator_name[self.generator_name_selection.clone()].to_owned();
+            let source = self.session.selected().map(|entry| format!("{} (selection)", entry.name())).unwrap_or_else(|| "selection".into());
+            self.copy_to_clipboard(text, source, cx);
         }
     }
 
@@ -582,7 +587,8 @@ impl PassApp {
     pub(crate) fn paste_edit_text(&mut self, window: &Window, cx: &mut Context<Self>) {
         if self.editing_entry && self.generator_name_focus.is_focused(window) {
             if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
-                self.replace_generator_name(None, &text.replace("\r\n", "\n").replace('\r', "\n"), cx);
+                let text = zeroize::Zeroizing::new(text);
+                self.replace_generator_name(None, &text, cx);
             }
         }
     }

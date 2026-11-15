@@ -48,6 +48,7 @@ pub fn default_store_path() -> Result<PathBuf, Error> {
 pub struct Entry {
     relative_file: PathBuf,
     name: String,
+    search_name: String,
 }
 
 impl Entry {
@@ -69,10 +70,9 @@ impl Entry {
         {
             return Err(Error::InvalidEntry);
         }
-        Ok(Self {
-            relative_file: path.to_owned(),
-            name: text[..text.len() - 4].to_owned(),
-        })
+        let name = text[..text.len() - 4].to_owned();
+        let search_name = name.to_lowercase();
+        Ok(Self { relative_file: path.to_owned(), name, search_name })
     }
 
     pub fn name(&self) -> &str {
@@ -88,15 +88,42 @@ impl Entry {
         &self.relative_file
     }
     pub fn matches(&self, query: &str) -> bool {
-        let name = self.name.to_lowercase();
-        query
-            .split_whitespace()
-            .all(|part| name.contains(&part.to_lowercase()))
+        let terms: Vec<_> = query.split_whitespace().map(str::to_lowercase).collect();
+        self.matches_terms(&terms)
+    }
+
+    /// Match a query normalized once for an entire store search.
+    pub fn matches_terms(&self, terms: &[String]) -> bool {
+        terms.iter().all(|term| self.search_name.contains(term))
     }
 }
 
 fn is_bidi_control(c: char) -> bool {
     matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Identity and change timestamps for an encrypted entry; contains no plaintext.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EntryRevision {
+    #[cfg(unix)]
+    identity: [i128; 7],
+}
+
+impl EntryRevision {
+    pub(crate) fn from_file(file: &File) -> Result<Self, Error> {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            let metadata = file.metadata()?;
+            Ok(Self { identity: [
+                metadata.dev() as i128, metadata.ino() as i128, metadata.len() as i128,
+                metadata.mtime() as i128, metadata.mtime_nsec() as i128,
+                metadata.ctime() as i128, metadata.ctime_nsec() as i128,
+            ] })
+        }
+        #[cfg(not(unix))]
+        { let _ = file; Err(Error::UnsupportedPlatform) }
+    }
 }
 
 #[derive(Clone)]
@@ -311,16 +338,27 @@ impl Store {
 
     /// Atomically create a new encrypted entry without following links or replacing a file.
     pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
-        self.write_entry(entry, ciphertext, false)
+        self.write_entry(entry, ciphertext, None)
     }
 
     /// Atomically replace an existing encrypted entry within the pinned store.
-    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8]) -> Result<(), Error> {
-        self.open_entry(entry)?;
-        self.write_entry(entry, ciphertext, true)
+    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8], expected: &EntryRevision) -> Result<(), Error> {
+        self.check_revision(entry, expected)?;
+        self.write_entry(entry, ciphertext, Some(expected))
     }
 
-    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], replace: bool) -> Result<(), Error> {
+    pub fn entry_revision(&self, entry: &Entry) -> Result<EntryRevision, Error> {
+        EntryRevision::from_file(&self.open_entry(entry)?)
+    }
+
+    pub(crate) fn check_revision(&self, entry: &Entry, expected: &EntryRevision) -> Result<(), Error> {
+        match self.entry_revision(entry) {
+            Ok(current) if current == *expected => Ok(()),
+            _ => Err(Error::EntryConflict),
+        }
+    }
+
+    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], expected: Option<&EntryRevision>) -> Result<(), Error> {
         #[cfg(unix)]
         {
             use rustix::{
@@ -394,14 +432,21 @@ impl Store {
                 let mut file = file;
                 file.write_all(ciphertext)?;
                 file.sync_all()?;
-                if replace {
+                if let Some(expected) = expected {
+                    // Check the actual pinned destination, not a reopened parent path.
+                    let destination = File::from(openat(&parent, *file_name,
+                        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                        Mode::empty()).map_err(std::io::Error::from)?);
+                    if EntryRevision::from_file(&destination).map_err(|_| std::io::Error::other("entry conflict"))? != *expected {
+                        return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "entry conflict"));
+                    }
                     renameat(&parent, temporary_os, &parent, *file_name)
                         .map_err(std::io::Error::from)?;
                 } else {
                     linkat(&parent, temporary_os, &parent, *file_name, AtFlags::empty())
                         .map_err(std::io::Error::from)?;
                 }
-                if !replace {
+                if expected.is_none() {
                     unlinkat(&parent, temporary_os, AtFlags::empty())
                         .map_err(std::io::Error::from)?;
                 }
@@ -411,7 +456,7 @@ impl Store {
             if let Err(error) = write_result {
                 let _ = unlinkat(&parent, temporary_os, AtFlags::empty());
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    return Err(Error::EntryAlreadyExists);
+                    return Err(if expected.is_some() { Error::EntryConflict } else { Error::EntryAlreadyExists });
                 }
                 return Err(Error::Io(error));
             }
@@ -419,7 +464,7 @@ impl Store {
         }
         #[cfg(not(unix))]
         {
-            let _ = (entry, ciphertext, replace);
+            let _ = (entry, ciphertext, expected);
             Err(Error::UnsupportedPlatform)
         }
     }

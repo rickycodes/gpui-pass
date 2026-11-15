@@ -15,8 +15,8 @@ pub use generator::{
 };
 pub use hardening::harden_process;
 pub use operation::{CardEvent, CardObservation, OperationProgress, OperationStatus, StatusKind};
-pub use session::{RevealRequest, Session};
-pub use store::{Entry, Store, default_store_path};
+pub use session::{REVEAL_DURATION, RevealRequest, Session};
+pub use store::{Entry, EntryRevision, Store, default_store_path};
 
 use std::{fmt, io};
 
@@ -41,6 +41,7 @@ pub enum Error {
     SignedRecipientsUnsupported,
     EntryAlreadyExists,
     EntryNotFound,
+    EntryConflict,
     EncryptionFailed,
     MissingHome,
 }
@@ -75,6 +76,7 @@ impl fmt::Display for Error {
                 "This store requires signed .gpg-id verification, which is not supported for writes yet."
             }
             Self::EntryAlreadyExists => "An entry already exists at that name. Choose another name.",
+            Self::EntryConflict => "This entry changed on disk. Your edit was not saved; keep your changes and reopen the entry to resolve the conflict.",
             Self::EntryNotFound => "This entry no longer exists. Refresh the store.",
             Self::EncryptionFailed => "GnuPG could not encrypt the entry.",
             Self::MissingHome => "Set PASSWORD_STORE_DIR or supply a store path with --store.",

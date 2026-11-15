@@ -1,5 +1,5 @@
 use crate::{
-    Entry, Error, GeneratorOptions, OperationProgress, Store, generate_memorable_password,
+    Entry, EntryRevision, Error, GeneratorOptions, OperationProgress, Store, generate_memorable_password,
     gpg_status::{CHECK_KEY, ENCRYPTING, StatusReader, UNLOCKING},
 };
 use std::{
@@ -94,6 +94,19 @@ impl Gpg {
         self.decrypt_file(store.open_entry(entry)?, cancel, progress)
     }
 
+    /// Capture the revision of the file actually decrypted, rejecting changes during unlock.
+    pub fn decrypt_with_revision(
+        &self, store: &Store, entry: &Entry, cancel: &Cancellation, progress: &OperationProgress,
+    ) -> Result<(Secret, EntryRevision), Error> {
+        if cancel.is_cancelled() { return Err(Error::Cancelled); }
+        let file = store.open_entry(entry)?;
+        let revision = EntryRevision::from_file(&file)?;
+        progress.update(UNLOCKING);
+        let secret = self.decrypt_file(file, cancel, progress)?;
+        store.check_revision(entry, &revision)?;
+        Ok((secret, revision))
+    }
+
     pub fn generate_entry(
         &self,
         store: &Store,
@@ -136,12 +149,22 @@ impl Gpg {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
+        let revision = store.entry_revision(entry)?;
+        self.update_entry_if_unchanged(store, entry, secret, &revision, cancel, progress)
+    }
+
+    pub fn update_entry_if_unchanged(
+        &self, store: &Store, entry: &Entry, secret: &Secret, expected: &EntryRevision,
+        cancel: &Cancellation, progress: &OperationProgress,
+    ) -> Result<(), Error> {
+        if cancel.is_cancelled() { return Err(Error::Cancelled); }
+        store.check_revision(entry, expected)?;
         let recipients = store.recipients_for_entry(entry)?;
         let ciphertext = self.encrypt_secret(secret, &recipients, cancel, progress, false)?;
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
-        store.replace_entry(entry, &ciphertext)
+        store.replace_entry(entry, &ciphertext, expected)
     }
 
     fn encrypt_new_entry(
@@ -469,6 +492,30 @@ mod tests {
             assert!(Instant::now() < deadline, "operation hint was not received");
             thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn checked_updates_preserve_external_changes_before_or_during_encryption() {
+        let (dir, gpg, store, entry) = fake_gpg("sys.stdout.buffer.write(b'cipher:' + sys.stdin.buffer.read())");
+        fs::write(dir.path().join(".gpg-id"), b"fixture-recipient\n").unwrap();
+        let revision = store.entry_revision(&entry).unwrap();
+        fs::write(dir.path().join("entry.gpg"), b"external edit").unwrap();
+        let secret = Secret::from_bytes(Zeroizing::new(b"local edit".to_vec())).unwrap();
+        let progress = OperationProgress::new(ENCRYPTING);
+        assert!(matches!(gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &Cancellation::default(), &progress), Err(Error::EntryConflict)));
+        assert_eq!(fs::read(dir.path().join("entry.gpg")).unwrap(), b"external edit");
+
+        let revision = store.entry_revision(&entry).unwrap();
+        fs::write(dir.path().join("gpg"), "#!/usr/bin/python3\nimport sys, pathlib\nsys.stdin.buffer.read()\npathlib.Path(__file__).with_name('entry.gpg').write_bytes(b'changed during encryption')\nsys.stdout.buffer.write(b'new ciphertext')\n").unwrap();
+        assert!(matches!(gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &Cancellation::default(), &progress), Err(Error::EntryConflict)));
+        assert_eq!(fs::read(dir.path().join("entry.gpg")).unwrap(), b"changed during encryption");
+    }
+
+    #[test]
+    fn versioned_reveal_rejects_a_file_changed_during_decryption() {
+        let (dir, gpg, store, entry) = fake_gpg("import pathlib\nsys.stdin.buffer.read()\npathlib.Path(__file__).with_name('entry.gpg').write_bytes(b'replaced')\nprint('secret')");
+        assert!(matches!(gpg.decrypt_with_revision(&store, &entry, &Cancellation::default(), &OperationProgress::new(UNLOCKING)), Err(Error::EntryConflict)));
+        assert_eq!(fs::read(dir.path().join("entry.gpg")).unwrap(), b"replaced");
     }
 
     #[test]

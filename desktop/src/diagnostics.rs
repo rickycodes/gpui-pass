@@ -49,11 +49,21 @@ impl Log {
 }
 
 fn open_file(path: &Path) -> io::Result<File> {
-    let mut options = OpenOptions::new();
-    options.create(true).append(true);
     #[cfg(unix)]
-    { use std::os::unix::fs::OpenOptionsExt; options.mode(0o600); }
-    options.open(path)
+    {
+        use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+        let file = OpenOptions::new().create(true).append(true).mode(0o600)
+            .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
+            .open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.nlink() != 1 {
+            return Err(io::Error::other("unsafe log destination"));
+        }
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        Ok(file)
+    }
+    #[cfg(not(unix))]
+    { OpenOptions::new().create(true).append(true).open(path) }
 }
 
 pub(crate) fn init() {
@@ -95,6 +105,27 @@ pub(crate) use trace;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_links_and_restricts_existing_log_permissions() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+        let root = std::env::temp_dir().join(format!("gpui-pass-log-hardening-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("target");
+        fs::write(&target, "original").unwrap();
+        symlink(&target, root.join("symlink")).unwrap();
+        assert!(open_file(&root.join("symlink")).is_err());
+        fs::hard_link(&target, root.join("hardlink")).unwrap();
+        assert!(open_file(&root.join("hardlink")).is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
+        let log = root.join("existing.log");
+        fs::write(&log, "existing").unwrap();
+        fs::set_permissions(&log, fs::Permissions::from_mode(0o644)).unwrap();
+        drop(open_file(&log).unwrap());
+        assert_eq!(fs::metadata(&log).unwrap().permissions().mode() & 0o777, 0o600);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn logs_are_immediately_readable_rotated_and_private() {

@@ -1,5 +1,7 @@
 # Application review — 2026-11-14
 
+See the [2026-11-15 follow-up](application-cleanup-2026-11-15.md) for fixes and remaining limits.
+
 Reviewed the store backend, recipient policies, GnuPG subprocesses, generation,
 secret lifetimes, desktop editing, clipboard behavior, notifications, navigation,
 card helpers, diagnostics, and theme loading. This is a source review with

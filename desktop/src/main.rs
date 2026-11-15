@@ -12,20 +12,25 @@ use card_refresh::{CardProbe, CardRefresh, ProbeResult};
 mod navigation;
 use navigation::{Navigation, Page};
 
+mod process_output;
+mod clipboard;
+use clipboard::ClipboardState;
+
+mod editor_input;
 mod entry_editor;
 mod search;
 mod theme;
 
 use gpui::{
-    App, Application, Bounds, ClipboardItem, Context, CursorStyle, Div, FocusHandle, FontWeight,
+    App, Application, Bounds, Context, CursorStyle, Div, FocusHandle, FontWeight,
     Image, ImageFormat,
     KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription, TitlebarOptions,
     UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas, div, prelude::*,
     img, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    Cancellation, CardEvent, CardObservation, Entry, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
-    RevealRequest, Secret, Session, Store, default_store_path, harden_process,
+    Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
+    RevealRequest, Secret, Session, Store, REVEAL_DURATION, default_store_path, harden_process,
 };
 use std::{
     borrow::Cow,
@@ -235,6 +240,21 @@ enum GeneratorMode {
     PassDefault,
 }
 
+type VersionedSecretResult = Result<(Secret, Option<EntryRevision>), Error>;
+type SaveResult = Result<(Entry, Secret), Error>;
+type PendingSave = (Cancellation, OperationProgress, Receiver<SaveResult>);
+
+struct PendingCopy {
+    entry: Entry,
+    progress: OperationProgress,
+    cancellation: Cancellation,
+    receiver: Receiver<Result<Secret, Error>>,
+}
+
+impl Drop for PendingCopy {
+    fn drop(&mut self) { self.cancellation.cancel(); }
+}
+
 pub(crate) struct PassApp {
     pub(crate) theme: Theme,
     session: Session,
@@ -260,12 +280,11 @@ pub(crate) struct PassApp {
     gpg: PathBuf,
     demo: bool,
     load: Option<Receiver<LoadedStore>>,
-    reveal: Option<(RevealRequest, Receiver<Result<Secret, Error>>)>,
-    copy_pending: Option<(Entry, OperationProgress, Receiver<Result<Secret, Error>>)>,
+    reveal: Option<(RevealRequest, Receiver<VersionedSecretResult>)>,
+    copy_pending: Option<PendingCopy>,
     generated: Option<(Secret, Instant)>,
     generated_visible: bool,
-    copied_password: Option<Zeroizing<String>>,
-    pass_clipboard: Option<(Zeroizing<String>, Option<ClipboardItem>, Instant)>,
+    clipboard: ClipboardState,
     clipboard_seconds: Option<u64>,
     generation_words: usize,
     generator_mode: GeneratorMode,
@@ -274,11 +293,7 @@ pub(crate) struct PassApp {
     generator_slider_bounds: Option<Bounds<gpui::Pixels>>,
     navigation: Navigation,
     confirming_delete: Option<Entry>,
-    saving: Option<(
-        Cancellation,
-        OperationProgress,
-        Receiver<Result<(Entry, Secret), Error>>,
-    )>,
+    saving: Option<PendingSave>,
     saved_entry_name: Option<String>,
     yubikey_history: VecDeque<YubiRecord>,
     last_yubikey_observation: Option<Instant>,
@@ -307,6 +322,8 @@ pub(crate) struct PassApp {
     pub(crate) editing_entry: bool,
     pub(crate) editor_layout: Option<entry_editor::TextLayout>,
     saving_edit: bool,
+    revealed_revision: Option<EntryRevision>,
+    edit_revision: Option<EntryRevision>,
     message: Option<String>,
     message_until: Option<Instant>,
     seconds: u64,
@@ -358,8 +375,7 @@ impl PassApp {
             copy_pending: None,
             generated: None,
             generated_visible: false,
-            copied_password: None,
-            pass_clipboard: None,
+            clipboard: ClipboardState::default(),
             clipboard_seconds: None,
             generation_words: 6,
             generator_mode: GeneratorMode::PassDefault,
@@ -397,12 +413,27 @@ impl PassApp {
             editing_entry: false,
             editor_layout: None,
             saving_edit: false,
+            revealed_revision: None,
+            edit_revision: None,
             message: None,
             message_until: None,
             seconds: 0,
             last_operation_status: None,
             _activation: subscription,
         };
+        cx.on_app_quit(|app, cx| {
+            app.copy_pending = None;
+            app.session.hide();
+            app.device_verification.cancel();
+            if let Some((cancel, _, _)) = &app.saving { cancel.cancel(); }
+            app.restore_pass_clipboard(cx);
+            async {}
+        }).detach();
+        cx.on_release(|app, cx| {
+            app.copy_pending = None;
+            if let Some((cancel, _, _)) = &app.saving { cancel.cancel(); }
+            app.restore_pass_clipboard(cx);
+        }).detach();
         app.refresh(cx);
         app.start_card_watcher();
         app.start_usb_card_watcher(cx);
@@ -425,7 +456,7 @@ impl PassApp {
     }
 
     fn tick_interval(&self) -> Duration {
-        if self.load.is_some() || self.reveal.is_some() || self.saving.is_some() {
+        if self.load.is_some() || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() {
             Duration::from_millis(100)
         } else if cfg!(target_os = "linux")
             || self.card_watcher.is_some()
@@ -436,7 +467,7 @@ impl PassApp {
             Duration::from_millis(100)
         } else if self.session.revealed(Instant::now()).is_some()
             || self.generated.is_some()
-            || self.pass_clipboard.is_some()
+            || self.clipboard.active()
             || self.message_until.is_some()
         {
             Duration::from_millis(250)
@@ -453,6 +484,7 @@ impl PassApp {
             return;
         }
         self.session.select(None);
+        self.copy_pending = None;
         self.reveal = None;
         self.clear_generated(cx);
         self.clear_message();
@@ -532,7 +564,7 @@ impl PassApp {
         {
             let (request, _) = self.reveal.take().expect("request available");
             match result {
-                Ok(secret) => {
+                Ok((secret, revision)) => {
                     if !self
                         .session
                         .finish_reveal(&request, secret, self.active, Instant::now())
@@ -540,6 +572,8 @@ impl PassApp {
                         self.set_message(
                             "Entry stayed hidden. Return to this window and reveal again.".into(),
                         );
+                    } else {
+                        self.revealed_revision = revision;
                     }
                 }
                 Err(error) => {
@@ -550,13 +584,14 @@ impl PassApp {
             }
             cx.notify();
         }
-        if let Some(result) = self.copy_pending.as_ref().and_then(|(_, _, receiver)| receiver.try_recv().ok()) {
-            let (entry, _, _) = self.copy_pending.take().expect("copy request available");
+        if let Some(result) = self.copy_pending.as_ref().and_then(|pending| pending.receiver.try_recv().ok()) {
+            let pending = self.copy_pending.take().expect("copy request available");
+            let entry = pending.entry.clone();
             if self.active && self.session.selected() == Some(&entry) {
                 match result {
                     Ok(secret) => {
-                        self.copy_to_clipboard(secret.expose().to_owned(), cx);
-                        self.set_message("Entry copied to clipboard.".into());
+                        self.copy_to_clipboard(secret.expose().to_owned(), entry.name().to_owned(), cx);
+
                     }
                     Err(error) => self.set_message(error.to_string()),
                 }
@@ -579,18 +614,13 @@ impl PassApp {
             self.clear_generated(cx);
             cx.notify();
         }
-        if self.pass_clipboard.as_ref().is_some_and(|(_, _, deadline)| Instant::now() >= *deadline) {
-            self.restore_pass_clipboard(cx);
-            cx.notify();
-        }
-        let clipboard_seconds = self.pass_clipboard.as_ref().map(|(_, _, deadline)| {
-            deadline
-                .saturating_duration_since(Instant::now())
-                .as_secs()
-                .saturating_add(1)
-        });
+        let now = Instant::now();
+        let clipboard_seconds = self.clipboard.remaining_seconds(now);
         if self.clipboard_seconds != clipboard_seconds {
-            self.clipboard_seconds = clipboard_seconds;
+            if let Some(item) = self.clipboard.poll(cx.read_from_clipboard(), now) {
+                cx.write_to_clipboard(item);
+            }
+            self.clipboard_seconds = self.clipboard.remaining_seconds(now);
             cx.notify();
         }
         if self.session.expire(Instant::now()) {
@@ -619,12 +649,7 @@ impl PassApp {
                         return;
                     }
                     self.entries.push(entry);
-                    self.entries.sort_by(|a, b| {
-                        a.name()
-                            .to_lowercase()
-                            .cmp(&b.name().to_lowercase())
-                            .then_with(|| a.name().cmp(b.name()))
-                    });
+                    self.entries.sort_by_cached_key(|entry| (entry.name().to_lowercase(), entry.name().to_owned()));
                     self.query.clear();
                     self.selection = 0..0;
                     self.marked = None;
@@ -635,13 +660,11 @@ impl PassApp {
                             .find(|entry| entry.name() == name)
                             .cloned(),
                     );
-                    self.saved_entry_name = Some(name);
+                    self.saved_entry_name = Some(name.clone());
                     if !self.close_after_save && self.active {
                         let text = secret.expose().to_owned();
-                        self.pass_clipboard = None;
-                        cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-                        self.copied_password = Some(Zeroizing::new(text));
-                        self.generated = Some((secret, Instant::now() + Duration::from_secs(30)));
+                        self.copy_to_clipboard(text, name, cx);
+                        self.generated = Some((secret, Instant::now() + REVEAL_DURATION));
                     }
                     self.clear_message();
                 }
@@ -660,7 +683,7 @@ impl PassApp {
         let status = self.session.pending_status().or_else(|| {
             self.copy_pending
                 .as_ref()
-                .map(|(_, progress, _)| progress.snapshot())
+                .map(|pending| pending.progress.snapshot())
         }).or_else(|| {
             self.saving
                 .as_ref()
@@ -676,7 +699,7 @@ impl PassApp {
         // A refresh request is not a physical card change. Coalesce requests
         // without making the running probe's result stale.
         if self.yubikey_check.is_some() { return; }
-        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.saving.is_some() || self.device_verification.running() {
+        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.device_verification.running() {
             if !self.card_refresh_pending {
                 trace!("probe.deferred ykman={} reveal={} saving={}",
                     self.yubikey_info_check.is_some(), self.reveal.is_some(), self.saving.is_some());
@@ -755,11 +778,9 @@ impl PassApp {
                         break;
                     }
                     Ok(_) => {
-                        if line.contains("DEVINFO_START") || line.contains("DEVINFO_END") {
-                            if !ready {
-                                ready = true;
-                                let _ = sender.send(CardWatchEvent::Ready);
-                            }
+                        if (line.contains("DEVINFO_START") || line.contains("DEVINFO_END")) && !ready {
+                            ready = true;
+                            let _ = sender.send(CardWatchEvent::Ready);
                         }
                         if line.contains("DEVINFO_STATUS") {
                             ready = true;
@@ -890,7 +911,7 @@ impl PassApp {
 
     fn start_yubikey_info_probe(&mut self) {
         if self.device_verification.running()
-            || self.reveal.is_some() || self.saving.is_some()
+            || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some()
             || self.yubikey_info.is_some()
             || self.yubikey_info_check.is_some()
             || self.usb_yubikey_present != Some(true)
@@ -947,7 +968,7 @@ impl PassApp {
                 }
             }
         }
-        let paused = self.reveal.is_some() || self.saving.is_some() || self.device_verification.running();
+        let paused = self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.device_verification.running();
         if paused != self.card_poll_paused {
             self.card_poll_paused = paused;
             trace!("card.poll paused={} reveal={} saving={} verification={} details={}", paused,
@@ -1136,8 +1157,8 @@ impl PassApp {
                     .map(|observation| (observation, "Reveal entry"))
             })
             .or_else(|| {
-                self.copy_pending.as_ref().and_then(|(_, progress, _)| {
-                    progress.card_observation().map(|observation| (observation, "Copy entry"))
+                self.copy_pending.as_ref().and_then(|pending| {
+                    pending.progress.card_observation().map(|observation| (observation, "Copy entry"))
                 })
             })
             .or_else(|| {
@@ -1185,14 +1206,16 @@ impl PassApp {
         self.cancel_edit(cx);
         self.confirming_delete = None;
         self.session.hide();
+        self.copy_pending = None;
         self.reveal = None;
         self.clear_generated(cx);
         self.clear_message();
+        let terms: Vec<_> = self.query.split_whitespace().map(str::to_lowercase).collect();
         self.filtered = self
             .entries
             .iter()
             .enumerate()
-            .filter_map(|(i, entry)| entry.matches(&self.query).then_some(i))
+            .filter_map(|(i, entry)| entry.matches_terms(&terms).then_some(i))
             .collect();
         let first = self
             .filtered
@@ -1247,8 +1270,8 @@ impl PassApp {
             return;
         }
         self.session.hide();
-        self.reveal = None;
         self.copy_pending = None;
+        self.reveal = None;
         self.clear_generated(cx);
         self.clear_message();
         cx.notify();
@@ -1262,6 +1285,7 @@ impl PassApp {
             }
         }
         self.editing_entry = false;
+        self.edit_revision = None;
         self.generator_name.zeroize();
         self.generator_name_selection = 0..0;
         self.generator_name_anchor = None;
@@ -1289,11 +1313,17 @@ impl PassApp {
             cx.notify();
             return;
         };
+        if !editor_input::supported(secret.expose()) {
+            self.set_message(editor_input::EDIT_LIMIT_MESSAGE.into());
+            cx.notify();
+            return;
+        }
         self.generator_name = Zeroizing::new(secret.expose().to_owned());
         self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
         self.generator_name_anchor = None;
         self.generator_name_cursor = self.generator_name.len();
         self.generator_name_marked = None;
+        self.edit_revision = self.revealed_revision;
         self.editing_entry = true;
         self.generator_name_bounds = None;
         self.editor_layout = None;
@@ -1306,6 +1336,11 @@ impl PassApp {
         let Some(entry) = self.session.selected().cloned() else { return; };
         let Some(store) = self.store.clone() else {
             self.set_message("Open a password store before editing entries.".into());
+            cx.notify();
+            return;
+        };
+        let Some(revision) = self.edit_revision else {
+            self.set_message("Reopen and reveal the entry before saving.".into());
             cx.notify();
             return;
         };
@@ -1324,7 +1359,7 @@ impl PassApp {
         let worker_progress = progress.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
-            let result = gpg.update_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
+            let result = gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
                 .map(|()| (entry, secret));
             let _ = sender.send(result);
         });
@@ -1438,6 +1473,7 @@ impl PassApp {
         if self.saving.is_some() { return; }
         self.cancel_edit(cx);
         self.device_verification.cancel();
+        self.copy_pending = None;
         self.session.hide();
         self.reveal = None;
         self.clear_generated(cx);
@@ -1836,16 +1872,15 @@ impl PassApp {
                         .on_click(cx.listener(|app, _, _, cx| {
                             if let Some((secret, _)) = &app.generated {
                                 let text = secret.expose().to_owned();
-                                app.pass_clipboard = None;
-                                cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
-                                app.copied_password = Some(Zeroizing::new(text));
+                                let source = app.saved_entry_name.clone().unwrap_or_else(|| "generated password".into());
+                                app.copy_to_clipboard(text, source, cx);
                                 cx.notify();
                             }
                         })),
                     )
                     .child(div().text_size(px(11.)).text_color(rgb(self.theme.colors.muted)).child(
                         if self.saved_entry_name.is_some() {
-                            "Saved · copied to clipboard; clears in 30 seconds."
+                            "Saved and copied."
                         } else {
                             "Available for 30 seconds."
                         },
@@ -1891,11 +1926,8 @@ impl PassApp {
 
         div()
             .id("generator-window")
-            .absolute()
-            .top_0()
-            .left_0()
-            .right_0()
-            .bottom_0()
+            .flex_1()
+            .min_h_0()
             .flex()
             .flex_col()
             .bg(rgb(self.theme.colors.background))
@@ -2001,66 +2033,36 @@ impl PassApp {
             .into_any_element()
     }
 
-    fn clear_generated(&mut self, cx: &mut Context<Self>) {
+    fn clear_generated(&mut self, _cx: &mut Context<Self>) {
         self.generated = None;
         self.generated_visible = false;
-        let Some(expected) = self.copied_password.take() else {
-            return;
-        };
-        let current = cx
-            .read_from_clipboard()
-            .and_then(|item| item.text())
-            .map(Zeroizing::new);
-        if current
-            .as_deref()
-            .is_some_and(|text| text == expected.as_str())
-        {
-            cx.write_to_clipboard(ClipboardItem::new_string(String::new()));
-        }
     }
 
-    fn copy_to_clipboard(&mut self, content: String, cx: &mut Context<Self>) {
-        let current = cx.read_from_clipboard();
-        let previous = if let Some((expected, previous, _)) = self.pass_clipboard.take() {
-            if current.as_ref().and_then(|item| item.text()).is_some_and(|text| text == expected.as_str()) {
-                previous
-            } else {
-                current
-            }
-        } else {
-            current
-        };
-        let timeout = std::env::var("PASSWORD_STORE_CLIP_TIME")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(45);
-        cx.write_to_clipboard(ClipboardItem::new_string(content.clone()));
-        self.pass_clipboard = Some((
-            Zeroizing::new(content),
-            previous,
-            Instant::now() + Duration::from_secs(timeout),
-        ));
+    fn copy_to_clipboard(&mut self, content: String, source: String, cx: &mut Context<Self>) {
+        let timeout = std::env::var("PASSWORD_STORE_CLIP_TIME").ok();
+        let deadline = clipboard::clipboard_deadline(Instant::now(), timeout.as_deref());
+        let item = self.clipboard.copy(content, source, cx.read_from_clipboard(), deadline);
+        cx.write_to_clipboard(item);
+        self.clipboard_seconds = None;
+        cx.notify();
     }
 
-    fn restore_pass_clipboard(&mut self, cx: &mut Context<Self>) {
-        let Some((expected, previous, _)) = self.pass_clipboard.take() else { return; };
-        let is_ours = cx.read_from_clipboard()
-            .and_then(|item| item.text().map(Zeroizing::new))
-            .is_some_and(|text| text.as_str() == expected.as_str());
-        if is_ours {
-            cx.write_to_clipboard(previous.unwrap_or_else(|| ClipboardItem::new_string(String::new())));
+    fn restore_pass_clipboard(&mut self, cx: &mut App) {
+        if let Some(item) = self.clipboard.restore(cx.read_from_clipboard()) {
+            cx.write_to_clipboard(item);
         }
     }
 
     fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window);
-        if self.device_verification.running() || self.session.is_pending() || !window.is_window_active() {
+        if self.copy_pending.is_some() || self.device_verification.running() || self.session.is_pending() || !window.is_window_active() {
             return;
         }
         if self.session.revealed(Instant::now()).is_some() {
             self.hide(cx);
             return;
         }
+        self.revealed_revision = None;
         self.clear_generated(cx);
         let Some(request) = self.session.begin_reveal() else {
             return;
@@ -2069,7 +2071,7 @@ impl PassApp {
         let result = if self.demo {
             let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
             let (sender, receiver) = mpsc::sync_channel(1);
-            let _ = sender.send(secret);
+            let _ = sender.send(secret.map(|secret| (secret, None)));
             receiver
         } else {
             let gpg = match Gpg::new(&self.gpg) {
@@ -2090,7 +2092,7 @@ impl PassApp {
             let progress = request.progress.clone();
             let (sender, receiver) = mpsc::sync_channel(1);
             std::thread::spawn(move || {
-                let _ = sender.send(gpg.decrypt_with_progress(&store, &entry, &cancel, &progress));
+                let _ = sender.send(gpg.decrypt_with_revision(&store, &entry, &cancel, &progress).map(|(secret, revision)| (secret, Some(revision))));
             });
             receiver
         };
@@ -2099,11 +2101,12 @@ impl PassApp {
     }
 
     fn copy_selected(&mut self, cx: &mut Context<Self>) {
-        if self.copy_pending.is_some() || self.device_verification.running() { return; }
+        if self.copy_pending.is_some() || self.reveal.is_some() || self.saving.is_some() || self.device_verification.running() { return; }
         let Some(entry) = self.session.selected().cloned() else { return; };
         self.clear_generated(cx);
         self.clear_message();
         let (sender, receiver) = mpsc::sync_channel(1);
+        let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
             "Copying entry",
             "Follow the system prompt. If your YubiKey blinks, touch its gold contact.",
@@ -2114,15 +2117,16 @@ impl PassApp {
         } else if let (Ok(gpg), Some(store)) = (Gpg::new(&self.gpg), self.store.clone()) {
             let worker_entry = entry.clone();
             let worker_progress = progress.clone();
-            std::thread::spawn(move || { let _ = sender.send(gpg.decrypt_with_progress(&store, &worker_entry, &Cancellation::default(), &worker_progress)); });
-            self.copy_pending = Some((entry, progress, receiver));
+            let worker_cancel = cancellation.clone();
+            std::thread::spawn(move || { let _ = sender.send(gpg.decrypt_with_progress(&store, &worker_entry, &worker_cancel, &worker_progress)); });
+            self.copy_pending = Some(PendingCopy { entry, progress, cancellation, receiver });
             cx.notify();
             return;
         } else {
             self.set_message("Open a password store before copying an entry.".into());
             return;
         }
-        self.copy_pending = Some((entry, progress, receiver));
+        self.copy_pending = Some(PendingCopy { entry, progress, cancellation, receiver });
         cx.notify();
     }
 
@@ -2314,7 +2318,10 @@ impl PassApp {
 
     fn verify_device(&mut self, cx: &mut Context<Self>) {
         if self.device_verification.running() { return; }
-        if self.reveal.is_some() || self.saving.is_some() || self.yubikey_info_check.is_some() || self.yubikey_check.is_some() {
+        self.clear_message();
+        self.verification_state_seen = VerificationState::Idle;
+        self.verification_notification_until = None;
+        if self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.yubikey_info_check.is_some() || self.yubikey_check.is_some() {
             self.device_verification.busy();
         } else if let Some(usb) = self.usb_reader_details.as_ref().filter(|usb| usb.vendor_id == 0x1050) {
             self.device_verification.start(self.card_refresh.generation(), usb.product_id);
@@ -2796,7 +2803,9 @@ impl PassApp {
 
 impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let main_content = if self.navigation.page() == Page::CardDetails {
+        let main_content = if self.navigation.generator_open() {
+            self.generator_view(window, cx)
+        } else if self.navigation.page() == Page::CardDetails {
             self.yubikey_view(cx)
         } else {
             div()
@@ -2807,9 +2816,17 @@ impl Render for PassApp {
                 .child(self.details(window, cx))
                 .into_any_element()
         };
-        let footer = if let Some((_, _, deadline)) = &self.pass_clipboard {
-            let seconds = deadline.saturating_duration_since(Instant::now()).as_secs().saturating_add(1);
-            let entry_name = self.session.selected().map(|entry| entry.name()).unwrap_or("entry");
+        let status = self.session.pending_status()
+            .or_else(|| self.copy_pending.as_ref().map(|pending| pending.progress.snapshot()))
+            .or_else(|| self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()));
+        let footer = if let Some(message) = &self.message {
+            notification_bar(&self.theme, message.clone())
+        } else if let Some(status) = status {
+            notification_bar(&self.theme, format!("{} · {}", status.title, status.detail))
+        } else if self.device_verification.running() || self.verification_notification_until.is_some() {
+            notification_bar(&self.theme, self.device_verification.state().message())
+        } else if let Some(seconds) = self.clipboard.remaining_seconds(Instant::now()) {
+            let entry_name = self.clipboard.source().unwrap_or("entry");
             div()
                 .h(px(48.))
                 .flex_shrink_0()
@@ -2835,14 +2852,6 @@ impl Render for PassApp {
                         .h(px(28.))
                         .on_click(cx.listener(|app, _, _, cx| app.restore_pass_clipboard(cx))),
                 )
-        } else if self.device_verification.running() {
-            notification_bar(&self.theme, "Waiting for YubiKey touch…")
-        } else if self.verification_notification_until.is_some() {
-            notification_bar(&self.theme, self.device_verification.state().message())
-        } else if let Some(status) = self.last_operation_status {
-            notification_bar(&self.theme, status.detail)
-        } else if let Some(message) = &self.message {
-            notification_bar(&self.theme, message.clone())
         } else {
             div()
                 .h(px(48.))
@@ -2953,7 +2962,7 @@ impl Render for PassApp {
             .on_action(cx.listener(|_, _: &ToggleFullscreen, window, _| {
                 window.toggle_fullscreen();
             }))
-            .child(
+            .when(!self.navigation.generator_open(), |view| view.child(
                 div()
                     .id("titlebar")
                     .w_full()
@@ -3090,12 +3099,9 @@ impl Render for PassApp {
                                     ),
                             ),
                     ),
-            )
+            ))
             .child(main_content)
             .child(footer)
-            .when(self.navigation.generator_open(), |view| {
-                view.child(self.generator_view(window, cx))
-            })
             .when(self.confirming_delete.is_some(), |view| {
                 view.child(self.delete_confirmation_view(cx))
             })
@@ -3192,7 +3198,7 @@ impl Render for PassApp {
 
 fn check_card_status(executable: &std::path::Path, probe_id: u64) -> CardProbeResult {
     trace!("probe.query id={probe_id} mode=card-status-all");
-    let Ok(mut child) = Command::new(executable)
+    let Ok(child) = Command::new(executable)
         .args([
             "--batch",
             "--no-tty",
@@ -3216,37 +3222,9 @@ fn check_card_status(executable: &std::path::Path, probe_id: u64) -> CardProbeRe
 
     trace!("probe.spawned id={probe_id} child_pid={}", child.id());
     let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if started.elapsed() < Duration::from_secs(5) => {
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            _ => break None,
-        }
-    };
-    if status.is_none() {
-        trace!("probe.timeout id={probe_id} phase=process elapsed_ms={}", started.elapsed().as_millis());
-        let _ = child.kill();
-        let _ = child.wait();
-        return CardProbeResult {
-            connection: YubiConnection::Busy,
-            details: None,
-        };
-    }
-
-    trace!("probe.exited id={probe_id} exit_code={:?} elapsed_ms={} phase=collect_output",
-        status.and_then(|status| status.code()), started.elapsed().as_millis());
-    // Parse only an allowlist of useful fields. GnuPG also returns serials, cardholder data,
-    // login data, and key fingerprints; those values are intentionally discarded.
-    let output = match child.wait_with_output() {
+    let output = match process_output::collect(child, Duration::from_secs(5)) {
         Ok(output) => output,
-        Err(_) => {
-            return CardProbeResult {
-                connection: YubiConnection::Unavailable,
-                details: None,
-            };
-        }
+        Err(_) => return CardProbeResult { connection: YubiConnection::Busy, details: None },
     };
     trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
         output.stdout.len(), output.stderr.len(), started.elapsed().as_millis());
@@ -3327,16 +3305,16 @@ struct YubiKeyInfo {
 fn yubikey_product_image(device_type: Option<&str>) -> Option<Arc<Image>> {
     let device_type = device_type?.trim();
     [
-        ("YubiKey 5Ci", &*YUBIKEY_5CI_IMAGE),
-        ("YubiKey 5C Nano", &*YUBIKEY_5C_NANO_IMAGE),
-        ("YubiKey 5 Nano", &*YUBIKEY_5_NANO_IMAGE),
-        ("YubiKey 5C NFC", &*YUBIKEY_5C_NFC_IMAGE),
-        ("YubiKey 5 NFC", &*YUBIKEY_5_NFC_IMAGE),
-        ("YubiKey 5C", &*YUBIKEY_5C_IMAGE),
+        ("YubiKey 5Ci", &YUBIKEY_5CI_IMAGE),
+        ("YubiKey 5C Nano", &YUBIKEY_5C_NANO_IMAGE),
+        ("YubiKey 5 Nano", &YUBIKEY_5_NANO_IMAGE),
+        ("YubiKey 5C NFC", &YUBIKEY_5C_NFC_IMAGE),
+        ("YubiKey 5 NFC", &YUBIKEY_5_NFC_IMAGE),
+        ("YubiKey 5C", &YUBIKEY_5C_IMAGE),
     ]
     .into_iter()
     .find(|(model, _)| device_type.eq_ignore_ascii_case(model))
-    .map(|(_, image)| Arc::clone(image))
+    .map(|(_, image)| Arc::clone(&**image))
 }
 
 #[derive(Clone)]
@@ -3352,7 +3330,7 @@ fn query_yubikey_info(probe_id: u64) -> YubiKeyInfo {
     // activation. pcscd can then claim CCID on replug until its idle timeout,
     // starving GnuPG's built-in driver. Restrict metadata reads to FIDO HID.
     let mut command = Command::new("python3");
-    let Ok(mut child) = command
+    let Ok(child) = command
         .args(["-c", include_str!("yubikey_info.py")])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -3364,24 +3342,7 @@ fn query_yubikey_info(probe_id: u64) -> YubiKeyInfo {
 
     trace!("probe.spawned id={probe_id} child_pid={}", child.id());
     let started = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Some(status),
-            Ok(None) if started.elapsed() < Duration::from_secs(2) => {
-                std::thread::sleep(Duration::from_millis(25));
-            }
-            _ => break None,
-        }
-    };
-    trace!("probe.exited id={probe_id} exit_code={:?} elapsed_ms={} phase=collect_output",
-        status.and_then(|status| status.code()), started.elapsed().as_millis());
-    if !status.is_some_and(|status| status.success()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return YubiKeyInfo::default();
-    }
-
-    let Ok(output) = child.wait_with_output() else {
+    let Ok(output) = process_output::collect(child, Duration::from_secs(2)) else {
         return YubiKeyInfo::default();
     };
     trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
@@ -3780,7 +3741,10 @@ fn notification_bar(theme: &Theme, message: impl Into<SharedString>) -> Div {
         .bg(rgb(theme.colors.accent_surface))
         .child(
             div()
+                .flex_1()
+                .min_w_0()
                 .text_size(px(13.))
+                .line_height(px(18.))
                 .text_color(rgb(theme.colors.ink))
                 .child(message.into()),
         )
@@ -3855,6 +3819,20 @@ fn resize_handle(
 #[cfg(test)]
 mod card_detection_tests {
     use super::*;
+
+    #[test]
+    fn dropping_a_copy_request_cancels_its_worker() {
+        let cancellation = Cancellation::default();
+        let (_, receiver) = mpsc::sync_channel(1);
+        let pending = PendingCopy {
+            entry: Entry::from_relative_file("test.gpg").unwrap(),
+            progress: OperationProgress::new(OperationStatus::working("Copying", "Working")),
+            cancellation: cancellation.clone(),
+            receiver,
+        };
+        drop(pending);
+        assert!(cancellation.is_cancelled());
+    }
 
     #[test]
     fn multiple_card_records_are_not_merged() {

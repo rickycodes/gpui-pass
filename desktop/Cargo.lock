@@ -2171,6 +2171,7 @@ version = "0.1.0"
 dependencies = [
  "gpui",
  "gpui-pass-core",
+ "rustix 1.1.4",
  "serde",
  "toml 0.8.23",
  "zeroize",
