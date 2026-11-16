@@ -9,6 +9,16 @@ A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) s
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
+## Screenshots
+
+### Entries
+
+![Entries view showing fictional demo entries](docs/screenshots/entries.png)
+
+### YubiKey card status
+
+![Card status view showing a connected YubiKey](docs/screenshots/card-status.png)
+
 ## Initial scope
 
 - Browse nested `.gpg` entries in an existing store.
