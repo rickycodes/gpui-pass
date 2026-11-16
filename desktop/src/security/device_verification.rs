@@ -177,11 +177,11 @@ fn run_helper(product_id: u16, cancel: &AtomicBool) -> State {
     };
     // Static public certificates only. The helper consumes this before touching HID.
     if input
-        .write_all(include_bytes!("../../assets/yubico-fido-roots.pem"))
+        .write_all(include_bytes!("../../../assets/yubico-fido-roots.pem"))
         .is_err()
         || input.write_all(b"\n---INTERMEDIATES---\n").is_err()
         || input
-            .write_all(include_bytes!("../../assets/yubico-intermediates.pem"))
+            .write_all(include_bytes!("../../../assets/yubico-intermediates.pem"))
             .is_err()
     {
         return State::Failed;

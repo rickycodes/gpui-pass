@@ -2,7 +2,7 @@ use fluent_bundle::{FluentArgs, FluentResource, concurrent::FluentBundle};
 use std::sync::OnceLock;
 use unic_langid::LanguageIdentifier;
 
-const EN_US: &str = include_str!("../../locales/en-US/main.ftl");
+const EN_US: &str = include_str!("../../../locales/en-US/main.ftl");
 
 struct Localization {
     bundle: FluentBundle<FluentResource>,
