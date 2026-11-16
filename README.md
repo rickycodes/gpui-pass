@@ -12,6 +12,7 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Search entry and folder names without decrypting content.
 - Explicit reveal: first-line password plus arbitrary remaining entry content.
 - Copy the complete entry directly to the clipboard without displaying it.
+- Press `Ctrl+Shift+C` to copy the selected entry without revealing it.
 - Restore the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), unless another app has changed the clipboard first.
 - Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
 - Cancel pending reveals and reject obsolete or background reveal/copy results.

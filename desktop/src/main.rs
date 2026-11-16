@@ -105,6 +105,7 @@ actions!(
         SelectUp,
         SelectDown,
         Copy,
+        CopyEntry,
         Cut,
         Paste,
         Start,
@@ -3389,7 +3390,7 @@ impl Render for PassApp {
                 .border_color(rgb(self.theme.colors.border))
                 .child(
                     div().text_size(px(10.)).text_color(rgb(self.theme.colors.muted)).child(
-                        "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl G  Generate     Esc  Hide",
+                        "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl Shift C  Copy     Ctrl G  Generate     Esc  Hide",
                     ),
                 )
         };
@@ -3469,6 +3470,17 @@ impl Render for PassApp {
                 }
             }))
             .on_action(cx.listener(|app, _: &Copy, window, cx| app.copy_edit_selection(window, cx)))
+            .on_action(cx.listener(|app, _: &CopyEntry, window, cx| {
+                if !app.navigation.generator_open()
+                    && !app.editing_entry
+                    && !app.generator_name_focus.is_focused(window)
+                    && !app.custom_entry_name_focus.is_focused(window)
+                    && app.confirming_delete.is_none()
+                    && app.confirming_overwrite.is_none()
+                {
+                    app.copy_selected(cx);
+                }
+            }))
             .on_action(cx.listener(|app, _: &Cut, window, cx| app.cut_edit_selection(window, cx)))
             .on_action(cx.listener(|app, _: &Paste, window, cx| app.paste_edit_text(window, cx)))
             .on_action(cx.listener(|app, _: &Start, window, cx| app.move_edge(false, window, cx)))
@@ -4509,6 +4521,7 @@ fn main() {
             KeyBinding::new("shift-up", SelectUp, Some("Pass")),
             KeyBinding::new("shift-down", SelectDown, Some("Pass")),
             KeyBinding::new("ctrl-c", Copy, Some("Pass")),
+            KeyBinding::new("ctrl-shift-c", CopyEntry, Some("Pass")),
             KeyBinding::new("ctrl-x", Cut, Some("Pass")),
             KeyBinding::new("ctrl-v", Paste, Some("Pass")),
             KeyBinding::new("home", Start, Some("Pass")),
