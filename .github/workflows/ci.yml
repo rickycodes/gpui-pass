@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Unit tests and checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential clang cmake pkg-config libclang-dev \
+            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+      - name: Check formatting
+        run: |
+          cargo fmt --all --check
+          cargo fmt --manifest-path desktop/Cargo.toml --all --check
+      - name: Run Python helper tests
+        run: |
+          python3 -m pip install -r desktop/requirements-test.txt
+          python3 -m unittest discover -s desktop/tests -v
+      - name: Lint core
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Test core
+        run: cargo test --locked
+      - name: Lint desktop
+        run: cargo clippy --manifest-path desktop/Cargo.toml --all-targets --locked -- -D warnings
+      - name: Test desktop
+        run: cargo test --manifest-path desktop/Cargo.toml --locked
+
+  pass-integration:
+    name: pass and GnuPG integration
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install pass and GnuPG
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes pass gnupg
+      - name: Run disposable pass compatibility fixture
+        run: bash scripts/test-pass-compat.sh

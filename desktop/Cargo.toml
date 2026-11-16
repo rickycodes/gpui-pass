@@ -27,3 +27,5 @@ xattr = { path = "../vendor/xattr" }
 [profile.release]
 panic = "abort"
 strip = true
+lto = "thin"
+codegen-units = 1

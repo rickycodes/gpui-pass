@@ -1,5 +1,8 @@
 # gpui-pass
 
+[![CI](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml)
+[![Release](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml)
+
 A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
 **Status: implementation in progress.** The latest review passed 28 core tests, 23 desktop tests, 9 Python helper tests, and the disposable real `pass` integration fixture. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware in earlier work. See the [2026-11-14 review](docs/application-review-2026-11-14.md) for outstanding findings and verification limits.
@@ -80,6 +83,8 @@ GnuPG defaults to `/usr/bin/gpg`. `--gpg` requires an absolute executable path. 
 Drag the dark title bar to move the window. Double-click it to enter or leave fullscreen. The Refresh control remains independently clickable.
 
 ## Verification
+
+GitHub Actions runs core and desktop Rust checks, Python helper tests, and the disposable real `pass`/GnuPG integration fixture. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
 ```sh
 cargo test --locked

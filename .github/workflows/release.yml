@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Optimized Linux x86_64 binary
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential clang cmake pkg-config libclang-dev \
+            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+      - name: Build optimized binary
+        run: cargo build --release --locked --manifest-path desktop/Cargo.toml
+      - name: Package binary and checksum
+        run: |
+          mkdir -p dist
+          install -m 755 desktop/target/release/gpui-pass dist/gpui-pass
+          cat > dist/INSTALL.txt <<'EOF'
+          gpui-pass Linux x86_64
+
+          This binary was built on Ubuntu 24.04. It requires GnuPG and the system
+          graphics/audio libraries used by GPUI; those shared libraries are not
+          bundled in this archive. See the project README for the Ubuntu package
+          list and GnuPG setup notes.
+
+          Try the app without a real password store:
+            ./gpui-pass --demo
+
+          Install for the current user:
+            install -Dm755 gpui-pass "$HOME/.local/bin/gpui-pass"
+          EOF
+          tar -czf dist/gpui-pass-linux-x86_64.tar.gz -C dist gpui-pass INSTALL.txt
+          (cd dist && sha256sum gpui-pass-linux-x86_64.tar.gz > gpui-pass-linux-x86_64.tar.gz.sha256)
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpui-pass-linux-x86_64
+          path: |
+            dist/gpui-pass-linux-x86_64.tar.gz
+            dist/gpui-pass-linux-x86_64.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Attach assets to GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpui-pass-linux-x86_64
+          path: dist
+      - name: Create release and upload binary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes
+          gh release upload "$RELEASE_TAG" dist/gpui-pass-linux-x86_64.tar.gz dist/gpui-pass-linux-x86_64.tar.gz.sha256 --clobber
