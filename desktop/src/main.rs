@@ -31,7 +31,7 @@ use gpui::{
     img, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
+    generate_memorable_password, generate_pass_default_password, Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
     RevealRequest, Secret, Session, Store, REVEAL_DURATION, default_store_path, harden_process,
 };
 use std::{
@@ -240,6 +240,18 @@ enum ParsedCardStatus {
 enum GeneratorMode {
     Memorable,
     PassDefault,
+    Custom,
+}
+
+#[derive(Clone, Copy)]
+enum OverwriteKind {
+    Generated { mode: GeneratorMode, options: GeneratorOptions },
+    Custom,
+}
+
+struct OverwriteConfirmation {
+    entry: Entry,
+    kind: OverwriteKind,
 }
 
 type VersionedSecretResult = Result<(Secret, Option<EntryRevision>), Error>;
@@ -270,6 +282,7 @@ pub(crate) struct PassApp {
     focus: FocusHandle,
     search_focus: FocusHandle,
     pub(crate) generator_name_focus: FocusHandle,
+    pub(crate) custom_entry_name_focus: FocusHandle,
     pub(crate) generator_name: Zeroizing<String>,
     pub(crate) generator_name_selection: Range<usize>,
     generator_name_anchor: Option<usize>,
@@ -293,8 +306,15 @@ pub(crate) struct PassApp {
     generation_digits: bool,
     generation_separators: bool,
     generator_slider_bounds: Option<Bounds<gpui::Pixels>>,
+    custom_entry_name: String,
+    pub(crate) custom_entry_name_selection: Range<usize>,
+    pub(crate) custom_entry_name_cursor: usize,
+    pub(crate) custom_entry_name_anchor: Option<usize>,
+    pub(crate) custom_entry_name_marked: Option<Range<usize>>,
+    pub(crate) custom_entry_name_bounds: Option<Bounds<gpui::Pixels>>,
     navigation: Navigation,
     confirming_delete: Option<Entry>,
+    confirming_overwrite: Option<OverwriteConfirmation>,
     saving: Option<PendingSave>,
     saved_entry_name: Option<String>,
     yubikey_history: VecDeque<YubiRecord>,
@@ -324,6 +344,7 @@ pub(crate) struct PassApp {
     pub(crate) editing_entry: bool,
     pub(crate) editor_layout: Option<entry_editor::TextLayout>,
     saving_edit: bool,
+    saving_custom_entry: bool,
     edit_conflict: bool,
     revealed_revision: Option<EntryRevision>,
     edit_revision: Option<EntryRevision>,
@@ -339,6 +360,7 @@ impl PassApp {
         let focus = cx.focus_handle();
         let search_focus = cx.focus_handle();
         let generator_name_focus = cx.focus_handle();
+        let custom_entry_name_focus = cx.focus_handle();
         let subscription = cx.observe_window_activation(window, |app, window, cx| {
             app.active = window.is_window_active();
             if !app.active {
@@ -362,6 +384,7 @@ impl PassApp {
             focus,
             search_focus,
             generator_name_focus,
+            custom_entry_name_focus,
             generator_name: Zeroizing::new(String::new()),
             generator_name_selection: 0..0,
             generator_name_anchor: None,
@@ -385,8 +408,15 @@ impl PassApp {
             generation_digits: true,
             generation_separators: true,
             generator_slider_bounds: None,
+            custom_entry_name: String::new(),
+            custom_entry_name_selection: 0..0,
+            custom_entry_name_cursor: 0,
+            custom_entry_name_anchor: None,
+            custom_entry_name_marked: None,
+            custom_entry_name_bounds: None,
             navigation: Navigation::default(),
             confirming_delete: None,
+            confirming_overwrite: None,
             saving: None,
             saved_entry_name: None,
             yubikey_history: VecDeque::new(),
@@ -416,6 +446,7 @@ impl PassApp {
             editing_entry: false,
             editor_layout: None,
             saving_edit: false,
+            saving_custom_entry: false,
             edit_conflict: false,
             revealed_revision: None,
             edit_revision: None,
@@ -641,6 +672,9 @@ impl PassApp {
             .and_then(|(_, _, receiver)| receiver.try_recv().ok())
         {
             self.saving = None;
+            let was_edit = self.saving_edit;
+            let was_custom_entry = self.saving_custom_entry;
+            self.saving_custom_entry = false;
             match result {
                 Ok((entry, secret)) => {
                     let name = entry.name().to_owned();
@@ -664,19 +698,29 @@ impl PassApp {
                             .find(|entry| entry.name() == name)
                             .cloned(),
                     );
-                    self.saved_entry_name = Some(name.clone());
-                    if !self.close_after_save && self.active {
-                        let text = secret.expose().to_owned();
-                        self.copy_to_clipboard(text, name, cx);
-                        self.generated = Some((secret, Instant::now() + REVEAL_DURATION));
+                    if was_custom_entry {
+                        self.saved_entry_name = None;
+                        self.close_generator(cx);
+                        self.set_message(i18n::text("custom-entry-saved"));
+                    } else {
+                        self.saved_entry_name = Some(name.clone());
+                        if !self.close_after_save && self.active {
+                            let text = secret.expose().to_owned();
+                            self.copy_to_clipboard(text, name, cx);
+                            self.generated = Some((secret, Instant::now() + REVEAL_DURATION));
+                        }
+                        self.clear_message();
                     }
-                    self.clear_message();
                 }
                 Err(error) => {
                     self.saving_edit = false;
-                    if matches!(&error, Error::EntryConflict) {
+                    self.saving_custom_entry = false;
+                    if matches!(&error, Error::EntryConflict) && was_edit {
                         self.edit_conflict = true;
                         self.set_message(i18n::text("edit-conflict-notice"));
+                    } else if matches!(&error, Error::EntryConflict) {
+                        self.edit_conflict = false;
+                        self.set_message(i18n::text("overwrite-entry-conflict"));
                     } else {
                         self.edit_conflict = false;
                         self.set_message(error.to_string());
@@ -1262,6 +1306,10 @@ impl PassApp {
     }
 
     fn hide(&mut self, cx: &mut Context<Self>) {
+        if self.confirming_overwrite.take().is_some() {
+            cx.notify();
+            return;
+        }
         if self.confirming_delete.take().is_some() {
             cx.notify();
             return;
@@ -1283,6 +1331,63 @@ impl PassApp {
         self.copy_pending = None;
         self.reveal = None;
         self.clear_generated(cx);
+        self.clear_message();
+        cx.notify();
+    }
+
+    pub(crate) fn text_editor_active(&self) -> bool {
+        self.editing_entry || self.generator_mode == GeneratorMode::Custom
+    }
+
+    fn reset_generator_cursor(&mut self) {
+        self.generator_name_selection = self.generator_name.len()..self.generator_name.len();
+        self.generator_name_anchor = None;
+        self.generator_name_cursor = self.generator_name.len();
+        self.generator_name_marked = None;
+        self.generator_name_bounds = None;
+        self.editor_layout = None;
+    }
+
+    fn clear_custom_entry(&mut self) {
+        if self.generator_mode == GeneratorMode::Custom {
+            self.generator_name.zeroize();
+            self.generator_mode = GeneratorMode::PassDefault;
+        }
+        self.custom_entry_name.zeroize();
+        self.custom_entry_name_selection = 0..0;
+        self.custom_entry_name_cursor = 0;
+        self.custom_entry_name_anchor = None;
+        self.custom_entry_name_marked = None;
+        self.custom_entry_name_bounds = None;
+        self.reset_generator_cursor();
+    }
+
+    fn open_custom_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving.is_some() {
+            return;
+        }
+        if self.demo || self.store.is_none() {
+            self.set_message(i18n::text("custom-entry-store-required"));
+            cx.notify();
+            return;
+        }
+        self.cancel_edit(cx);
+        self.device_verification.cancel();
+        self.copy_pending = None;
+        self.session.hide();
+        self.reveal = None;
+        self.clear_generated(cx);
+        self.generator_name.zeroize();
+        self.generator_mode = GeneratorMode::Custom;
+        self.custom_entry_name.clear();
+        self.reset_generator_cursor();
+        self.custom_entry_name_selection = 0..0;
+        self.custom_entry_name_cursor = 0;
+        self.custom_entry_name_anchor = None;
+        self.custom_entry_name_marked = None;
+        self.custom_entry_name_bounds = None;
+        self.custom_entry_name_focus.focus(window);
+        self.navigation.open_generator();
         self.clear_message();
         cx.notify();
     }
@@ -1537,10 +1642,15 @@ impl PassApp {
         }
         self.navigation.close_generator();
         self.clear_generated(cx);
+        self.clear_custom_entry();
         cx.notify();
     }
 
     fn save_generated(&mut self, cx: &mut Context<Self>) {
+        if self.generator_mode == GeneratorMode::Custom {
+            self.save_custom_entry(cx);
+            return;
+        }
         if self.saving.is_some() {
             return;
         }
@@ -1567,14 +1677,6 @@ impl PassApp {
                 return;
             }
         };
-        let gpg = match Gpg::new(&self.gpg) {
-            Ok(gpg) => gpg,
-            Err(error) => {
-                self.set_message(error.to_string());
-                cx.notify();
-                return;
-            }
-        };
         let Some(store) = self.store.clone() else {
             self.set_message("Open a password store before saving a generated entry.".into());
             cx.notify();
@@ -1582,6 +1684,26 @@ impl PassApp {
         };
         let mode = self.generator_mode;
         let options = self.generator_options();
+        match store.entry_revision(&entry) {
+            Ok(_) => {
+                self.confirming_overwrite = Some(OverwriteConfirmation { entry, kind: OverwriteKind::Generated { mode, options } });
+                cx.notify();
+            }
+            Err(Error::EntryNotFound) => self.start_generated_save(entry, mode, options, None, cx),
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); }
+        }
+    }
+
+    fn start_generated_save(&mut self, entry: Entry, mode: GeneratorMode, options: GeneratorOptions, revision: Option<EntryRevision>, cx: &mut Context<Self>) {
+        let gpg = match Gpg::new(&self.gpg) {
+            Ok(gpg) => gpg,
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+        };
+        let Some(store) = self.store.clone() else {
+            self.set_message("Open a password store before saving a generated entry.".into());
+            cx.notify();
+            return;
+        };
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
             "Preparing new entry",
@@ -1591,26 +1713,170 @@ impl PassApp {
         let worker_progress = progress.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
-            let result = match mode {
-                GeneratorMode::Memorable => {
-                    gpg.generate_entry(&store, &entry, options, &worker_cancel, &worker_progress)
+            let result = if let Some(revision) = revision {
+                let secret = match mode {
+                    GeneratorMode::Memorable => generate_memorable_password(options),
+                    GeneratorMode::PassDefault => generate_pass_default_password(),
+                    GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
+                };
+                secret.and_then(|secret| {
+                    gpg.update_generated_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
+                        .map(|()| secret)
+                })
+            } else {
+                match mode {
+                    GeneratorMode::Memorable => gpg.generate_entry(&store, &entry, options, &worker_cancel, &worker_progress),
+                    GeneratorMode::PassDefault => gpg.generate_pass_default_entry(&store, &entry, &worker_cancel, &worker_progress),
+                    GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
                 }
-                GeneratorMode::PassDefault => gpg.generate_pass_default_entry(
-                    &store,
-                    &entry,
-                    &worker_cancel,
-                    &worker_progress,
-                ),
-            }
-            .map(|secret| (entry, secret));
+            }.map(|secret| (entry, secret));
             let _ = sender.send(result);
         });
         self.clear_generated(cx);
         self.clear_message();
         self.saved_entry_name = None;
         self.saving_edit = false;
+        self.saving_custom_entry = false;
         self.saving = Some((cancellation, progress, receiver));
         cx.notify();
+    }
+
+    fn save_custom_entry(&mut self, cx: &mut Context<Self>) {
+        if self.saving.is_some() {
+            return;
+        }
+        if self.demo {
+            self.set_message(i18n::text("custom-entry-store-required"));
+            cx.notify();
+            return;
+        }
+        let name = self.custom_entry_name.trim();
+        let name = name.strip_suffix(".gpg").unwrap_or(name);
+        if name.is_empty() {
+            self.set_message(i18n::text("custom-entry-name-required"));
+            cx.notify();
+            return;
+        }
+        let entry = match Entry::from_relative_file(format!("{name}.gpg")) {
+            Ok(entry) => entry,
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let Some(store) = self.store.clone() else {
+            self.set_message(i18n::text("custom-entry-store-required"));
+            cx.notify();
+            return;
+        };
+        match store.entry_revision(&entry) {
+            Ok(_) => {
+                self.confirming_overwrite = Some(OverwriteConfirmation { entry, kind: OverwriteKind::Custom });
+                cx.notify();
+                return;
+            }
+            Err(Error::EntryNotFound) => self.start_custom_save(entry, None, cx),
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); }
+        }
+    }
+
+    fn start_custom_save(&mut self, entry: Entry, revision: Option<EntryRevision>, cx: &mut Context<Self>) {
+        if self.saving.is_some() { return; }
+        let secret = match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
+            Ok(secret) => secret,
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let gpg = match Gpg::new(&self.gpg) {
+            Ok(gpg) => gpg,
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
+        };
+        let Some(store) = self.store.clone() else {
+            self.set_message(i18n::text("custom-entry-store-required"));
+            cx.notify();
+            return;
+        };
+        let cancellation = Cancellation::default();
+        let progress = OperationProgress::new(OperationStatus::working(
+            "Encrypting custom entry",
+            "Your text stays in memory until GnuPG encrypts it.",
+        ));
+        let worker_cancel = cancellation.clone();
+        let worker_progress = progress.clone();
+        let (sender, receiver) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = if let Some(revision) = revision {
+                gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
+            } else {
+                gpg.create_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
+            }
+                .map(|()| (entry, secret));
+            let _ = sender.send(result);
+        });
+        self.clear_generated(cx);
+        self.clear_message();
+        self.saved_entry_name = None;
+        self.saving_edit = false;
+        self.saving_custom_entry = true;
+        self.saving = Some((cancellation, progress, receiver));
+        cx.notify();
+    }
+
+    fn confirm_overwrite(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.confirming_overwrite.take() else { return; };
+        let Some(store) = self.store.as_ref() else {
+            self.set_message(i18n::text("custom-entry-store-required"));
+            cx.notify();
+            return;
+        };
+        let revision = match store.entry_revision(&pending.entry) {
+            Ok(revision) => revision,
+            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+        };
+        match pending.kind {
+            OverwriteKind::Generated { mode, options } => self.start_generated_save(pending.entry, mode, options, Some(revision), cx),
+            OverwriteKind::Custom => self.start_custom_save(pending.entry, Some(revision), cx),
+        }
+    }
+
+    fn overwrite_confirmation_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(pending) = &self.confirming_overwrite else { return div().into_any_element(); };
+        div()
+            .id("overwrite-confirmation")
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .bottom_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(rgb(self.theme.colors.background))
+            .child(self.theme.panel()
+                .w(px(520.))
+                .max_w(px(520.))
+                .p(px(32.))
+                .flex()
+                .flex_col()
+                .gap(px(20.))
+                .child(self.theme.label(i18n::text("overwrite-entry-title")))
+                .child(div().text_size(px(22.)).font_weight(FontWeight::MEDIUM).child(pending.entry.name().to_owned()))
+                .child(div().text_size(px(13.)).line_height(px(21.)).text_color(rgb(self.theme.colors.muted))
+                    .child(i18n::text("overwrite-entry-help")))
+                .child(div().flex().justify_end().gap(px(10.))
+                    .child(self.theme.button("cancel-overwrite", "Cancel", false)
+                        .on_click(cx.listener(|app, _, _, cx| { app.confirming_overwrite = None; cx.notify(); })))
+                    .child(self.theme.danger_button("confirm-overwrite", i18n::text("overwrite-entry-confirm"))
+                        .on_click(cx.listener(|app, _, _, cx| app.confirm_overwrite(cx))))))
+            .into_any_element()
     }
 
     fn brand_logotype(&self) -> Div {
@@ -1641,7 +1907,158 @@ impl PassApp {
             )
     }
 
+    fn generator_titlebar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        div()
+            .id("generator-titlebar")
+            .w_full()
+            .h(px(48.))
+            .flex_shrink_0()
+            .px(px(9.))
+            .flex()
+            .items_center()
+            .justify_between()
+            .bg(rgb(self.theme.colors.nav_background))
+            .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
+                if event.click_count == 2 {
+                    window.toggle_fullscreen();
+                } else {
+                    window.start_window_move();
+                }
+                cx.stop_propagation();
+            })
+            .child(
+                div()
+                    .id("generator-home-logo")
+                    .ml(px(17.))
+                    .flex()
+                    .items_center()
+                    .cursor_pointer()
+                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(cx.listener(|app, _, window, cx| {
+                        app.device_verification.cancel();
+                        app.navigation.go_to(Page::Entries);
+                        app.close_generator(cx);
+                        app.search_focus.focus(window);
+                        cx.notify();
+                    }))
+                    .child(self.brand_logotype()),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(9.))
+                    .child(
+                        div()
+                            .id("generator-minimize-window")
+                            .size(px(30.))
+                            .border_1()
+                            .border_color(rgb(self.theme.colors.nav_border))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(17.))
+                            .text_color(rgb(self.theme.colors.nav_foreground))
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                            .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
+                            .child("−"),
+                    )
+                    .child(
+                        div()
+                            .id("generator-close-window")
+                            .size(px(30.))
+                            .border_1()
+                            .border_color(rgb(self.theme.colors.nav_border))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .text_size(px(20.))
+                            .text_color(rgb(self.theme.colors.nav_foreground))
+                            .cursor_pointer()
+                            .hover(|style| style.bg(rgb(self.theme.colors.danger_hover)))
+                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                            .on_click(cx.listener(|_, _, _, cx| cx.quit()))
+                            .child("×"),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn custom_entry_view(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let panel = self
+            .theme
+            .panel()
+            .w(px(640.))
+            .max_w(px(640.))
+            .p(px(36.))
+            .flex()
+            .flex_shrink_0()
+            .flex_col()
+            .gap(px(22.));
+        let panel = panel
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(div().text_size(px(24.)).font_weight(FontWeight::MEDIUM).child(i18n::text("custom-entry-title")))
+                    .child(self.theme.button("cancel-custom-entry", "← Back", false)
+                        .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx)))),
+            )
+            .child(self.theme.label(i18n::text("entry-name")))
+            .child(self.custom_entry_name_field(window, cx))
+            .child(div().max_w(px(500.)).text_size(px(13.)).line_height(px(21.))
+                .text_color(rgb(self.theme.colors.muted)).child(i18n::text("custom-entry-name-help")))
+            .child(self.theme.label(i18n::text("custom-entry-contents")))
+            .child(div().w_full().min_h(px(180.)).child(self.generator_name_field(window, cx)))
+            .child(div().max_w(px(520.)).text_size(px(12.)).line_height(px(19.))
+                .text_color(rgb(self.theme.colors.muted)).child(i18n::text("custom-entry-help")))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(16.))
+                    .child(div().max_w(px(340.)).text_size(px(11.)).line_height(px(17.))
+                        .text_color(rgb(self.theme.colors.muted)).child(i18n::text("no-overwrite")))
+                    .child(self.theme.button(
+                        "custom-entry-save",
+                        if self.saving_custom_entry { i18n::text("custom-entry-saving") } else { i18n::text("custom-entry-save") },
+                        true,
+                    ).on_click(cx.listener(|app, _, _, cx| app.save_custom_entry(cx)))),
+            );
+
+        div()
+            .id("generator-window")
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .bg(rgb(self.theme.colors.background))
+            .child(self.generator_titlebar(cx))
+            .child(
+                div()
+                    .id("generator-content-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .items_start()
+                    .justify_center()
+                    .px(px(32.))
+                    .pt(px(48.))
+                    .pb(px(48.))
+                    .child(panel),
+            )
+            .into_any_element()
+    }
+
     fn generator_view(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        if self.generator_mode == GeneratorMode::Custom {
+            return self.custom_entry_view(window, cx);
+        }
         let options = self.generator_options();
         let slider_left = ((self.generation_words - 4) as f32 / 4.) * 360.;
         let entity = cx.entity().clone();
@@ -2993,7 +3410,9 @@ impl Render for PassApp {
             .on_action(cx.listener(|app, _: &Reveal, window, cx| {
                 if !app.navigation.generator_open()
                     && app.confirming_delete.is_none()
+                    && app.confirming_overwrite.is_none()
                     && !app.generator_name_focus.is_focused(window)
+                    && !app.custom_entry_name_focus.is_focused(window)
                 {
                     app.reveal(window, cx);
                 }
@@ -3006,14 +3425,16 @@ impl Render for PassApp {
                 cx.notify();
             }))
             .on_action(cx.listener(|app, _: &NextEntry, window, cx| {
-                if app.generator_name_focus.is_focused(window) && app.editing_entry {
+                if app.custom_entry_name_focus.is_focused(window) {
+                } else if app.generator_name_focus.is_focused(window) && app.text_editor_active() {
                     app.move_vertical(1, window, cx);
                 } else {
                     app.navigate(1, cx);
                 }
             }))
             .on_action(cx.listener(|app, _: &PreviousEntry, window, cx| {
-                if app.generator_name_focus.is_focused(window) && app.editing_entry {
+                if app.custom_entry_name_focus.is_focused(window) {
+                } else if app.generator_name_focus.is_focused(window) && app.text_editor_active() {
                     app.move_vertical(-1, window, cx);
                 } else {
                     app.navigate(-1, cx);
@@ -3024,22 +3445,26 @@ impl Render for PassApp {
             .on_action(cx.listener(|app, _: &Left, window, cx| app.move_cursor(-1, window, cx)))
             .on_action(cx.listener(|app, _: &Right, window, cx| app.move_cursor(1, window, cx)))
             .on_action(cx.listener(|app, _: &SelectLeft, window, cx| {
-                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                if app.custom_entry_name_focus.is_focused(window) {
+                    app.select_custom_entry_name(-1, cx);
+                } else if app.text_editor_active() && app.generator_name_focus.is_focused(window) {
                     app.select_edit_text(-1, false, cx);
                 }
             }))
             .on_action(cx.listener(|app, _: &SelectRight, window, cx| {
-                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                if app.custom_entry_name_focus.is_focused(window) {
+                    app.select_custom_entry_name(1, cx);
+                } else if app.text_editor_active() && app.generator_name_focus.is_focused(window) {
                     app.select_edit_text(1, false, cx);
                 }
             }))
             .on_action(cx.listener(|app, _: &SelectUp, window, cx| {
-                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                if app.text_editor_active() && app.generator_name_focus.is_focused(window) {
                     app.select_edit_text(-1, true, cx);
                 }
             }))
             .on_action(cx.listener(|app, _: &SelectDown, window, cx| {
-                if app.editing_entry && app.generator_name_focus.is_focused(window) {
+                if app.text_editor_active() && app.generator_name_focus.is_focused(window) {
                     app.select_edit_text(1, true, cx);
                 }
             }))
@@ -3049,7 +3474,12 @@ impl Render for PassApp {
             .on_action(cx.listener(|app, _: &Start, window, cx| app.move_edge(false, window, cx)))
             .on_action(cx.listener(|app, _: &End, window, cx| app.move_edge(true, window, cx)))
             .on_action(cx.listener(|app, _: &SelectAll, window, cx| {
-                if app.generator_name_focus.is_focused(window) {
+                if app.custom_entry_name_focus.is_focused(window) {
+                    app.custom_entry_name_selection = 0..app.custom_entry_name.len();
+                    app.custom_entry_name_anchor = Some(0);
+                    app.custom_entry_name_cursor = app.custom_entry_name.len();
+                    cx.notify();
+                } else if app.generator_name_focus.is_focused(window) {
                     app.generator_name_selection = 0..app.generator_name.len();
                     app.generator_name_anchor = Some(0);
                     app.generator_name_cursor = app.generator_name.len();
@@ -3118,6 +3548,16 @@ impl Render for PassApp {
                                     .text_color(rgb(self.theme.colors.nav_muted))
                                     .child(if self.demo { "DEMO / 01" } else { "LOCAL / 01" }),
                             )
+                            .when(!self.demo && self.store.is_some(), |header| header.child(
+                                div()
+                                    .id("open-custom-entry")
+                                    .text_size(px(12.))
+                                    .text_color(rgb(self.theme.colors.nav_foreground))
+                                    .cursor_pointer()
+                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                                    .on_click(cx.listener(|app, _, window, cx| app.open_custom_entry(window, cx)))
+                                    .child(i18n::text("new-entry")),
+                            ))
                             .child(
                                 div()
                                     .id("open-generator")
@@ -3213,6 +3653,9 @@ impl Render for PassApp {
             .child(footer)
             .when(self.confirming_delete.is_some(), |view| {
                 view.child(self.delete_confirmation_view(cx))
+            })
+            .when(self.confirming_overwrite.is_some(), |view| {
+                view.child(self.overwrite_confirmation_view(cx))
             })
             .child(resize_handle(
                 "resize-top",

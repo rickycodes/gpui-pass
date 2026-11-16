@@ -16,6 +16,8 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
 - Cancel pending reveals and reject obsolete or background reveal/copy results.
 - Generate memorable phrases from randomly selected whole words or use pass's random-character generator defaults. Name entries with folders such as `Email/example.com`.
+- Create custom single-line or multiline entries; the complete text is encrypted exactly as entered and never revealed as part of creation.
+- If a generated or custom entry name already exists, the app warns before replacing it and checks that the stored version has not changed before saving.
 - Remove an individual encrypted entry after a confirmation prompt; folder deletion is not implemented.
 - Folder picker, explicit `--store`, and an isolated `--demo` mode.
 
@@ -94,7 +96,7 @@ cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 
 The integration fixture sets its own `GNUPGHOME` and `PASSWORD_STORE_DIR`, creates root and nested multi-recipient entries through `pass`, checks exact multiline plaintext in Rust, and checks unchanged ciphertext. It stops its own agent and removes its own temporary directory.
 
-For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture passed outside the sandbox during the latest review. Visual verification must use fictional data.
+For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture passed outside the sandbox during the latest review. The user has manually confirmed that both generated and custom entries warn before replacement and save the confirmed replacement. Visual verification must use fictional data.
 
 ## YubiKey / OpenPGP smartcards
 

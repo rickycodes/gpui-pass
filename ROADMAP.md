@@ -8,6 +8,7 @@ This roadmap describes the next product work. It has no delivery dates; order re
 - Copy an entry's complete contents without revealing it, with `PASSWORD_STORE_CLIP_TIME` timeout and prior clipboard restoration.
 - Show a persistent bottom-bar clipboard indicator with the copied entry, restoration countdown, and a manual restore action.
 - Generate random passwords or memorable phrases and save them encrypted to the store's configured recipients.
+- Create custom single-line or multiline entries, preserving and encrypting the complete entered content without revealing it. Warn before replacing an existing entry and check its revision before saving.
 - Route transient copy, reveal, save, verification, and app feedback through a shared bottom notification bar, while leaving persistent card details on the card status page.
 - Use the existing GnuPG agent and OpenPGP card, with PIN and touch flows handled by the user's configured tools and copy/reveal progress shown in the app.
 - Start UI localization with an embedded `en-US` Fluent catalog; core navigation, generator guidance, editor-limit feedback, and clipboard status now use message IDs.
@@ -15,14 +16,13 @@ This roadmap describes the next product work. It has no delivery dates; order re
 ## Planned
 
 1. **Complete safe write policy handling.** Signed `.gpg-id` policies are verified against `PASSWORD_STORE_SIGNING_KEY`, with the policy snapshot rechecked before commit. Edited entries use revision checks, a bounded per-entry lock shared by app instances, and explicit conflict choices to overwrite the current version or discard edits and reveal it. Still needed: coordination with other store writers such as `pass`; they can race the final check and rename.
-2. **Create custom entries.** Add a secure in-app flow for creating user-written single-line or multiline entries, with explicit overwrite confirmation.
-3. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
-4. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.
-5. **Add a copy shortcut.** Provide a keyboard shortcut for copying the selected entry without revealing it.
-6. **Add configurable UI themes.** Move visual values into semantic design tokens and load an optional user theme config for colors, spacing, and corner radii. Keep the current appearance as the default; validate values and fall back safely when configuration is missing or invalid.
-7. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
-8. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
-9. **Expand localization.** Move remaining user-facing UI text into Fluent catalogs, add locale selection with `en-US` fallback, and add translated catalogs as they are ready to maintain. Keep logs, file formats, and password-store contents independent of UI locale.
+2. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
+3. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.
+4. **Add a copy shortcut.** Provide a keyboard shortcut for copying the selected entry without revealing it.
+5. **Add configurable UI themes.** Move visual values into semantic design tokens and load an optional user theme config for colors, spacing, and corner radii. Keep the current appearance as the default; validate values and fall back safely when configuration is missing or invalid.
+6. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
+7. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
+8. **Expand localization.** Move remaining user-facing UI text into Fluent catalogs, add locale selection with `en-US` fallback, and add translated catalogs as they are ready to maintain. Keep logs, file formats, and password-store contents independent of UI locale.
 
 ## Additional planned features
 
