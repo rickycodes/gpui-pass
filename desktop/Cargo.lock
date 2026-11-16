@@ -2206,6 +2206,7 @@ dependencies = [
  "fluent-bundle",
  "gpui",
  "gpui-pass-core",
+ "lyon_tessellation",
  "rustix 1.1.4",
  "serde",
  "toml 0.8.23",

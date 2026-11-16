@@ -19,6 +19,7 @@ use clipboard::ClipboardState;
 mod editor_input;
 mod entry_editor;
 mod i18n;
+mod loading_spinner;
 mod search;
 mod theme;
 
@@ -35,6 +36,7 @@ use gpui_pass_core::{
     default_store_path, generate_memorable_password, generate_pass_default_password,
     harden_process,
 };
+use loading_spinner::loading_spinner;
 use std::{
     borrow::Cow,
     collections::{HashSet, VecDeque},
@@ -149,6 +151,7 @@ struct Options {
     store: Option<PathBuf>,
     gpg: PathBuf,
     demo: bool,
+    loading_demo: bool,
 }
 
 impl Options {
@@ -157,11 +160,13 @@ impl Options {
             store: None,
             gpg: PathBuf::from("/usr/bin/gpg"),
             demo: false,
+            loading_demo: false,
         };
         let mut args = std::env::args_os().skip(1);
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--demo") => options.demo = true,
+                Some("--loading-demo") => options.loading_demo = true,
                 Some("--store") => {
                     options.store = Some(args.next().ok_or("--store requires a directory")?.into())
                 }
@@ -173,7 +178,7 @@ impl Options {
                 }
                 Some("--help" | "-h") => {
                     println!(
-                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store."
+                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo | --loading-demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store.\n--loading-demo holds the UI on its loading spinner without opening a password store."
                     );
                     return Ok(None);
                 }
@@ -182,6 +187,9 @@ impl Options {
         }
         if options.demo && options.store.is_some() {
             return Err("Use --demo or --store, separately.".into());
+        }
+        if options.loading_demo && (options.demo || options.store.is_some()) {
+            return Err("Use --loading-demo by itself.".into());
         }
         Ok(Some(options))
     }
@@ -328,6 +336,7 @@ pub(crate) struct PassApp {
     path: Option<PathBuf>,
     gpg: PathBuf,
     demo: bool,
+    loading_demo: bool,
     load: Option<Receiver<LoadedStore>>,
     reveal: Option<(RevealRequest, Receiver<VersionedSecretResult>)>,
     copy_pending: Option<PendingCopy>,
@@ -430,6 +439,7 @@ impl PassApp {
             path: options.store.or_else(|| default_store_path().ok()),
             gpg: options.gpg,
             demo: options.demo,
+            loading_demo: options.loading_demo,
             load: None,
             reveal: None,
             copy_pending: None,
@@ -531,11 +541,7 @@ impl PassApp {
     }
 
     fn tick_interval(&self) -> Duration {
-        if self.load.is_some()
-            || self.reveal.is_some()
-            || self.copy_pending.is_some()
-            || self.saving.is_some()
-        {
+        if self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() {
             Duration::from_millis(100)
         } else if cfg!(target_os = "linux")
             || self.card_watcher.is_some()
@@ -555,6 +561,10 @@ impl PassApp {
         }
     }
 
+    fn store_is_loading(&self) -> bool {
+        self.load.is_some() || self.loading_demo
+    }
+
     fn refresh(&mut self, cx: &mut Context<Self>) {
         if self.saving.is_some() {
             return;
@@ -572,6 +582,10 @@ impl PassApp {
         self.store = None;
         self.entries.clear();
         self.filtered.clear();
+        if self.loading_demo {
+            cx.notify();
+            return;
+        }
         if self.demo {
             self.entries = [
                 "Development/github.com.gpg",
@@ -3804,13 +3818,24 @@ impl PassApp {
             }
             detail = detail.child(body);
         } else {
-            detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
-                .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.theme.colors.accent)).child("[ / ]"))
-                .child(div().text_size(px(30.)).child(if self.load.is_some() { "Opening your store." } else if !self.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
-                .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.theme.colors.muted))
-                    .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                .child(self.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
-);
+            if self.store_is_loading() {
+                detail = detail.child(
+                    div()
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(loading_spinner(self.theme.colors.accent)),
+                );
+            } else {
+                detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
+                    .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.theme.colors.accent)).child("[ / ]"))
+                    .child(div().text_size(px(30.)).child(if !self.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
+                    .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.theme.colors.muted))
+                        .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
+                    .child(self.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
+    );
+            }
         }
         detail
             .child(
