@@ -1980,7 +1980,6 @@ impl PassApp {
                     kind: OverwriteKind::Custom,
                 });
                 cx.notify();
-                return;
             }
             Err(Error::EntryNotFound) => self.start_custom_save(entry, None, cx),
             Err(error) => {
@@ -4230,89 +4229,97 @@ impl Render for PassApp {
                 "resize-top",
                 ResizeEdge::Top,
                 CursorStyle::ResizeUpDown,
-                Some(0.),
-                Some(8.),
-                Some(8.),
-                None,
-                None,
-                Some(8.),
+                ResizeHandleBounds {
+                    top: Some(0.),
+                    left: Some(8.),
+                    right: Some(8.),
+                    height: Some(8.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-bottom",
                 ResizeEdge::Bottom,
                 CursorStyle::ResizeUpDown,
-                None,
-                Some(8.),
-                Some(8.),
-                Some(0.),
-                None,
-                Some(8.),
+                ResizeHandleBounds {
+                    left: Some(8.),
+                    right: Some(8.),
+                    bottom: Some(0.),
+                    height: Some(8.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-left",
                 ResizeEdge::Left,
                 CursorStyle::ResizeLeftRight,
-                Some(8.),
-                Some(0.),
-                None,
-                Some(8.),
-                Some(8.),
-                None,
+                ResizeHandleBounds {
+                    top: Some(8.),
+                    left: Some(0.),
+                    bottom: Some(8.),
+                    width: Some(8.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-right",
                 ResizeEdge::Right,
                 CursorStyle::ResizeLeftRight,
-                Some(8.),
-                None,
-                Some(0.),
-                Some(8.),
-                Some(8.),
-                None,
+                ResizeHandleBounds {
+                    top: Some(8.),
+                    right: Some(0.),
+                    bottom: Some(8.),
+                    width: Some(8.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-top-left",
                 ResizeEdge::TopLeft,
                 CursorStyle::ResizeUpLeftDownRight,
-                Some(0.),
-                Some(0.),
-                None,
-                None,
-                Some(14.),
-                Some(14.),
+                ResizeHandleBounds {
+                    top: Some(0.),
+                    left: Some(0.),
+                    width: Some(14.),
+                    height: Some(14.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-top-right",
                 ResizeEdge::TopRight,
                 CursorStyle::ResizeUpRightDownLeft,
-                Some(0.),
-                None,
-                Some(0.),
-                None,
-                Some(14.),
-                Some(14.),
+                ResizeHandleBounds {
+                    top: Some(0.),
+                    right: Some(0.),
+                    width: Some(14.),
+                    height: Some(14.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-bottom-left",
                 ResizeEdge::BottomLeft,
                 CursorStyle::ResizeUpRightDownLeft,
-                None,
-                Some(0.),
-                None,
-                Some(0.),
-                Some(14.),
-                Some(14.),
+                ResizeHandleBounds {
+                    left: Some(0.),
+                    bottom: Some(0.),
+                    width: Some(14.),
+                    height: Some(14.),
+                    ..Default::default()
+                },
             ))
             .child(resize_handle(
                 "resize-bottom-right",
                 ResizeEdge::BottomRight,
                 CursorStyle::ResizeUpLeftDownRight,
-                None,
-                None,
-                Some(0.),
-                Some(0.),
-                Some(14.),
-                Some(14.),
+                ResizeHandleBounds {
+                    right: Some(0.),
+                    bottom: Some(0.),
+                    width: Some(14.),
+                    height: Some(14.),
+                    ..Default::default()
+                },
             ))
     }
 }
@@ -4926,16 +4933,21 @@ fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedStr
         )
 }
 
-fn resize_handle(
-    id: &'static str,
-    edge: ResizeEdge,
-    cursor: CursorStyle,
+#[derive(Default)]
+struct ResizeHandleBounds {
     top: Option<f32>,
     left: Option<f32>,
     right: Option<f32>,
     bottom: Option<f32>,
     width: Option<f32>,
     height: Option<f32>,
+}
+
+fn resize_handle(
+    id: &'static str,
+    edge: ResizeEdge,
+    cursor: CursorStyle,
+    bounds: ResizeHandleBounds,
 ) -> gpui::Stateful<gpui::Div> {
     let mut handle = div().id(id).absolute().cursor(cursor).on_mouse_down(
         gpui::MouseButton::Left,
@@ -4944,25 +4956,108 @@ fn resize_handle(
             cx.stop_propagation();
         },
     );
-    if let Some(top) = top {
+    if let Some(top) = bounds.top {
         handle = handle.top(px(top));
     }
-    if let Some(left) = left {
+    if let Some(left) = bounds.left {
         handle = handle.left(px(left));
     }
-    if let Some(right) = right {
+    if let Some(right) = bounds.right {
         handle = handle.right(px(right));
     }
-    if let Some(bottom) = bottom {
+    if let Some(bottom) = bounds.bottom {
         handle = handle.bottom(px(bottom));
     }
-    if let Some(width) = width {
+    if let Some(width) = bounds.width {
         handle = handle.w(px(width));
     }
-    if let Some(height) = height {
+    if let Some(height) = bounds.height {
         handle = handle.h(px(height));
     }
     handle
+}
+
+fn main() {
+    let options = match Options::parse() {
+        Ok(Some(options)) => options,
+        Ok(None) => return,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
+    if harden_process().is_err() {
+        eprintln!("Could not disable process dumps; refusing to open the password client.");
+        std::process::exit(1);
+    }
+    diagnostics::init();
+    Application::new().run(move |cx: &mut App| {
+        cx.text_system()
+            .add_fonts(vec![Cow::Borrowed(
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../assets/fonts/InterVariable.ttf"
+                ))
+                .as_slice(),
+            )])
+            .expect("load bundled Inter font");
+        cx.bind_keys([
+            KeyBinding::new("escape", Hide, Some("Pass")),
+            KeyBinding::new("ctrl-g", OpenGenerator, Some("Pass")),
+            KeyBinding::new("enter", Reveal, Some("Pass")),
+            KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
+            KeyBinding::new("ctrl-f", FocusSearch, Some("Pass")),
+            KeyBinding::new("down", NextEntry, Some("Pass")),
+            KeyBinding::new("up", PreviousEntry, Some("Pass")),
+            KeyBinding::new("backspace", Backspace, Some("Pass")),
+            KeyBinding::new("delete", Delete, Some("Pass")),
+            KeyBinding::new("left", Left, Some("Pass")),
+            KeyBinding::new("right", Right, Some("Pass")),
+            KeyBinding::new("shift-left", SelectLeft, Some("Pass")),
+            KeyBinding::new("shift-right", SelectRight, Some("Pass")),
+            KeyBinding::new("shift-up", SelectUp, Some("Pass")),
+            KeyBinding::new("shift-down", SelectDown, Some("Pass")),
+            KeyBinding::new("ctrl-c", Copy, Some("Pass")),
+            KeyBinding::new("ctrl-shift-c", CopyEntry, Some("Pass")),
+            KeyBinding::new("ctrl-x", Cut, Some("Pass")),
+            KeyBinding::new("ctrl-v", Paste, Some("Pass")),
+            KeyBinding::new("home", Start, Some("Pass")),
+            KeyBinding::new("end", End, Some("Pass")),
+            KeyBinding::new("ctrl-a", SelectAll, Some("Pass")),
+            KeyBinding::new("tab", SwitchFocus, Some("Pass")),
+            KeyBinding::new("shift-tab", SwitchFocus, Some("Pass")),
+            KeyBinding::new("ctrl-q", Quit, Some("Pass")),
+            KeyBinding::new("f11", ToggleFullscreen, Some("Pass")),
+        ]);
+        cx.on_window_closed(|cx| {
+            if cx.windows().is_empty() {
+                cx.quit();
+            }
+        })
+        .detach();
+        let bounds = Bounds::centered(None, size(px(1120.), px(780.)), cx);
+        if cx
+            .open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    window_min_size: Some(size(px(940.), px(640.))),
+                    is_resizable: true,
+                    titlebar: Some(TitlebarOptions {
+                        title: Some(SharedString::from("pass — Password store")),
+                        ..Default::default()
+                    }),
+                    app_id: Some("dev.gpui-pass.desktop".into()),
+                    ..Default::default()
+                },
+                move |window, cx| cx.new(|cx| PassApp::new(options, window, cx)),
+            )
+            .is_err()
+        {
+            eprintln!("Could not open a GPUI window. Check your display and Vulkan driver.");
+            cx.quit();
+        }
+        cx.activate(true);
+    });
 }
 
 #[cfg(test)]
@@ -5075,87 +5170,4 @@ mod card_detection_tests {
         );
         assert_eq!(update_yubikey_usb_presence(&removed, &mut devices), None);
     }
-}
-
-fn main() {
-    let options = match Options::parse() {
-        Ok(Some(options)) => options,
-        Ok(None) => return,
-        Err(message) => {
-            eprintln!("{message}");
-            std::process::exit(2);
-        }
-    };
-    if harden_process().is_err() {
-        eprintln!("Could not disable process dumps; refusing to open the password client.");
-        std::process::exit(1);
-    }
-    diagnostics::init();
-    Application::new().run(move |cx: &mut App| {
-        cx.text_system()
-            .add_fonts(vec![Cow::Borrowed(
-                include_bytes!(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../assets/fonts/InterVariable.ttf"
-                ))
-                .as_slice(),
-            )])
-            .expect("load bundled Inter font");
-        cx.bind_keys([
-            KeyBinding::new("escape", Hide, Some("Pass")),
-            KeyBinding::new("ctrl-g", OpenGenerator, Some("Pass")),
-            KeyBinding::new("enter", Reveal, Some("Pass")),
-            KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
-            KeyBinding::new("ctrl-f", FocusSearch, Some("Pass")),
-            KeyBinding::new("down", NextEntry, Some("Pass")),
-            KeyBinding::new("up", PreviousEntry, Some("Pass")),
-            KeyBinding::new("backspace", Backspace, Some("Pass")),
-            KeyBinding::new("delete", Delete, Some("Pass")),
-            KeyBinding::new("left", Left, Some("Pass")),
-            KeyBinding::new("right", Right, Some("Pass")),
-            KeyBinding::new("shift-left", SelectLeft, Some("Pass")),
-            KeyBinding::new("shift-right", SelectRight, Some("Pass")),
-            KeyBinding::new("shift-up", SelectUp, Some("Pass")),
-            KeyBinding::new("shift-down", SelectDown, Some("Pass")),
-            KeyBinding::new("ctrl-c", Copy, Some("Pass")),
-            KeyBinding::new("ctrl-shift-c", CopyEntry, Some("Pass")),
-            KeyBinding::new("ctrl-x", Cut, Some("Pass")),
-            KeyBinding::new("ctrl-v", Paste, Some("Pass")),
-            KeyBinding::new("home", Start, Some("Pass")),
-            KeyBinding::new("end", End, Some("Pass")),
-            KeyBinding::new("ctrl-a", SelectAll, Some("Pass")),
-            KeyBinding::new("tab", SwitchFocus, Some("Pass")),
-            KeyBinding::new("shift-tab", SwitchFocus, Some("Pass")),
-            KeyBinding::new("ctrl-q", Quit, Some("Pass")),
-            KeyBinding::new("f11", ToggleFullscreen, Some("Pass")),
-        ]);
-        cx.on_window_closed(|cx| {
-            if cx.windows().is_empty() {
-                cx.quit();
-            }
-        })
-        .detach();
-        let bounds = Bounds::centered(None, size(px(1120.), px(780.)), cx);
-        if cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    window_min_size: Some(size(px(940.), px(640.))),
-                    is_resizable: true,
-                    titlebar: Some(TitlebarOptions {
-                        title: Some(SharedString::from("pass — Password store")),
-                        ..Default::default()
-                    }),
-                    app_id: Some("dev.gpui-pass.desktop".into()),
-                    ..Default::default()
-                },
-                move |window, cx| cx.new(|cx| PassApp::new(options, window, cx)),
-            )
-            .is_err()
-        {
-            eprintln!("Could not open a GPUI window. Check your display and Vulkan driver.");
-            cx.quit();
-        }
-        cx.activate(true);
-    });
 }
