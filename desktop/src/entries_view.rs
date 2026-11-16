@@ -2,8 +2,8 @@ use super::*;
 
 impl PassApp {
     pub(super) fn entry_row(&self, index: usize, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let entry = &self.entries[index];
-        let active = self.session.selected() == Some(entry);
+        let entry = &self.state.entries[index];
+        let active = self.state.session.selected() == Some(entry);
         div()
             .id(("entry", index))
             .w_full()
@@ -15,22 +15,22 @@ impl PassApp {
             .h(px(76.))
             .overflow_hidden()
             .border_b_1()
-            .border_color(rgb(self.theme.colors.border))
+            .border_color(rgb(self.state.theme.colors.border))
             .border_l_2()
             .border_color(rgb(if active {
-                self.theme.colors.accent
+                self.state.theme.colors.accent
             } else {
-                self.theme.colors.border
+                self.state.theme.colors.border
             }))
             .bg(rgb(if active {
-                self.theme.colors.accent_surface
+                self.state.theme.colors.accent_surface
             } else {
-                self.theme.colors.background
+                self.state.theme.colors.background
             }))
             .cursor_pointer()
-            .hover(|style| style.bg(rgb(self.theme.colors.hover)))
+            .hover(|style| style.bg(rgb(self.state.theme.colors.hover)))
             .on_click(cx.listener(move |app, _, window, cx| {
-                app.focus.focus(window);
+                app.state.focus.focus(window);
                 app.choose(index, cx);
             }))
             .child(
@@ -55,7 +55,7 @@ impl PassApp {
                     .w_full()
                     .truncate()
                     .text_size(px(11.))
-                    .text_color(rgb(self.theme.colors.muted))
+                    .text_color(rgb(self.state.theme.colors.muted))
                     .child(if entry.folder().is_empty() {
                         "Root".to_owned()
                     } else {
@@ -73,8 +73,8 @@ impl PassApp {
             .flex()
             .flex_col()
             .border_r_1()
-            .border_color(rgb(self.theme.colors.border))
-            .bg(rgb(self.theme.colors.background))
+            .border_color(rgb(self.state.theme.colors.border))
+            .bg(rgb(self.state.theme.colors.background))
             .child(
                 div()
                     .px(px(22.))
@@ -83,13 +83,13 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(self.theme.label(i18n::text("your-entries")))
+                    .child(self.state.theme.label(i18n::text("your-entries")))
                     .child(
                         div()
-                            .font_family(self.theme.mono_font)
+                            .font_family(self.state.theme.mono_font)
                             .text_size(px(11.))
-                            .text_color(rgb(self.theme.colors.muted))
-                            .child(format!("{:02}", self.filtered.len())),
+                            .text_color(rgb(self.state.theme.colors.muted))
+                            .child(format!("{:02}", self.state.filtered.len())),
                     ),
             )
             .child(
@@ -104,30 +104,32 @@ impl PassApp {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .when(!self.filtered.is_empty(), |view| {
+                    .when(!self.state.filtered.is_empty(), |view| {
                         view.child(
                             uniform_list(
                                 "entries",
-                                self.filtered.len(),
+                                self.state.filtered.len(),
                                 cx.processor(|app, range: Range<usize>, _, cx| {
                                     range
-                                        .map(|position| app.entry_row(app.filtered[position], cx))
+                                        .map(|position| {
+                                            app.entry_row(app.state.filtered[position], cx)
+                                        })
                                         .collect::<Vec<_>>()
                                 }),
                             )
-                            .track_scroll(self.list_scroll.clone())
+                            .track_scroll(self.state.list_scroll.clone())
                             .size_full(),
                         )
                     })
-                    .when(self.filtered.is_empty(), |view| {
+                    .when(self.state.filtered.is_empty(), |view| {
                         view.child(
                             div()
                                 .p(px(24.))
                                 .text_size(px(13.))
-                                .text_color(rgb(self.theme.colors.muted))
-                                .child(if self.load.is_some() {
+                                .text_color(rgb(self.state.theme.colors.muted))
+                                .child(if self.state.load.is_some() {
                                     "Reading entry names…"
-                                } else if self.query.is_empty() {
+                                } else if self.state.query.is_empty() {
                                     "No entries to show."
                                 } else {
                                     "No matching entries.\nTry another search."
@@ -139,11 +141,11 @@ impl PassApp {
                 div()
                     .p(px(22.))
                     .border_t_1()
-                    .border_color(rgb(self.theme.colors.border))
+                    .border_color(rgb(self.state.theme.colors.border))
                     .flex()
                     .flex_col()
                     .gap(px(8.))
-                    .child(self.theme.label(if self.demo {
+                    .child(self.state.theme.label(if self.state.demo {
                         "DEMO STORE"
                     } else {
                         "CURRENT STORE"
@@ -151,8 +153,8 @@ impl PassApp {
                     .child(
                         div()
                             .text_size(px(11.))
-                            .font_family(self.theme.mono_font)
-                            .text_color(rgb(self.theme.colors.muted))
+                            .font_family(self.state.theme.mono_font)
+                            .text_color(rgb(self.state.theme.colors.muted))
                             .overflow_hidden()
                             .child(self.path_label()),
                     )
@@ -161,7 +163,7 @@ impl PassApp {
                             .id("open-store")
                             .mt(px(8.))
                             .text_size(px(12.))
-                            .text_color(rgb(self.theme.colors.accent))
+                            .text_color(rgb(self.state.theme.colors.accent))
                             .cursor_pointer()
                             .on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx)))
                             .child(i18n::text("open-another-store")),
@@ -171,17 +173,17 @@ impl PassApp {
     }
 
     pub(super) fn details(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let entry = self.session.selected();
+        let entry = self.state.session.selected();
         let now = Instant::now();
-        let revealed = self.session.revealed(now);
-        let pending = self.session.is_pending();
+        let revealed = self.state.session.revealed(now);
+        let pending = self.state.session.is_pending();
         let mut detail = div()
             .flex_1()
             .min_w_0()
             .h_full()
             .flex()
             .flex_col()
-            .bg(rgb(self.theme.colors.surface));
+            .bg(rgb(self.state.theme.colors.surface));
         if let Some(entry) = entry {
             let folder = if entry.folder().is_empty() {
                 "Root"
@@ -198,7 +200,8 @@ impl PassApp {
                         .flex_col()
                         .gap(px(17.))
                         .child(
-                            self.theme
+                            self.state
+                                .theme
                                 .label(format!("STORE   /   {}", folder.to_uppercase())),
                         )
                         .child(
@@ -216,19 +219,19 @@ impl PassApp {
                                 .child(
                                     div()
                                         .border_1()
-                                        .border_color(rgb(self.theme.colors.border))
+                                        .border_color(rgb(self.state.theme.colors.border))
                                         .px(px(10.))
                                         .py(px(6.))
-                                        .font_family(self.theme.mono_font)
+                                        .font_family(self.state.theme.mono_font)
                                         .text_size(px(10.))
-                                        .text_color(rgb(self.theme.colors.muted))
+                                        .text_color(rgb(self.state.theme.colors.muted))
                                         .child(".gpg"),
                                 ),
                         )
                         .child(
                             div()
                                 .text_size(px(12.))
-                                .text_color(rgb(self.theme.colors.muted))
+                                .text_color(rgb(self.state.theme.colors.muted))
                                 .child(entry.name().to_owned()),
                         ),
                 )
@@ -239,17 +242,17 @@ impl PassApp {
                         .flex()
                         .items_center()
                         .border_b_1()
-                        .border_color(rgb(self.theme.colors.border))
+                        .border_color(rgb(self.state.theme.colors.border))
                         .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .gap(px(7.))
-                                .child(div().size(px(5.)).bg(rgb(self.theme.colors.accent)))
+                                .child(div().size(px(5.)).bg(rgb(self.state.theme.colors.accent)))
                                 .child(
                                     div()
                                         .text_size(px(11.))
-                                        .text_color(rgb(self.theme.colors.muted))
+                                        .text_color(rgb(self.state.theme.colors.muted))
                                         .child(i18n::text("encrypted-on-disk")),
                                 ),
                         ),
@@ -269,18 +272,18 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(self.theme.label("PASSWORD"))
+                    .child(self.state.theme.label("PASSWORD"))
                     .child(
                         div()
-                            .font_family(self.theme.mono_font)
+                            .font_family(self.state.theme.mono_font)
                             .text_size(px(10.))
                             .text_color(rgb(if revealed.is_some() {
-                                self.theme.colors.accent
+                                self.state.theme.colors.accent
                             } else {
-                                self.theme.colors.muted
+                                self.state.theme.colors.muted
                             }))
                             .child(if revealed.is_some() {
-                                format!("HIDES IN {:02}s", self.seconds)
+                                format!("HIDES IN {:02}s", self.state.seconds)
                             } else if pending {
                                 "UNLOCKING".into()
                             } else {
@@ -289,20 +292,21 @@ impl PassApp {
                     ),
             );
             let mut password = self
+                .state
                 .theme
                 .panel()
-                .bg(rgb(self.theme.colors.background))
+                .bg(rgb(self.state.theme.colors.background))
                 .w_full()
                 .min_w_0()
                 .min_h(px(84.));
-            if self.editing_entry {
+            if self.state.editing_entry {
                 password = password.child(self.generator_name_field(window, cx));
             } else if let Some(secret) = revealed {
                 let text = secret.expose();
                 password = password.child(
                     div()
                         .id("password-text")
-                        .font_family(self.theme.mono_font)
+                        .font_family(self.state.theme.mono_font)
                         .text_size(px(18.))
                         .line_height(px(26.))
                         .child(text.chars().take(16_384).collect::<String>()),
@@ -316,28 +320,28 @@ impl PassApp {
                         .child(
                             div()
                                 .text_size(px(24.))
-                                .text_color(rgb(self.theme.colors.placeholder))
+                                .text_color(rgb(self.state.theme.colors.placeholder))
                                 .child("••••••••••••"),
                         )
                         .child(
                             div()
-                                .font_family(self.theme.mono_font)
+                                .font_family(self.state.theme.mono_font)
                                 .text_size(px(10.))
-                                .text_color(rgb(self.theme.colors.muted))
+                                .text_color(rgb(self.state.theme.colors.muted))
                                 .child(i18n::text("concealed")),
                         ),
                 );
             }
             body = body.child(password);
-            if self.editing_entry && self.edit_conflict {
+            if self.state.editing_entry && self.state.edit_conflict {
                 body = body.child(
                     div()
                         .id("edit-conflict")
                         .w_full()
-                        .rounded(px(self.theme.radii.panel))
+                        .rounded(px(self.state.theme.radii.panel))
                         .border_1()
-                        .border_color(rgb(self.theme.colors.danger))
-                        .bg(rgb(self.theme.colors.surface))
+                        .border_color(rgb(self.state.theme.colors.danger))
+                        .bg(rgb(self.state.theme.colors.surface))
                         .p(px(18.))
                         .flex()
                         .flex_col()
@@ -346,14 +350,14 @@ impl PassApp {
                             div()
                                 .text_size(px(15.))
                                 .font_weight(FontWeight::MEDIUM)
-                                .text_color(rgb(self.theme.colors.ink))
+                                .text_color(rgb(self.state.theme.colors.ink))
                                 .child(i18n::text("edit-conflict-title")),
                         )
                         .child(
                             div()
                                 .text_size(px(12.))
                                 .line_height(px(18.))
-                                .text_color(rgb(self.theme.colors.muted))
+                                .text_color(rgb(self.state.theme.colors.muted))
                                 .child(i18n::text("edit-conflict-help")),
                         )
                         .child(
@@ -362,7 +366,8 @@ impl PassApp {
                                 .items_center()
                                 .gap(px(12.))
                                 .child(
-                                    self.theme
+                                    self.state
+                                        .theme
                                         .danger_button(
                                             "overwrite-conflicted-edit",
                                             i18n::text("edit-conflict-overwrite"),
@@ -372,7 +377,8 @@ impl PassApp {
                                         })),
                                 )
                                 .child(
-                                    self.theme
+                                    self.state
+                                        .theme
                                         .button(
                                             "discard-conflicted-edit",
                                             i18n::text("edit-conflict-discard"),
@@ -390,7 +396,8 @@ impl PassApp {
                 .items_center()
                 .gap(px(18.))
                 .child(
-                    self.theme
+                    self.state
+                        .theme
                         .button(
                             "reveal",
                             if pending {
@@ -403,21 +410,22 @@ impl PassApp {
                             true,
                         )
                         .on_click(cx.listener(|app, _, window, cx| {
-                            if app.session.is_pending() {
+                            if app.state.session.is_pending() {
                                 app.hide(cx);
                             } else {
                                 app.reveal(window, cx);
                             }
                         })),
                 )
-                .when(self.editing_entry, |controls| {
+                .when(self.state.editing_entry, |controls| {
                     controls
-                        .when(!self.edit_conflict, |controls| {
+                        .when(!self.state.edit_conflict, |controls| {
                             controls.child(
-                                self.theme
+                                self.state
+                                    .theme
                                     .button(
                                         "save-entry-edit",
-                                        if self.saving_edit {
+                                        if self.state.saving_edit {
                                             "Saving…"
                                         } else {
                                             "Save changes"
@@ -428,25 +436,28 @@ impl PassApp {
                             )
                         })
                         .child(
-                            self.theme
+                            self.state
+                                .theme
                                 .button("cancel-entry-edit", "Cancel", false)
                                 .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx))),
                         )
                 })
-                .when(!self.editing_entry, |controls| {
+                .when(!self.state.editing_entry, |controls| {
                     controls
                         .child(
-                            self.theme
+                            self.state
+                                .theme
                                 .button("edit-entry", "Edit entry", true)
                                 .on_click(
                                     cx.listener(|app, _, window, cx| app.begin_edit(window, cx)),
                                 ),
                         )
                         .child(
-                            self.theme
+                            self.state
+                                .theme
                                 .button(
                                     "copy-password",
-                                    if self.copy_pending.is_some() {
+                                    if self.state.copy_pending.is_some() {
                                         "Copying…"
                                     } else {
                                         "Copy entry"
@@ -456,7 +467,8 @@ impl PassApp {
                                 .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))),
                         )
                         .child(
-                            self.theme
+                            self.state
+                                .theme
                                 .danger_button("delete-entry", "Delete")
                                 .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
                         )
@@ -465,7 +477,7 @@ impl PassApp {
                     controls.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(self.theme.colors.muted))
+                            .text_color(rgb(self.state.theme.colors.muted))
                             .child(i18n::text("esc-to-cancel")),
                     )
                 });
@@ -475,7 +487,7 @@ impl PassApp {
                     body = body.child(
                         div()
                             .text_size(px(11.))
-                            .text_color(rgb(self.theme.colors.muted))
+                            .text_color(rgb(self.state.theme.colors.muted))
                             .child("Long content is truncated in this preview."),
                     );
                 }
@@ -489,15 +501,15 @@ impl PassApp {
                         .flex()
                         .items_center()
                         .justify_center()
-                        .child(loading_spinner(self.theme.colors.accent)),
+                        .child(loading_spinner(self.state.theme.colors.accent)),
                 );
             } else {
                 detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
-                    .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.theme.colors.accent)).child("[ / ]"))
-                    .child(div().text_size(px(30.)).child(if !self.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
-                    .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.theme.colors.muted))
-                        .child(if !self.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                    .child(self.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
+                    .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.state.theme.colors.accent)).child("[ / ]"))
+                    .child(div().text_size(px(30.)).child(if !self.state.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
+                    .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.state.theme.colors.muted))
+                        .child(if !self.state.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
+                    .child(self.state.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
     );
             }
         }
@@ -507,10 +519,10 @@ impl PassApp {
                     .px(px(46.))
                     .py(px(20.))
                     .border_t_1()
-                    .border_color(rgb(self.theme.colors.border))
+                    .border_color(rgb(self.state.theme.colors.border))
                     .flex()
                     .justify_between()
-                    .child(self.theme.label(if self.demo {
+                    .child(self.state.theme.label(if self.state.demo {
                         "FICTIONAL DATA"
                     } else {
                         "LOCAL STORE"

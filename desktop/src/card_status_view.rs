@@ -42,48 +42,52 @@ fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedStr
 
 impl PassApp {
     pub(super) fn verify_device(&mut self, cx: &mut Context<Self>) {
-        if self.device_verification.running() {
+        if self.state.device_verification.running() {
             return;
         }
         self.clear_message();
-        self.verification_state_seen = VerificationState::Idle;
-        self.verification_notification_until = None;
-        if self.reveal.is_some()
-            || self.copy_pending.is_some()
-            || self.saving.is_some()
-            || self.yubikey_info_check.is_some()
-            || self.yubikey_check.is_some()
+        self.state.verification_state_seen = VerificationState::Idle;
+        self.state.verification_notification_until = None;
+        if self.state.reveal.is_some()
+            || self.state.copy_pending.is_some()
+            || self.state.saving.is_some()
+            || self.state.yubikey_info_check.is_some()
+            || self.state.yubikey_check.is_some()
         {
-            self.device_verification.busy();
+            self.state.device_verification.busy();
         } else if let Some(usb) = self
+            .state
             .usb_reader_details
             .as_ref()
             .filter(|usb| usb.vendor_id == 0x1050)
         {
-            self.device_verification
-                .start(self.card_refresh.generation(), usb.product_id);
+            self.state
+                .device_verification
+                .start(self.state.card_refresh.generation(), usb.product_id);
         } else {
-            self.device_verification.unavailable();
+            self.state.device_verification.unavailable();
         }
         cx.notify();
     }
 
     pub(super) fn leave_card_status(&mut self, cx: &mut Context<Self>) {
-        self.device_verification.cancel();
-        self.verification_state_seen = self.device_verification.state();
-        self.verification_notification_until = None;
-        self.navigation.go_to(Page::Entries);
+        self.state.device_verification.cancel();
+        self.state.verification_state_seen = self.state.device_verification.state();
+        self.state.verification_notification_until = None;
+        self.state.navigation.go_to(Page::Entries);
         cx.notify();
     }
 
     pub(super) fn yubikey_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let latest = self.yubikey_history.front().copied();
+        let latest = self.state.yubikey_history.front().copied();
         let is_yubikey = self
+            .state
             .usb_reader_details
             .as_ref()
             .is_some_and(|usb| usb.vendor_id == 0x1050)
-            || self.yubikey_info.is_some()
+            || self.state.yubikey_info.is_some()
             || self
+                .state
                 .yubikey_details
                 .as_ref()
                 .and_then(|details| details.manufacturer.as_ref())
@@ -98,7 +102,7 @@ impl PassApp {
             .flex()
             .flex_col()
             .gap(px(26.))
-            .bg(rgb(self.theme.colors.surface))
+            .bg(rgb(self.state.theme.colors.surface))
             .child(
                 div()
                     .flex()
@@ -119,10 +123,11 @@ impl PassApp {
                             .gap(px(12.))
                             .when(is_yubikey, |actions| {
                                 actions.child(
-                                    self.theme
+                                    self.state
+                                        .theme
                                         .button(
                                             "verify-device",
-                                            if self.device_verification.running() {
+                                            if self.state.device_verification.running() {
                                                 "Verifying…"
                                             } else {
                                                 "Verify"
@@ -134,25 +139,29 @@ impl PassApp {
                                         ),
                                 )
                             })
-                            .when(self.device_verification.running(), |actions| {
+                            .when(self.state.device_verification.running(), |actions| {
                                 actions.child(
-                                    self.theme
+                                    self.state
+                                        .theme
                                         .button("cancel-verification", "Cancel", false)
                                         .on_click(cx.listener(|app, _, _, cx| {
-                                            app.device_verification.cancel();
+                                            app.state.device_verification.cancel();
                                             cx.notify();
                                         })),
                                 )
                             })
                             .child(
-                                self.theme.button("yubikey-back", "← Back", false).on_click(
-                                    cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
-                                ),
+                                self.state
+                                    .theme
+                                    .button("yubikey-back", "← Back", false)
+                                    .on_click(
+                                        cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
+                                    ),
                             ),
                     ),
             );
 
-        if let Some(info) = &self.yubikey_info
+        if let Some(info) = &self.state.yubikey_info
             && let (Some(device_type), Some(image)) = (
                 info.device_type.as_deref(),
                 yubikey_product_image(info.device_type.as_deref()),
@@ -169,9 +178,9 @@ impl PassApp {
                     .max_w(px(760.))
                     .p(px(20.))
                     .border_1()
-                    .border_color(rgb(self.theme.colors.border))
-                    .rounded(px(self.theme.radii.panel))
-                    .bg(rgb(self.theme.colors.background))
+                    .border_color(rgb(self.state.theme.colors.border))
+                    .rounded(px(self.state.theme.radii.panel))
+                    .bg(rgb(self.state.theme.colors.background))
                     .flex()
                     .items_center()
                     .gap(px(28.))
@@ -190,18 +199,18 @@ impl PassApp {
                             .flex()
                             .flex_col()
                             .gap(px(10.))
-                            .child(self.theme.label(i18n::text("connected-device")))
+                            .child(self.state.theme.label(i18n::text("connected-device")))
                             .child(
                                 div()
                                     .text_size(px(24.))
                                     .font_weight(FontWeight::MEDIUM)
-                                    .text_color(rgb(self.theme.colors.ink))
+                                    .text_color(rgb(self.state.theme.colors.ink))
                                     .child(device_type.to_owned()),
                             )
                             .child(
                                 div()
                                     .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.muted))
+                                    .text_color(rgb(self.state.theme.colors.muted))
                                     .child(firmware),
                             ),
                     ),
@@ -210,10 +219,10 @@ impl PassApp {
 
         let mut rows = div().max_w(px(760.)).flex().flex_col().gap(px(1.));
         let mut has_details = false;
-        if let Some(usb) = &self.usb_reader_details {
+        if let Some(usb) = &self.state.usb_reader_details {
             rows = rows
                 .child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "USB device",
                     format!(
                         "{} · {:04x}:{:04x}",
@@ -221,20 +230,24 @@ impl PassApp {
                     ),
                 ))
                 .child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "USB location",
                     usb.location.clone(),
                 ));
             has_details = true;
         }
-        if let Some(info) = &self.yubikey_info {
+        if let Some(info) = &self.state.yubikey_info {
             if let Some(device_type) = &info.device_type {
-                rows = rows.child(yubi_info_row(&self.theme, "Device", device_type.clone()));
+                rows = rows.child(yubi_info_row(
+                    &self.state.theme,
+                    "Device",
+                    device_type.clone(),
+                ));
                 has_details = true;
             }
             if let Some(form_factor) = &info.form_factor {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "Form factor",
                     form_factor.clone(),
                 ));
@@ -242,50 +255,54 @@ impl PassApp {
             }
             if let Some(firmware_version) = &info.firmware_version {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "Firmware",
                     firmware_version.clone(),
                 ));
                 has_details = true;
             }
         }
-        if let Some(details) = &self.yubikey_details {
+        if let Some(details) = &self.state.yubikey_details {
             rows = rows.child(yubi_info_row(
-                &self.theme,
+                &self.state.theme,
                 "Application",
                 details.application.clone(),
             ));
             has_details = true;
             if let Some(reader) = &details.reader {
-                rows = rows.child(yubi_info_row(&self.theme, "Reader", reader.clone()));
+                rows = rows.child(yubi_info_row(&self.state.theme, "Reader", reader.clone()));
             }
             if let Some(version) = &details.version {
-                rows = rows.child(yubi_info_row(&self.theme, "Card version", version.clone()));
+                rows = rows.child(yubi_info_row(
+                    &self.state.theme,
+                    "Card version",
+                    version.clone(),
+                ));
             }
             if let Some(manufacturer) = &details.manufacturer {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "Manufacturer",
                     manufacturer.clone(),
                 ));
             }
             if !details.key_attributes.is_empty() {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "Key algorithms",
                     details.key_attributes.join(" · "),
                 ));
             }
             if let Some(retries) = details.pin_retries {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "PIN retries",
                     format!("{} · {} · {}", retries[0], retries[1], retries[2]),
                 ));
             }
             if let Some(count) = details.signature_count {
                 rows = rows.child(yubi_info_row(
-                    &self.theme,
+                    &self.state.theme,
                     "Signature count",
                     count.to_string(),
                 ));
@@ -297,18 +314,22 @@ impl PassApp {
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(self.theme.label(i18n::text("card-details")))
+                    .child(self.state.theme.label(i18n::text("card-details")))
                     .child(rows),
             );
         }
-        if self.yubikey_connection == YubiConnection::Connected && self.yubikey_details.is_none() {
+        if self.state.yubikey_connection == YubiConnection::Connected
+            && self.state.yubikey_details.is_none()
+        {
             page = page.child(
                 div()
                     .max_w(px(760.))
                     .text_size(px(12.))
-                    .text_color(rgb(self.theme.colors.muted))
+                    .text_color(rgb(self.state.theme.colors.muted))
                     .child(
-                        if self.yubikey_check.is_some() || self.card_detail_retry_at.is_some() {
+                        if self.state.yubikey_check.is_some()
+                            || self.state.card_detail_retry_at.is_some()
+                        {
                             "Loading card details from GnuPG…"
                         } else {
                             "GnuPG has not reported additional card details."
@@ -322,7 +343,7 @@ impl PassApp {
                 div()
                     .max_w(px(760.))
                     .text_size(px(11.))
-                    .text_color(rgb(self.theme.colors.muted))
+                    .text_color(rgb(self.state.theme.colors.muted))
                     .child(format!(
                         "Recent activity: {} · {}",
                         card_event_title(record.observation.event),
@@ -335,10 +356,10 @@ impl PassApp {
     }
 
     pub(super) fn path_label(&self) -> String {
-        if self.demo {
+        if self.state.demo {
             return "Fictional entries · in memory".into();
         }
-        self.path.as_ref().map_or_else(
+        self.state.path.as_ref().map_or_else(
             || "No store selected".into(),
             |path| {
                 path.to_string_lossy()

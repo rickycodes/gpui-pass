@@ -690,39 +690,39 @@ impl PassApp {
     pub(super) fn start_yubikey_check(&mut self) {
         // A refresh request is not a physical card change. Coalesce requests
         // without making the running probe's result stale.
-        if self.yubikey_check.is_some() {
+        if self.state.yubikey_check.is_some() {
             return;
         }
-        if self.yubikey_info_check.is_some()
-            || self.reveal.is_some()
-            || self.copy_pending.is_some()
-            || self.saving.is_some()
-            || self.device_verification.running()
+        if self.state.yubikey_info_check.is_some()
+            || self.state.reveal.is_some()
+            || self.state.copy_pending.is_some()
+            || self.state.saving.is_some()
+            || self.state.device_verification.running()
         {
-            if !self.card_refresh_pending {
+            if !self.state.card_refresh_pending {
                 trace!(
                     "probe.deferred ykman={} reveal={} saving={}",
-                    self.yubikey_info_check.is_some(),
-                    self.reveal.is_some(),
-                    self.saving.is_some()
+                    self.state.yubikey_info_check.is_some(),
+                    self.state.reveal.is_some(),
+                    self.state.saving.is_some()
                 );
             }
-            self.card_refresh_pending = true;
+            self.state.card_refresh_pending = true;
             return;
         }
         // Keep the initial loading state, then leave the last result on screen while the
         // background probe runs. An absent key should not flash "Checking" on every retry.
-        if self.yubikey_last_checked.is_none()
-            && self.yubikey_connection != YubiConnection::Connected
+        if self.state.yubikey_last_checked.is_none()
+            && self.state.yubikey_connection != YubiConnection::Connected
         {
-            self.yubikey_connection = YubiConnection::Checking;
+            self.state.yubikey_connection = YubiConnection::Checking;
         }
-        let executable = self.gpg.clone();
+        let executable = self.state.gpg.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
-        self.card_refresh_pending = false;
-        let probe = CardProbe::new("gpg", self.card_refresh.generation(), receiver);
+        self.state.card_refresh_pending = false;
+        let probe = CardProbe::new("gpg", self.state.card_refresh.generation(), receiver);
         let probe_id = probe.id();
-        self.yubikey_check = Some(probe);
+        self.state.yubikey_check = Some(probe);
         std::thread::spawn(move || {
             let result = check_card_status(&executable, probe_id);
             trace!(
@@ -736,6 +736,7 @@ impl PassApp {
 
     pub(super) fn start_card_watcher(&mut self) {
         let gpg_parent = self
+            .state
             .gpg
             .parent()
             .unwrap_or_else(|| std::path::Path::new("/usr/bin"));
@@ -758,14 +759,14 @@ impl PassApp {
             .stderr(Stdio::null())
             .spawn()
         else {
-            self.card_watcher_supported = Some(false);
-            self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            self.state.card_watcher_supported = Some(false);
+            self.state.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
         let Some(stdout) = child.stdout.take() else {
             let _ = child.kill();
-            self.card_watcher_supported = Some(false);
-            self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            self.state.card_watcher_supported = Some(false);
+            self.state.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
 
@@ -824,8 +825,8 @@ impl PassApp {
                 let _ = child.wait();
             }
         });
-        self.card_watcher = Some(CardWatcher { child, events });
-        self.card_watcher_retry_at = None;
+        self.state.card_watcher = Some(CardWatcher { child, events });
+        self.state.card_watcher_retry_at = None;
     }
 
     #[cfg(target_os = "linux")]
@@ -837,12 +838,12 @@ impl PassApp {
             .stderr(Stdio::null())
             .spawn()
         else {
-            self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            self.state.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
         let Some(stdout) = child.stdout.take() else {
             let _ = child.kill();
-            self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+            self.state.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
             return;
         };
 
@@ -851,7 +852,7 @@ impl PassApp {
         let (sender, events) = mpsc::channel();
         let mut known_devices = connected_yubikey_usb_paths();
         let initially_present = !known_devices.is_empty();
-        let previous_presence = self.usb_yubikey_present;
+        let previous_presence = self.state.usb_yubikey_present;
         if previous_presence != Some(initially_present)
             && (initially_present || previous_presence == Some(true))
         {
@@ -885,8 +886,8 @@ impl PassApp {
                 let _ = child.wait();
             }
         });
-        self.usb_card_watcher = Some(UsbCardWatcher { child, events });
-        self.usb_watcher_retry_at = None;
+        self.state.usb_card_watcher = Some(UsbCardWatcher { child, events });
+        self.state.usb_watcher_retry_at = None;
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -898,38 +899,39 @@ impl PassApp {
         } else {
             YubiConnection::NotDetected
         };
-        if self.usb_yubikey_present != Some(true) {
-            self.card_refresh.observe(present);
+        if self.state.usb_yubikey_present != Some(true) {
+            self.state.card_refresh.observe(present);
         }
-        if self.yubikey_connection != connection {
-            self.yubikey_connection = connection;
-            self.yubikey_details = None;
+        if self.state.yubikey_connection != connection {
+            self.state.yubikey_connection = connection;
+            self.state.yubikey_details = None;
             if !present {
-                self.device_verification.invalidate();
-                self.navigation.card_unavailable();
+                self.state.device_verification.invalidate();
+                self.state.navigation.card_unavailable();
             }
             cx.notify();
         }
-        if self.yubikey_check.is_some()
-            || self.yubikey_info_check.is_some()
-            || self.reveal.is_some()
-            || self.saving.is_some()
+        if self.state.yubikey_check.is_some()
+            || self.state.yubikey_info_check.is_some()
+            || self.state.reveal.is_some()
+            || self.state.saving.is_some()
         {
-            self.card_refresh_pending = true;
+            self.state.card_refresh_pending = true;
         } else {
             self.start_yubikey_check();
         }
     }
 
     pub(super) fn start_yubikey_info_probe(&mut self) {
-        if self.device_verification.running()
-            || self.reveal.is_some()
-            || self.copy_pending.is_some()
-            || self.saving.is_some()
-            || self.yubikey_info.is_some()
-            || self.yubikey_info_check.is_some()
-            || self.usb_yubikey_present != Some(true)
+        if self.state.device_verification.running()
+            || self.state.reveal.is_some()
+            || self.state.copy_pending.is_some()
+            || self.state.saving.is_some()
+            || self.state.yubikey_info.is_some()
+            || self.state.yubikey_info_check.is_some()
+            || self.state.usb_yubikey_present != Some(true)
             || !self
+                .state
                 .usb_reader_details
                 .as_ref()
                 .is_some_and(|details| details.vendor_id == 0x1050)
@@ -937,9 +939,9 @@ impl PassApp {
             return;
         }
         let (sender, receiver) = mpsc::sync_channel(1);
-        let probe = CardProbe::new("ykman-hid", self.card_refresh.generation(), receiver);
+        let probe = CardProbe::new("ykman-hid", self.state.card_refresh.generation(), receiver);
         let probe_id = probe.id();
-        self.yubikey_info_check = Some(probe);
+        self.state.yubikey_info_check = Some(probe);
         std::thread::spawn(move || {
             let _ = sender.send(query_yubikey_info(probe_id));
         });
@@ -948,24 +950,24 @@ impl PassApp {
     pub(super) fn apply_yubikey_usb_presence(&mut self, present: bool, cx: &mut Context<Self>) {
         // sysfs and udev can report the same transition. Do not reset retry
         // state or start another probe for a duplicate event.
-        if self.usb_yubikey_present == Some(present) {
+        if self.state.usb_yubikey_present == Some(present) {
             return;
         }
-        self.usb_yubikey_present = Some(present);
-        self.card_refresh.observe(present);
+        self.state.usb_yubikey_present = Some(present);
+        self.state.card_refresh.observe(present);
         trace!(
             "card.presence source=usb present={present} generation={}",
-            self.card_refresh.generation()
+            self.state.card_refresh.generation()
         );
         if present {
-            self.card_detail_retry_at = None;
-            self.usb_reader_details = usb_reader_for_card(None, true);
+            self.state.card_detail_retry_at = None;
+            self.state.usb_reader_details = usb_reader_for_card(None, true);
         } else {
-            self.device_verification.invalidate();
-            self.usb_reader_details = None;
-            self.yubikey_info = None;
+            self.state.device_verification.invalidate();
+            self.state.usb_reader_details = None;
+            self.state.yubikey_info = None;
             // Keep tracking the old worker until it stops touching the device.
-            self.card_detail_retry_at = None;
+            self.state.card_detail_retry_at = None;
         }
         self.apply_card_presence_hint(present, cx);
     }
@@ -974,36 +976,38 @@ impl PassApp {
         #[cfg(target_os = "linux")]
         {
             if self
+                .state
                 .usb_last_scan
                 .is_none_or(|last| last.elapsed() >= Duration::from_millis(250))
             {
-                self.usb_last_scan = Some(Instant::now());
+                self.state.usb_last_scan = Some(Instant::now());
                 let present = !connected_yubikey_usb_paths().is_empty();
-                let previous = self.usb_yubikey_present;
+                let previous = self.state.usb_yubikey_present;
                 if previous != Some(present) && (present || previous == Some(true)) {
                     self.apply_yubikey_usb_presence(present, cx);
                 }
             }
         }
-        let paused = self.reveal.is_some()
-            || self.copy_pending.is_some()
-            || self.saving.is_some()
-            || self.device_verification.running();
-        if paused != self.card_poll_paused {
-            self.card_poll_paused = paused;
+        let paused = self.state.reveal.is_some()
+            || self.state.copy_pending.is_some()
+            || self.state.saving.is_some()
+            || self.state.device_verification.running();
+        if paused != self.state.card_poll_paused {
+            self.state.card_poll_paused = paused;
             trace!(
                 "card.poll paused={} reveal={} saving={} verification={} details={}",
                 paused,
-                self.reveal.is_some(),
-                self.saving.is_some(),
-                self.device_verification.running(),
-                self.yubikey_details.is_some()
+                self.state.reveal.is_some(),
+                self.state.saving.is_some(),
+                self.state.device_verification.running(),
+                self.state.yubikey_details.is_some()
             );
         }
         if paused {
             return;
         }
         let watch_events = self
+            .state
             .card_watcher
             .as_ref()
             .map(|watcher| watcher.events.try_iter().collect::<Vec<_>>())
@@ -1011,27 +1015,27 @@ impl PassApp {
         for event in watch_events {
             match event {
                 CardWatchEvent::Ready => {
-                    if self.card_watcher_supported != Some(true) {
+                    if self.state.card_watcher_supported != Some(true) {
                         trace!("watcher.ready kind=gpg");
                     }
-                    self.card_watcher_supported = Some(true);
+                    self.state.card_watcher_supported = Some(true);
                 }
                 CardWatchEvent::Status(present) => {
                     trace!(
                         "card.presence source=gpg present={present:?} usb_present={:?}",
-                        self.usb_yubikey_present
+                        self.state.usb_yubikey_present
                     );
-                    self.card_watcher_supported = Some(true);
+                    self.state.card_watcher_supported = Some(true);
                     if let Some(present) = present {
                         // A live USB event is authoritative for a YubiKey's physical
                         // presence; scdaemon can report a stale removal during reconnect.
-                        if present || self.usb_yubikey_present != Some(true) {
+                        if present || self.state.usb_yubikey_present != Some(true) {
                             self.apply_card_presence_hint(present, cx);
                         }
                     }
                     if present.is_none() {
-                        if self.yubikey_check.is_some() {
-                            self.card_refresh_pending = true;
+                        if self.state.yubikey_check.is_some() {
+                            self.state.card_refresh_pending = true;
                         } else {
                             self.start_yubikey_check();
                         }
@@ -1039,13 +1043,15 @@ impl PassApp {
                 }
                 CardWatchEvent::Failed => {
                     trace!("watcher.failed kind=gpg");
-                    self.card_watcher_supported = Some(false);
-                    self.card_watcher = None;
-                    self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+                    self.state.card_watcher_supported = Some(false);
+                    self.state.card_watcher = None;
+                    self.state.card_watcher_retry_at =
+                        Some(Instant::now() + Duration::from_secs(2));
                 }
             }
         }
         let usb_events = self
+            .state
             .usb_card_watcher
             .as_ref()
             .map(|watcher| watcher.events.try_iter().collect::<Vec<_>>())
@@ -1057,34 +1063,36 @@ impl PassApp {
                 }
                 UsbCardEvent::Failed => {
                     trace!("watcher.failed kind=usb");
-                    self.usb_card_watcher = None;
-                    self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
+                    self.state.usb_card_watcher = None;
+                    self.state.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
                 }
             }
         }
         if let Some(completion) = self
+            .state
             .yubikey_info_check
             .as_ref()
-            .and_then(|probe| probe.poll(&self.card_refresh))
+            .and_then(|probe| probe.poll(&self.state.card_refresh))
         {
-            self.yubikey_info_check = None;
+            self.state.yubikey_info_check = None;
             if let ProbeResult::Current(info) = completion {
-                if self.usb_yubikey_present == Some(true)
-                    && self.yubikey_info.as_ref() != Some(&info)
+                if self.state.usb_yubikey_present == Some(true)
+                    && self.state.yubikey_info.as_ref() != Some(&info)
                 {
-                    self.yubikey_info = Some(info);
+                    self.state.yubikey_info = Some(info);
                     cx.notify();
                 }
             }
         }
         if let Some(completion) = self
+            .state
             .yubikey_check
             .as_ref()
-            .and_then(|probe| probe.poll(&self.card_refresh))
+            .and_then(|probe| probe.poll(&self.state.card_refresh))
         {
-            self.yubikey_check = None;
-            self.yubikey_last_checked = Some(Instant::now());
-            self.card_refresh_pending = false;
+            self.state.yubikey_check = None;
+            self.state.yubikey_last_checked = Some(Instant::now());
+            self.state.card_refresh_pending = false;
             let result = match completion {
                 ProbeResult::Current(result) => Some(result),
                 ProbeResult::Stale | ProbeResult::Disconnected => None,
@@ -1096,42 +1104,47 @@ impl PassApp {
                 self.start_yubikey_check();
             }
         }
-        if self.card_watcher.is_none()
+        if self.state.card_watcher.is_none()
             && self
+                .state
                 .card_watcher_retry_at
                 .is_some_and(|retry_at| retry_at <= Instant::now())
         {
             self.start_card_watcher();
         }
-        if self.usb_card_watcher.is_none()
+        if self.state.usb_card_watcher.is_none()
             && self
+                .state
                 .usb_watcher_retry_at
                 .is_some_and(|retry_at| retry_at <= Instant::now())
         {
             self.start_usb_card_watcher(cx);
         }
-        if self.yubikey_check.is_none()
-            && self.yubikey_info_check.is_none()
-            && self.card_refresh_pending
+        if self.state.yubikey_check.is_none()
+            && self.state.yubikey_info_check.is_none()
+            && self.state.card_refresh_pending
         {
-            self.card_refresh_pending = false;
+            self.state.card_refresh_pending = false;
             self.start_yubikey_check();
         }
-        if self.usb_yubikey_present == Some(true)
-            && self.yubikey_details.is_none()
-            && self.yubikey_check.is_none()
+        if self.state.usb_yubikey_present == Some(true)
+            && self.state.yubikey_details.is_none()
+            && self.state.yubikey_check.is_none()
             && self
+                .state
                 .card_detail_retry_at
                 .is_some_and(|retry_at| retry_at <= Instant::now())
         {
-            self.card_detail_retry_at = None;
+            self.state.card_detail_retry_at = None;
             self.start_yubikey_check();
         }
-        if self.card_watcher_supported != Some(true)
-            && self.yubikey_check.is_none()
-            && self.yubikey_info_check.is_none()
-            && !(self.usb_card_watcher.is_some() && self.usb_yubikey_present == Some(true))
+        if self.state.card_watcher_supported != Some(true)
+            && self.state.yubikey_check.is_none()
+            && self.state.yubikey_info_check.is_none()
+            && !(self.state.usb_card_watcher.is_some()
+                && self.state.usb_yubikey_present == Some(true))
             && self
+                .state
                 .yubikey_last_checked
                 .is_none_or(|last| last.elapsed() >= Duration::from_secs(3))
         {
@@ -1146,15 +1159,15 @@ impl PassApp {
             result.connection,
             result.details.is_some()
         );
-        if self.usb_yubikey_present == Some(true)
+        if self.state.usb_yubikey_present == Some(true)
             && (result.connection != YubiConnection::Connected || result.details.is_none())
         {
             // A miss during enumeration does not invalidate physical presence or
             // details already obtained for this same insertion.
-            self.yubikey_connection = YubiConnection::Connected;
-            if self.yubikey_details.is_none() {
-                let delay = self.card_refresh.retry_delay();
-                self.card_detail_retry_at = Some(Instant::now() + delay);
+            self.state.yubikey_connection = YubiConnection::Connected;
+            if self.state.yubikey_details.is_none() {
+                let delay = self.state.card_refresh.retry_delay();
+                self.state.card_detail_retry_at = Some(Instant::now() + delay);
                 trace!(
                     "[card-detect] Card details not ready; retrying in {}ms",
                     delay.as_millis()
@@ -1165,23 +1178,23 @@ impl PassApp {
         }
         // Busy is inconclusive, so keep any already connected card on screen.
         if result.connection == YubiConnection::Busy {
-            if self.yubikey_connection != YubiConnection::Connected {
-                self.yubikey_connection = YubiConnection::Busy;
-                self.yubikey_details = None;
+            if self.state.yubikey_connection != YubiConnection::Connected {
+                self.state.yubikey_connection = YubiConnection::Busy;
+                self.state.yubikey_details = None;
                 cx.notify();
             }
             return;
         }
-        let changed =
-            self.yubikey_connection != result.connection || self.yubikey_details != result.details;
-        self.yubikey_connection = result.connection;
-        self.yubikey_details = result.details;
-        if self.yubikey_connection != YubiConnection::Connected {
-            self.device_verification.invalidate();
-            self.navigation.card_unavailable();
-        } else if self.yubikey_details.is_some() {
-            self.card_detail_retry_at = None;
-            self.card_refresh.completed();
+        let changed = self.state.yubikey_connection != result.connection
+            || self.state.yubikey_details != result.details;
+        self.state.yubikey_connection = result.connection;
+        self.state.yubikey_details = result.details;
+        if self.state.yubikey_connection != YubiConnection::Connected {
+            self.state.device_verification.invalidate();
+            self.state.navigation.card_unavailable();
+        } else if self.state.yubikey_details.is_some() {
+            self.state.card_detail_retry_at = None;
+            self.state.card_refresh.completed();
             self.start_yubikey_info_probe();
         }
         if changed {
@@ -1191,6 +1204,7 @@ impl PassApp {
 
     pub(super) fn capture_yubikey_status(&mut self, cx: &mut Context<Self>) {
         let observation = self
+            .state
             .reveal
             .as_ref()
             .and_then(|(request, _)| {
@@ -1200,7 +1214,7 @@ impl PassApp {
                     .map(|observation| (observation, "Reveal entry"))
             })
             .or_else(|| {
-                self.copy_pending.as_ref().and_then(|pending| {
+                self.state.copy_pending.as_ref().and_then(|pending| {
                     pending
                         .progress
                         .card_observation()
@@ -1208,9 +1222,9 @@ impl PassApp {
                 })
             })
             .or_else(|| {
-                self.saving.as_ref().and_then(|(_, progress, _)| {
+                self.state.saving.as_ref().and_then(|(_, progress, _)| {
                     progress.card_observation().map(|observation| {
-                        let operation = if self.saving_edit {
+                        let operation = if self.state.saving_edit {
                             "Save edited entry"
                         } else {
                             "Save generated entry"
@@ -1223,17 +1237,18 @@ impl PassApp {
             return;
         };
         if self
+            .state
             .last_yubikey_observation
             .is_some_and(|last| observation.observed_at <= last)
         {
             return;
         }
-        self.last_yubikey_observation = Some(observation.observed_at);
-        self.yubikey_history.push_front(YubiRecord {
+        self.state.last_yubikey_observation = Some(observation.observed_at);
+        self.state.yubikey_history.push_front(YubiRecord {
             observation,
             operation,
         });
-        self.yubikey_history.truncate(12);
+        self.state.yubikey_history.truncate(12);
         cx.notify();
     }
 }

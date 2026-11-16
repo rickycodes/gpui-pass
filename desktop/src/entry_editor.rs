@@ -88,7 +88,7 @@ impl Element for EntryTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let rows = self.app.read(cx).generator_name.matches('\n').count() + 1;
+        let rows = self.app.read(cx).state.generator_name.matches('\n').count() + 1;
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         style.size.height = (window.line_height() * rows as f32).into();
@@ -105,10 +105,10 @@ impl Element for EntryTextElement {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let app = self.app.read(cx);
-        let content = app.generator_name.as_str();
-        let selected = app.generator_name_selection.clone();
-        let cursor_offset = app.generator_name_cursor;
-        let focused = app.generator_name_focus.is_focused(window);
+        let content = app.state.generator_name.as_str();
+        let selected = app.state.generator_name_selection.clone();
+        let cursor_offset = app.state.generator_name_cursor;
+        let focused = app.state.generator_name_focus.is_focused(window);
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let row_height = window.line_height();
@@ -150,7 +150,7 @@ impl Element for EntryTextElement {
                             line_bounds.bottom(),
                         ),
                     ),
-                    rgba(app.theme.colors.selection),
+                    rgba(app.state.theme.colors.selection),
                 )
             });
             let cursor = (focused
@@ -167,7 +167,7 @@ impl Element for EntryTextElement {
                             ),
                             size(px(1.5), line_bounds.size.height),
                         ),
-                        gpui::rgb(app.theme.colors.accent),
+                        gpui::rgb(app.state.theme.colors.accent),
                     )
                 });
             layouts.push(LineLayout {
@@ -200,7 +200,7 @@ impl Element for EntryTextElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let focus = self.app.read(cx).generator_name_focus.clone();
+        let focus = self.app.read(cx).state.generator_name_focus.clone();
         window.handle_input(
             &focus,
             ElementInputHandler::new(
@@ -237,7 +237,7 @@ impl Element for EntryTextElement {
             }
         }
         self.app.update(cx, |app, _| {
-            app.editor_layout = Some(prepaint.layout.clone())
+            app.state.editor_layout = Some(prepaint.layout.clone())
         });
     }
 }
