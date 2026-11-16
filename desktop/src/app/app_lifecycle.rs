@@ -71,23 +71,27 @@ impl PassApp {
         if self.state.reveal.is_some()
             || self.state.copy_pending.is_some()
             || self.state.saving.is_some()
+            || self.state.load.is_some()
+            || self.state.device_verification.running()
+            || self.state.yubikey_check.is_some()
+            || self.state.yubikey_info_check.is_some()
         {
-            Duration::from_millis(100)
-        } else if cfg!(target_os = "linux")
-            || self.state.card_watcher.is_some()
-            || self.state.usb_card_watcher.is_some()
-        {
-            // The watcher is event-driven. Poll its receiver frequently so hotplug events
-            // reach the UI promptly instead of waiting for the idle refresh interval.
-            Duration::from_millis(100)
+            ACTIVE_POLL_INTERVAL
         } else if self.state.session.revealed(Instant::now()).is_some()
             || self.state.generated.is_some()
             || self.state.clipboard.active()
             || self.state.message_until.is_some()
         {
-            Duration::from_millis(250)
+            UI_TIMER_INTERVAL
+        } else if self.state.card_watcher.is_some()
+            || self.state.usb_card_watcher.is_some()
+            || self.state.card_watcher_retry_at.is_some()
+            || self.state.usb_watcher_retry_at.is_some()
+        {
+            // Watchers are event-driven; this only bounds how long their queued events wait.
+            UI_TIMER_INTERVAL
         } else {
-            Duration::from_secs(2)
+            IDLE_POLL_INTERVAL
         }
     }
 

@@ -447,6 +447,8 @@ pub(super) fn connected_yubikey_usb_paths() -> HashSet<String> {
         .collect()
 }
 
+const USB_PRESENCE_FALLBACK_INTERVAL: Duration = Duration::from_secs(2);
+
 pub(super) fn update_yubikey_usb_presence(
     event: &[String],
     known_devices: &mut HashSet<String>,
@@ -975,10 +977,14 @@ impl PassApp {
     pub(super) fn poll_yubikey_connection(&mut self, cx: &mut Context<Self>) {
         #[cfg(target_os = "linux")]
         {
-            if self
-                .state
-                .usb_last_scan
-                .is_none_or(|last| last.elapsed() >= Duration::from_millis(250))
+            // udev provides hotplug events while its watcher is healthy. Walking
+            // sysfs repeatedly in parallel duplicates that work, so scan only
+            // when the event watcher is unavailable, and then as a fallback.
+            if self.state.usb_card_watcher.is_none()
+                && self
+                    .state
+                    .usb_last_scan
+                    .is_none_or(|last| last.elapsed() >= USB_PRESENCE_FALLBACK_INTERVAL)
             {
                 self.state.usb_last_scan = Some(Instant::now());
                 let present = !connected_yubikey_usb_paths().is_empty();

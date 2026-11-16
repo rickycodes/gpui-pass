@@ -96,6 +96,9 @@ use yubikey_detection::{
 use zeroize::{Zeroize, Zeroizing};
 
 const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(6);
+const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const UI_TIMER_INTERVAL: Duration = Duration::from_millis(500);
+const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 struct Options {
     store: Option<PathBuf>,
