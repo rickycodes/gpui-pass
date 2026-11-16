@@ -47,7 +47,13 @@ fn writer_lock_name(root: &Path, entry: &Entry) -> String {
     use std::os::unix::ffi::OsStrExt;
     // Stable FNV-1a 128-bit name: lock identity must agree across processes.
     let mut hash = 0x6c62272e07bb014262b821756295c58du128;
-    for byte in root.as_os_str().as_bytes().iter().chain([0u8].iter()).chain(entry.relative_file().as_os_str().as_bytes()) {
+    for byte in root
+        .as_os_str()
+        .as_bytes()
+        .iter()
+        .chain([0u8].iter())
+        .chain(entry.relative_file().as_os_str().as_bytes())
+    {
         hash ^= u128::from(*byte);
         hash = hash.wrapping_mul(0x0000000001000000000000000000013bu128);
     }
@@ -62,7 +68,12 @@ const MAX_RECIPIENTS_BYTES: usize = 65_536;
 fn parse_recipients(text: &str) -> Result<Vec<String>, Error> {
     let mut recipients = Vec::new();
     for line in text.lines() {
-        for recipient in line.split('#').next().unwrap_or_default().split_whitespace() {
+        for recipient in line
+            .split('#')
+            .next()
+            .unwrap_or_default()
+            .split_whitespace()
+        {
             if recipient.len() > 256 || recipient.chars().any(char::is_control) {
                 return Err(Error::InvalidRecipients);
             }
@@ -127,7 +138,11 @@ impl Entry {
         }
         let name = text[..text.len() - 4].to_owned();
         let search_name = name.to_lowercase();
-        Ok(Self { relative_file: path.to_owned(), name, search_name })
+        Ok(Self {
+            relative_file: path.to_owned(),
+            name,
+            search_name,
+        })
     }
 
     pub fn name(&self) -> &str {
@@ -170,14 +185,23 @@ impl EntryRevision {
         {
             use std::os::unix::fs::MetadataExt;
             let metadata = file.metadata()?;
-            Ok(Self { identity: [
-                metadata.dev() as i128, metadata.ino() as i128, metadata.len() as i128,
-                metadata.mtime() as i128, metadata.mtime_nsec() as i128,
-                metadata.ctime() as i128, metadata.ctime_nsec() as i128,
-            ] })
+            Ok(Self {
+                identity: [
+                    metadata.dev() as i128,
+                    metadata.ino() as i128,
+                    metadata.len() as i128,
+                    metadata.mtime() as i128,
+                    metadata.mtime_nsec() as i128,
+                    metadata.ctime() as i128,
+                    metadata.ctime_nsec() as i128,
+                ],
+            })
         }
         #[cfg(not(unix))]
-        { let _ = file; Err(Error::UnsupportedPlatform) }
+        {
+            let _ = file;
+            Err(Error::UnsupportedPlatform)
+        }
     }
 }
 
@@ -318,16 +342,28 @@ impl Store {
                 signing_keys: Vec::new(),
             });
         }
-        let signing_keys = match env::var_os("PASSWORD_STORE_SIGNING_KEY").filter(|value| !value.is_empty()) {
-            Some(value) => {
-                let keys: Vec<_> = value.to_string_lossy().split_whitespace().map(str::to_owned).collect();
-                if keys.is_empty() || keys.iter().any(|key| key.len() != 40 || !key.bytes().all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte))) {
-                    return Err(Error::InvalidSigningKey);
+        let signing_keys =
+            match env::var_os("PASSWORD_STORE_SIGNING_KEY").filter(|value| !value.is_empty()) {
+                Some(value) => {
+                    let keys: Vec<_> = value
+                        .to_string_lossy()
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    if keys.is_empty()
+                        || keys.iter().any(|key| {
+                            key.len() != 40
+                                || !key.bytes().all(|byte| {
+                                    byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte)
+                                })
+                        })
+                    {
+                        return Err(Error::InvalidSigningKey);
+                    }
+                    keys
                 }
-                keys
-            }
-            None => Vec::new(),
-        };
+                None => Vec::new(),
+            };
         #[cfg(unix)]
         {
             use rustix::{
@@ -386,7 +422,9 @@ impl Store {
                             return Err(Error::InvalidRecipients);
                         }
                         let mut bytes = Vec::with_capacity(metadata.len() as usize);
-                        signature.take((MAX_RECIPIENTS_BYTES + 1) as u64).read_to_end(&mut bytes)
+                        signature
+                            .take((MAX_RECIPIENTS_BYTES + 1) as u64)
+                            .read_to_end(&mut bytes)
                             .map_err(|_| Error::InvalidRecipients)?;
                         if bytes.len() > MAX_RECIPIENTS_BYTES {
                             return Err(Error::InvalidRecipients);
@@ -440,12 +478,23 @@ impl Store {
     }
 
     /// Atomically create a new encrypted entry without following links or replacing a file.
-    pub(crate) fn create_entry(&self, entry: &Entry, ciphertext: &[u8], policy: &RecipientPolicy) -> Result<(), Error> {
+    pub(crate) fn create_entry(
+        &self,
+        entry: &Entry,
+        ciphertext: &[u8],
+        policy: &RecipientPolicy,
+    ) -> Result<(), Error> {
         self.write_entry(entry, ciphertext, None, policy)
     }
 
     /// Atomically replace an existing encrypted entry within the pinned store.
-    pub(crate) fn replace_entry(&self, entry: &Entry, ciphertext: &[u8], expected: &EntryRevision, policy: &RecipientPolicy) -> Result<(), Error> {
+    pub(crate) fn replace_entry(
+        &self,
+        entry: &Entry,
+        ciphertext: &[u8],
+        expected: &EntryRevision,
+        policy: &RecipientPolicy,
+    ) -> Result<(), Error> {
         self.check_revision(entry, expected)?;
         self.write_entry(entry, ciphertext, Some(expected), policy)
     }
@@ -454,7 +503,11 @@ impl Store {
         EntryRevision::from_file(&self.open_entry(entry)?)
     }
 
-    pub(crate) fn check_revision(&self, entry: &Entry, expected: &EntryRevision) -> Result<(), Error> {
+    pub(crate) fn check_revision(
+        &self,
+        entry: &Entry,
+        expected: &EntryRevision,
+    ) -> Result<(), Error> {
         match self.entry_revision(entry) {
             Ok(current) if current == *expected => Ok(()),
             _ => Err(Error::EntryConflict),
@@ -480,7 +533,11 @@ impl Store {
             openat(
                 &directory,
                 std::ffi::OsStr::new(&lock_name),
-                OFlags::RDWR | OFlags::CREATE | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                OFlags::RDWR
+                    | OFlags::CREATE
+                    | OFlags::NOFOLLOW
+                    | OFlags::NONBLOCK
+                    | OFlags::CLOEXEC,
                 Mode::RUSR | Mode::WUSR,
             )
             .map_err(std::io::Error::from)?,
@@ -510,7 +567,13 @@ impl Store {
         }
     }
 
-    fn write_entry(&self, entry: &Entry, ciphertext: &[u8], expected: Option<&EntryRevision>, policy: &RecipientPolicy) -> Result<(), Error> {
+    fn write_entry(
+        &self,
+        entry: &Entry,
+        ciphertext: &[u8],
+        expected: Option<&EntryRevision>,
+        policy: &RecipientPolicy,
+    ) -> Result<(), Error> {
         #[cfg(unix)]
         {
             use rustix::{
@@ -589,19 +652,35 @@ impl Store {
                 let mut file = file;
                 file.write_all(ciphertext)?;
                 file.sync_all()?;
-                let current_policy = self.recipients_for_entry(entry)
-                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string()))?;
+                let current_policy = self.recipients_for_entry(entry).map_err(|error| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+                })?;
                 if current_policy != *policy {
-                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "recipient policy changed"));
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "recipient policy changed",
+                    ));
                 }
                 if let Some(expected) = expected {
                     // Check the current destination after taking the process
                     // write mutex; a concurrent app save may have replaced it.
-                    let destination = File::from(openat(&parent, *file_name,
-                        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
-                        Mode::empty()).map_err(std::io::Error::from)?);
-                    if EntryRevision::from_file(&destination).map_err(|_| std::io::Error::other("entry conflict"))? != *expected {
-                        return Err(std::io::Error::new(std::io::ErrorKind::AlreadyExists, "entry conflict"));
+                    let destination = File::from(
+                        openat(
+                            &parent,
+                            *file_name,
+                            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+                            Mode::empty(),
+                        )
+                        .map_err(std::io::Error::from)?,
+                    );
+                    if EntryRevision::from_file(&destination)
+                        .map_err(|_| std::io::Error::other("entry conflict"))?
+                        != *expected
+                    {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::AlreadyExists,
+                            "entry conflict",
+                        ));
                     }
                     renameat(&parent, temporary_os, &parent, *file_name)
                         .map_err(std::io::Error::from)?;
@@ -619,7 +698,11 @@ impl Store {
             if let Err(error) = write_result {
                 let _ = unlinkat(&parent, temporary_os, AtFlags::empty());
                 if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    return Err(if expected.is_some() { Error::EntryConflict } else { Error::EntryAlreadyExists });
+                    return Err(if expected.is_some() {
+                        Error::EntryConflict
+                    } else {
+                        Error::EntryAlreadyExists
+                    });
                 }
                 if error.kind() == std::io::ErrorKind::InvalidData {
                     return Err(Error::RecipientPolicyChanged);

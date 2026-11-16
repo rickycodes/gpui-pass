@@ -1,9 +1,12 @@
+use crate::diagnostics::trace;
 use std::{
     cell::Cell,
-    sync::{atomic::{AtomicU64, Ordering}, mpsc::{Receiver, TryRecvError}},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc::{Receiver, TryRecvError},
+    },
     time::{Duration, Instant},
 };
-use crate::diagnostics::trace;
 static NEXT_PROBE: AtomicU64 = AtomicU64::new(1);
 
 /// Physical connection identity. Refresh requests do not change this identity.
@@ -23,7 +26,9 @@ impl CardRefresh {
         }
     }
 
-    pub fn generation(&self) -> u64 { self.generation }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
 
     pub fn retry_delay(&mut self) -> Duration {
         let delay = match self.misses {
@@ -36,7 +41,9 @@ impl CardRefresh {
         delay
     }
 
-    pub fn completed(&mut self) { self.misses = 0; }
+    pub fn completed(&mut self) {
+        self.misses = 0;
+    }
 }
 
 pub(crate) enum ProbeResult<T> {
@@ -60,30 +67,56 @@ impl<T> CardProbe<T> {
         let id = NEXT_PROBE.fetch_add(1, Ordering::Relaxed);
         let started = Instant::now();
         trace!("probe.start id={id} kind={kind} generation={generation}");
-        Self { generation, receiver, id, started, last_report: Cell::new(started) }
+        Self {
+            generation,
+            receiver,
+            id,
+            started,
+            last_report: Cell::new(started),
+        }
     }
 
-    pub fn id(&self) -> u64 { self.id }
+    pub fn id(&self) -> u64 {
+        self.id
+    }
 
     pub fn poll(&self, refresh: &CardRefresh) -> Option<ProbeResult<T>> {
         match self.receiver.try_recv() {
             Ok(value) => {
                 let current = self.generation == refresh.generation();
-                trace!("probe.received id={} generation={} current_generation={} accepted={} elapsed_ms={}",
-                    self.id, self.generation, refresh.generation(), current, self.started.elapsed().as_millis());
-                Some(if current { ProbeResult::Current(value) } else { ProbeResult::Stale })
-            },
+                trace!(
+                    "probe.received id={} generation={} current_generation={} accepted={} elapsed_ms={}",
+                    self.id,
+                    self.generation,
+                    refresh.generation(),
+                    current,
+                    self.started.elapsed().as_millis()
+                );
+                Some(if current {
+                    ProbeResult::Current(value)
+                } else {
+                    ProbeResult::Stale
+                })
+            }
             Err(TryRecvError::Empty) => {
                 if self.last_report.get().elapsed() >= Duration::from_secs(5) {
-                    trace!("probe.waiting id={} elapsed_ms={}", self.id, self.started.elapsed().as_millis());
+                    trace!(
+                        "probe.waiting id={} elapsed_ms={}",
+                        self.id,
+                        self.started.elapsed().as_millis()
+                    );
                     self.last_report.set(Instant::now());
                 }
                 None
-            },
+            }
             Err(TryRecvError::Disconnected) => {
-                trace!("probe.disconnected id={} elapsed_ms={}", self.id, self.started.elapsed().as_millis());
+                trace!(
+                    "probe.disconnected id={} elapsed_ms={}",
+                    self.id,
+                    self.started.elapsed().as_millis()
+                );
                 Some(ProbeResult::Disconnected)
-            },
+            }
         }
     }
 }
@@ -106,7 +139,10 @@ mod tests {
         let (sender, receiver) = mpsc::channel();
         let current = CardProbe::new("fixture", refresh.generation(), receiver);
         sender.send("current card details").unwrap();
-        assert!(matches!(current.poll(&refresh), Some(ProbeResult::Current("current card details"))));
+        assert!(matches!(
+            current.poll(&refresh),
+            Some(ProbeResult::Current("current card details"))
+        ));
     }
 
     #[test]
@@ -115,9 +151,14 @@ mod tests {
         refresh.observe(true);
         let (sender, receiver) = mpsc::channel();
         let probe = CardProbe::new("fixture", refresh.generation(), receiver);
-        for _ in 0..10 { refresh.observe(true); }
+        for _ in 0..10 {
+            refresh.observe(true);
+        }
         sender.send("details").unwrap();
-        assert!(matches!(probe.poll(&refresh), Some(ProbeResult::Current("details"))));
+        assert!(matches!(
+            probe.poll(&refresh),
+            Some(ProbeResult::Current("details"))
+        ));
     }
 
     #[test]
@@ -127,7 +168,9 @@ mod tests {
         assert_eq!(refresh.retry_delay(), Duration::from_millis(250));
         assert_eq!(refresh.retry_delay(), Duration::from_millis(500));
         assert_eq!(refresh.retry_delay(), Duration::from_secs(1));
-        for _ in 0..300 { assert_eq!(refresh.retry_delay(), Duration::from_secs(3)); }
+        for _ in 0..300 {
+            assert_eq!(refresh.retry_delay(), Duration::from_secs(3));
+        }
         refresh.observe(false);
         refresh.observe(true);
         assert_eq!(refresh.retry_delay(), Duration::from_millis(250));
@@ -140,6 +183,9 @@ mod tests {
         let probe = CardProbe::new("fixture", refresh.generation(), receiver);
         assert!(probe.poll(&refresh).is_none());
         drop(sender);
-        assert!(matches!(probe.poll(&refresh), Some(ProbeResult::Disconnected)));
+        assert!(matches!(
+            probe.poll(&refresh),
+            Some(ProbeResult::Disconnected)
+        ));
     }
 }

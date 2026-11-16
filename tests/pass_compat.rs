@@ -1,5 +1,7 @@
 //! Run through scripts/test-pass-compat.sh to create isolated disposable keys and stores.
-use gpui_pass_core::{Cancellation, Entry, Gpg, Store, GeneratorOptions, OperationProgress, OperationStatus, Secret};
+use gpui_pass_core::{
+    Cancellation, Entry, GeneratorOptions, Gpg, OperationProgress, OperationStatus, Secret, Store,
+};
 use std::{env, fs};
 use zeroize::Zeroizing;
 
@@ -44,16 +46,36 @@ fn roundtrips_a_real_pass_store_without_changing_existing_entries() {
     let generated = Entry::from_relative_file("generated/roundtrip.gpg").unwrap();
     let cancel = Cancellation::default();
     let progress = OperationProgress::new(OperationStatus::working("Fixture", "Disposable store"));
-    let password = gpg.generate_entry(&store, &generated, GeneratorOptions {
-        words: 4, add_digits: true, add_separators: true,
-    }, &cancel, &progress).unwrap();
-    assert_eq!(gpg.decrypt(&store, &generated, &cancel).unwrap().expose(),
-        format!("{}\n", password.expose()));
-    for text in ["password\nnotes\n".to_owned(), "password\nnotes".to_owned(),
-        String::new(), "x".repeat(1024 * 1024)] {
+    let password = gpg
+        .generate_entry(
+            &store,
+            &generated,
+            GeneratorOptions {
+                words: 4,
+                add_digits: true,
+                add_separators: true,
+            },
+            &cancel,
+            &progress,
+        )
+        .unwrap();
+    assert_eq!(
+        gpg.decrypt(&store, &generated, &cancel).unwrap().expose(),
+        format!("{}\n", password.expose())
+    );
+    for text in [
+        "password\nnotes\n".to_owned(),
+        "password\nnotes".to_owned(),
+        String::new(),
+        "x".repeat(1024 * 1024),
+    ] {
         let secret = Secret::from_bytes(Zeroizing::new(text.into_bytes())).unwrap();
-        gpg.update_entry(&store, &generated, &secret, &cancel, &progress).unwrap();
-        assert_eq!(gpg.decrypt(&store, &generated, &cancel).unwrap().expose(), secret.expose());
+        gpg.update_entry(&store, &generated, &secret, &cancel, &progress)
+            .unwrap();
+        assert_eq!(
+            gpg.decrypt(&store, &generated, &cancel).unwrap().expose(),
+            secret.expose()
+        );
     }
     store.remove_entry(&generated).unwrap();
 }

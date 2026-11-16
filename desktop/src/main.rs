@@ -12,36 +12,40 @@ use card_refresh::{CardProbe, CardRefresh, ProbeResult};
 mod navigation;
 use navigation::{Navigation, Page};
 
-mod process_output;
 mod clipboard;
+mod process_output;
 use clipboard::ClipboardState;
 
 mod editor_input;
 mod entry_editor;
+mod i18n;
 mod search;
 mod theme;
-mod i18n;
 
 use fluent_bundle::FluentArgs;
 use gpui::{
-    App, Application, Bounds, Context, CursorStyle, Div, FocusHandle, FontWeight,
-    Image, ImageFormat,
-    KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription, TitlebarOptions,
-    UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas, div, prelude::*,
-    img, px, rgb, size, uniform_list,
+    App, Application, Bounds, Context, CursorStyle, Div, FocusHandle, FontWeight, Image,
+    ImageFormat, KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription,
+    TitlebarOptions, UniformListScrollHandle, Window, WindowBounds, WindowOptions, actions, canvas,
+    div, img, prelude::*, px, rgb, size, uniform_list,
 };
 use gpui_pass_core::{
-    generate_memorable_password, generate_pass_default_password, Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg, OperationProgress, OperationStatus,
-    RevealRequest, Secret, Session, Store, REVEAL_DURATION, default_store_path, harden_process,
+    Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg,
+    OperationProgress, OperationStatus, REVEAL_DURATION, RevealRequest, Secret, Session, Store,
+    default_store_path, generate_memorable_password, generate_pass_default_password,
+    harden_process,
 };
 use std::{
     borrow::Cow,
-    io::{BufRead, BufReader},
     collections::{HashSet, VecDeque},
+    io::{BufRead, BufReader},
     ops::Range,
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, LazyLock, Mutex, mpsc::{self, Receiver}},
+    sync::{
+        Arc, LazyLock, Mutex,
+        mpsc::{self, Receiver},
+    },
     time::{Duration, Instant},
 };
 use theme::Theme;
@@ -52,37 +56,61 @@ const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(6);
 static YUBIKEY_5_NFC_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5-nfc.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5-nfc.webp"
+        ))
+        .to_vec(),
     ))
 });
 static YUBIKEY_5C_NFC_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c-nfc.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5c-nfc.webp"
+        ))
+        .to_vec(),
     ))
 });
 static YUBIKEY_5C_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5c.webp"
+        ))
+        .to_vec(),
     ))
 });
 static YUBIKEY_5_NANO_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5-nano.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5-nano.webp"
+        ))
+        .to_vec(),
     ))
 });
 static YUBIKEY_5C_NANO_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5c-nano.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5c-nano.webp"
+        ))
+        .to_vec(),
     ))
 });
 static YUBIKEY_5CI_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
     Arc::new(Image::from_bytes(
         ImageFormat::Webp,
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/yubikey/yubikey-5ci.webp")).to_vec(),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../assets/yubikey/yubikey-5ci.webp"
+        ))
+        .to_vec(),
     ))
 });
 
@@ -246,7 +274,10 @@ enum GeneratorMode {
 
 #[derive(Clone, Copy)]
 enum OverwriteKind {
-    Generated { mode: GeneratorMode, options: GeneratorOptions },
+    Generated {
+        mode: GeneratorMode,
+        options: GeneratorOptions,
+    },
     Custom,
 }
 
@@ -267,7 +298,9 @@ struct PendingCopy {
 }
 
 impl Drop for PendingCopy {
-    fn drop(&mut self) { self.cancellation.cancel(); }
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
 }
 
 pub(crate) struct PassApp {
@@ -461,15 +494,21 @@ impl PassApp {
             app.copy_pending = None;
             app.session.hide();
             app.device_verification.cancel();
-            if let Some((cancel, _, _)) = &app.saving { cancel.cancel(); }
+            if let Some((cancel, _, _)) = &app.saving {
+                cancel.cancel();
+            }
             app.restore_pass_clipboard(cx);
             async {}
-        }).detach();
+        })
+        .detach();
         cx.on_release(|app, cx| {
             app.copy_pending = None;
-            if let Some((cancel, _, _)) = &app.saving { cancel.cancel(); }
+            if let Some((cancel, _, _)) = &app.saving {
+                cancel.cancel();
+            }
             app.restore_pass_clipboard(cx);
-        }).detach();
+        })
+        .detach();
         app.refresh(cx);
         app.start_card_watcher();
         app.start_usb_card_watcher(cx);
@@ -492,7 +531,11 @@ impl PassApp {
     }
 
     fn tick_interval(&self) -> Duration {
-        if self.load.is_some() || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() {
+        if self.load.is_some()
+            || self.reveal.is_some()
+            || self.copy_pending.is_some()
+            || self.saving.is_some()
+        {
             Duration::from_millis(100)
         } else if cfg!(target_os = "linux")
             || self.card_watcher.is_some()
@@ -513,7 +556,9 @@ impl PassApp {
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         self.cancel_edit(cx);
         self.confirming_delete = None;
         if self.load.is_some() {
@@ -557,18 +602,29 @@ impl PassApp {
     }
 
     fn tick(&mut self, cx: &mut Context<Self>) {
-        if self.device_verification.poll(self.card_refresh.generation()) { cx.notify(); }
+        if self
+            .device_verification
+            .poll(self.card_refresh.generation())
+        {
+            cx.notify();
+        }
         let verification_state = self.device_verification.state();
         if verification_state != self.verification_state_seen {
             self.verification_state_seen = verification_state;
-            self.verification_notification_until = if matches!(verification_state, VerificationState::Idle | VerificationState::Pending) {
+            self.verification_notification_until = if matches!(
+                verification_state,
+                VerificationState::Idle | VerificationState::Pending
+            ) {
                 None
             } else {
                 Some(Instant::now() + NOTIFICATION_TIMEOUT)
             };
             cx.notify();
         }
-        if self.verification_notification_until.is_some_and(|until| Instant::now() >= until) {
+        if self
+            .verification_notification_until
+            .is_some_and(|until| Instant::now() >= until)
+        {
             self.verification_notification_until = None;
             cx.notify();
         }
@@ -620,14 +676,21 @@ impl PassApp {
             }
             cx.notify();
         }
-        if let Some(result) = self.copy_pending.as_ref().and_then(|pending| pending.receiver.try_recv().ok()) {
+        if let Some(result) = self
+            .copy_pending
+            .as_ref()
+            .and_then(|pending| pending.receiver.try_recv().ok())
+        {
             let pending = self.copy_pending.take().expect("copy request available");
             let entry = pending.entry.clone();
             if self.active && self.session.selected() == Some(&entry) {
                 match result {
                     Ok(secret) => {
-                        self.copy_to_clipboard(secret.expose().to_owned(), entry.name().to_owned(), cx);
-
+                        self.copy_to_clipboard(
+                            secret.expose().to_owned(),
+                            entry.name().to_owned(),
+                            cx,
+                        );
                     }
                     Err(error) => self.set_message(error.to_string()),
                 }
@@ -688,7 +751,9 @@ impl PassApp {
                         return;
                     }
                     self.entries.push(entry);
-                    self.entries.sort_by_cached_key(|entry| (entry.name().to_lowercase(), entry.name().to_owned()));
+                    self.entries.sort_by_cached_key(|entry| {
+                        (entry.name().to_lowercase(), entry.name().to_owned())
+                    });
                     self.query.clear();
                     self.selection = 0..0;
                     self.marked = None;
@@ -726,7 +791,7 @@ impl PassApp {
                         self.edit_conflict = false;
                         self.set_message(error.to_string());
                     }
-                },
+                }
             }
             let close = self.close_after_save;
             self.close_after_save = false;
@@ -735,15 +800,19 @@ impl PassApp {
             }
             cx.notify();
         }
-        let status = self.session.pending_status().or_else(|| {
-            self.copy_pending
-                .as_ref()
-                .map(|pending| pending.progress.snapshot())
-        }).or_else(|| {
-            self.saving
-                .as_ref()
-                .map(|(_, progress, _)| progress.snapshot())
-        });
+        let status = self
+            .session
+            .pending_status()
+            .or_else(|| {
+                self.copy_pending
+                    .as_ref()
+                    .map(|pending| pending.progress.snapshot())
+            })
+            .or_else(|| {
+                self.saving
+                    .as_ref()
+                    .map(|(_, progress, _)| progress.snapshot())
+            });
         if self.last_operation_status != status {
             self.last_operation_status = status;
             cx.notify();
@@ -753,11 +822,22 @@ impl PassApp {
     fn start_yubikey_check(&mut self) {
         // A refresh request is not a physical card change. Coalesce requests
         // without making the running probe's result stale.
-        if self.yubikey_check.is_some() { return; }
-        if self.yubikey_info_check.is_some() || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.device_verification.running() {
+        if self.yubikey_check.is_some() {
+            return;
+        }
+        if self.yubikey_info_check.is_some()
+            || self.reveal.is_some()
+            || self.copy_pending.is_some()
+            || self.saving.is_some()
+            || self.device_verification.running()
+        {
             if !self.card_refresh_pending {
-                trace!("probe.deferred ykman={} reveal={} saving={}",
-                    self.yubikey_info_check.is_some(), self.reveal.is_some(), self.saving.is_some());
+                trace!(
+                    "probe.deferred ykman={} reveal={} saving={}",
+                    self.yubikey_info_check.is_some(),
+                    self.reveal.is_some(),
+                    self.saving.is_some()
+                );
             }
             self.card_refresh_pending = true;
             return;
@@ -787,7 +867,10 @@ impl PassApp {
     }
 
     fn start_card_watcher(&mut self) {
-        let gpg_parent = self.gpg.parent().unwrap_or_else(|| std::path::Path::new("/usr/bin"));
+        let gpg_parent = self
+            .gpg
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("/usr/bin"));
         let sibling = gpg_parent.join("gpg-connect-agent");
         let executable = if sibling.is_file() {
             sibling
@@ -833,7 +916,9 @@ impl PassApp {
                         break;
                     }
                     Ok(_) => {
-                        if (line.contains("DEVINFO_START") || line.contains("DEVINFO_END")) && !ready {
+                        if (line.contains("DEVINFO_START") || line.contains("DEVINFO_END"))
+                            && !ready
+                        {
                             ready = true;
                             let _ = sender.send(CardWatchEvent::Ready);
                         }
@@ -853,7 +938,10 @@ impl PassApp {
                             let _ = sender.send(CardWatchEvent::Status(present));
                         }
                         if line.starts_with("ERR ") {
-                            let code = line.split_whitespace().nth(1).and_then(|value| value.parse::<u32>().ok());
+                            let code = line
+                                .split_whitespace()
+                                .nth(1)
+                                .and_then(|value| value.parse::<u32>().ok());
                             trace!("watcher.error kind=gpg code={code:?}");
                             let _ = sender.send(CardWatchEvent::Failed);
                             break;
@@ -914,7 +1002,8 @@ impl PassApp {
                         break;
                     }
                     Ok(_) if line.trim().is_empty() => {
-                        if let Some(present) = update_yubikey_usb_presence(&event, &mut known_devices)
+                        if let Some(present) =
+                            update_yubikey_usb_presence(&event, &mut known_devices)
                         {
                             let _ = sender.send(UsbCardEvent::Presence(present));
                         }
@@ -966,7 +1055,9 @@ impl PassApp {
 
     fn start_yubikey_info_probe(&mut self) {
         if self.device_verification.running()
-            || self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some()
+            || self.reveal.is_some()
+            || self.copy_pending.is_some()
+            || self.saving.is_some()
             || self.yubikey_info.is_some()
             || self.yubikey_info_check.is_some()
             || self.usb_yubikey_present != Some(true)
@@ -994,7 +1085,10 @@ impl PassApp {
         }
         self.usb_yubikey_present = Some(present);
         self.card_refresh.observe(present);
-        trace!("card.presence source=usb present={present} generation={}", self.card_refresh.generation());
+        trace!(
+            "card.presence source=usb present={present} generation={}",
+            self.card_refresh.generation()
+        );
         if present {
             self.card_detail_retry_at = None;
             self.usb_reader_details = usb_reader_for_card(None, true);
@@ -1023,13 +1117,24 @@ impl PassApp {
                 }
             }
         }
-        let paused = self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.device_verification.running();
+        let paused = self.reveal.is_some()
+            || self.copy_pending.is_some()
+            || self.saving.is_some()
+            || self.device_verification.running();
         if paused != self.card_poll_paused {
             self.card_poll_paused = paused;
-            trace!("card.poll paused={} reveal={} saving={} verification={} details={}", paused,
-                self.reveal.is_some(), self.saving.is_some(), self.device_verification.running(), self.yubikey_details.is_some());
+            trace!(
+                "card.poll paused={} reveal={} saving={} verification={} details={}",
+                paused,
+                self.reveal.is_some(),
+                self.saving.is_some(),
+                self.device_verification.running(),
+                self.yubikey_details.is_some()
+            );
         }
-        if paused { return; }
+        if paused {
+            return;
+        }
         let watch_events = self
             .card_watcher
             .as_ref()
@@ -1038,11 +1143,16 @@ impl PassApp {
         for event in watch_events {
             match event {
                 CardWatchEvent::Ready => {
-                    if self.card_watcher_supported != Some(true) { trace!("watcher.ready kind=gpg"); }
+                    if self.card_watcher_supported != Some(true) {
+                        trace!("watcher.ready kind=gpg");
+                    }
                     self.card_watcher_supported = Some(true);
-                },
+                }
                 CardWatchEvent::Status(present) => {
-                    trace!("card.presence source=gpg present={present:?} usb_present={:?}", self.usb_yubikey_present);
+                    trace!(
+                        "card.presence source=gpg present={present:?} usb_present={:?}",
+                        self.usb_yubikey_present
+                    );
                     self.card_watcher_supported = Some(true);
                     if let Some(present) = present {
                         // A live USB event is authoritative for a YubiKey's physical
@@ -1063,8 +1173,7 @@ impl PassApp {
                     trace!("watcher.failed kind=gpg");
                     self.card_watcher_supported = Some(false);
                     self.card_watcher = None;
-                    self.card_watcher_retry_at =
-                        Some(Instant::now() + Duration::from_secs(2));
+                    self.card_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
                 }
             }
         }
@@ -1081,12 +1190,13 @@ impl PassApp {
                 UsbCardEvent::Failed => {
                     trace!("watcher.failed kind=usb");
                     self.usb_card_watcher = None;
-                    self.usb_watcher_retry_at =
-                        Some(Instant::now() + Duration::from_secs(2));
+                    self.usb_watcher_retry_at = Some(Instant::now() + Duration::from_secs(2));
                 }
             }
         }
-        if let Some(completion) = self.yubikey_info_check.as_ref()
+        if let Some(completion) = self
+            .yubikey_info_check
+            .as_ref()
             .and_then(|probe| probe.poll(&self.card_refresh))
         {
             self.yubikey_info_check = None;
@@ -1099,7 +1209,9 @@ impl PassApp {
                 }
             }
         }
-        if let Some(completion) = self.yubikey_check.as_ref()
+        if let Some(completion) = self
+            .yubikey_check
+            .as_ref()
             .and_then(|probe| probe.poll(&self.card_refresh))
         {
             self.yubikey_check = None;
@@ -1161,8 +1273,11 @@ impl PassApp {
     }
 
     fn apply_card_probe(&mut self, result: CardProbeResult, cx: &mut Context<Self>) {
-        trace!("[card-detect] Applying current probe: state={:?}, details={}",
-            result.connection, result.details.is_some());
+        trace!(
+            "[card-detect] Applying current probe: state={:?}, details={}",
+            result.connection,
+            result.details.is_some()
+        );
         if self.usb_yubikey_present == Some(true)
             && (result.connection != YubiConnection::Connected || result.details.is_none())
         {
@@ -1172,7 +1287,10 @@ impl PassApp {
             if self.yubikey_details.is_none() {
                 let delay = self.card_refresh.retry_delay();
                 self.card_detail_retry_at = Some(Instant::now() + delay);
-                trace!("[card-detect] Card details not ready; retrying in {}ms", delay.as_millis());
+                trace!(
+                    "[card-detect] Card details not ready; retrying in {}ms",
+                    delay.as_millis()
+                );
             }
             cx.notify();
             return;
@@ -1186,8 +1304,8 @@ impl PassApp {
             }
             return;
         }
-        let changed = self.yubikey_connection != result.connection
-            || self.yubikey_details != result.details;
+        let changed =
+            self.yubikey_connection != result.connection || self.yubikey_details != result.details;
         self.yubikey_connection = result.connection;
         self.yubikey_details = result.details;
         if self.yubikey_connection != YubiConnection::Connected {
@@ -1198,7 +1316,9 @@ impl PassApp {
             self.card_refresh.completed();
             self.start_yubikey_info_probe();
         }
-        if changed { cx.notify(); }
+        if changed {
+            cx.notify();
+        }
     }
 
     fn capture_yubikey_status(&mut self, cx: &mut Context<Self>) {
@@ -1213,7 +1333,10 @@ impl PassApp {
             })
             .or_else(|| {
                 self.copy_pending.as_ref().and_then(|pending| {
-                    pending.progress.card_observation().map(|observation| (observation, "Copy entry"))
+                    pending
+                        .progress
+                        .card_observation()
+                        .map(|observation| (observation, "Copy entry"))
                 })
             })
             .or_else(|| {
@@ -1257,7 +1380,9 @@ impl PassApp {
     }
 
     fn filter(&mut self, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         self.cancel_edit(cx);
         self.confirming_delete = None;
         self.session.hide();
@@ -1265,7 +1390,11 @@ impl PassApp {
         self.reveal = None;
         self.clear_generated(cx);
         self.clear_message();
-        let terms: Vec<_> = self.query.split_whitespace().map(str::to_lowercase).collect();
+        let terms: Vec<_> = self
+            .query
+            .split_whitespace()
+            .map(str::to_lowercase)
+            .collect();
         self.filtered = self
             .entries
             .iter()
@@ -1281,7 +1410,9 @@ impl PassApp {
     }
 
     fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         self.cancel_edit(cx);
         self.session.select(self.entries.get(index).cloned());
         self.reveal = None;
@@ -1394,7 +1525,9 @@ impl PassApp {
     }
 
     fn cancel_edit(&mut self, cx: &mut Context<Self>) {
-        if !self.editing_entry { return; }
+        if !self.editing_entry {
+            return;
+        }
         let had_conflict = self.edit_conflict;
         if self.saving_edit {
             if let Some((cancel, _, _)) = &self.saving {
@@ -1418,7 +1551,9 @@ impl PassApp {
     }
 
     fn request_delete(&mut self, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         if let Some(entry) = self.session.selected().cloned() {
             self.session.hide();
             self.reveal = None;
@@ -1429,7 +1564,9 @@ impl PassApp {
     }
 
     fn begin_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         let Some(secret) = self.session.revealed(Instant::now()) else {
             self.set_message("Reveal the entry before editing it.".into());
             cx.notify();
@@ -1458,8 +1595,12 @@ impl PassApp {
         if !self.edit_conflict || self.saving.is_some() {
             return;
         }
-        let Some(entry) = self.session.selected() else { return; };
-        let Some(store) = self.store.as_ref() else { return; };
+        let Some(entry) = self.session.selected() else {
+            return;
+        };
+        let Some(store) = self.store.as_ref() else {
+            return;
+        };
         match store.entry_revision(entry) {
             Ok(revision) => {
                 self.edit_revision = Some(revision);
@@ -1482,8 +1623,12 @@ impl PassApp {
     }
 
     fn save_edit(&mut self, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
-        let Some(entry) = self.session.selected().cloned() else { return; };
+        if self.saving.is_some() {
+            return;
+        }
+        let Some(entry) = self.session.selected().cloned() else {
+            return;
+        };
         let Some(store) = self.store.clone() else {
             self.set_message("Open a password store before editing entries.".into());
             cx.notify();
@@ -1494,22 +1639,41 @@ impl PassApp {
             cx.notify();
             return;
         };
-        let secret = match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
-            Ok(secret) => secret,
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
-        };
+        let secret =
+            match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
+                Ok(secret) => secret,
+                Err(error) => {
+                    self.set_message(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            };
         let gpg = match Gpg::new(&self.gpg) {
             Ok(gpg) => gpg,
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
         };
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
-            "Preparing entry update", "The updated content stays in memory until GnuPG encrypts it."));
+            "Preparing entry update",
+            "The updated content stays in memory until GnuPG encrypts it.",
+        ));
         let worker_cancel = cancellation.clone();
         let worker_progress = progress.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
-            let result = gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
+            let result = gpg
+                .update_entry_if_unchanged(
+                    &store,
+                    &entry,
+                    &secret,
+                    &revision,
+                    &worker_cancel,
+                    &worker_progress,
+                )
                 .map(|()| (entry, secret));
             let _ = sender.send(result);
         });
@@ -1620,7 +1784,9 @@ impl PassApp {
     }
 
     fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         self.cancel_edit(cx);
         self.device_verification.cancel();
         self.copy_pending = None;
@@ -1687,18 +1853,35 @@ impl PassApp {
         let options = self.generator_options();
         match store.entry_revision(&entry) {
             Ok(_) => {
-                self.confirming_overwrite = Some(OverwriteConfirmation { entry, kind: OverwriteKind::Generated { mode, options } });
+                self.confirming_overwrite = Some(OverwriteConfirmation {
+                    entry,
+                    kind: OverwriteKind::Generated { mode, options },
+                });
                 cx.notify();
             }
             Err(Error::EntryNotFound) => self.start_generated_save(entry, mode, options, None, cx),
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+            }
         }
     }
 
-    fn start_generated_save(&mut self, entry: Entry, mode: GeneratorMode, options: GeneratorOptions, revision: Option<EntryRevision>, cx: &mut Context<Self>) {
+    fn start_generated_save(
+        &mut self,
+        entry: Entry,
+        mode: GeneratorMode,
+        options: GeneratorOptions,
+        revision: Option<EntryRevision>,
+        cx: &mut Context<Self>,
+    ) {
         let gpg = match Gpg::new(&self.gpg) {
             Ok(gpg) => gpg,
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
         };
         let Some(store) = self.store.clone() else {
             self.set_message("Open a password store before saving a generated entry.".into());
@@ -1721,16 +1904,35 @@ impl PassApp {
                     GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
                 };
                 secret.and_then(|secret| {
-                    gpg.update_generated_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
-                        .map(|()| secret)
+                    gpg.update_generated_entry_if_unchanged(
+                        &store,
+                        &entry,
+                        &secret,
+                        &revision,
+                        &worker_cancel,
+                        &worker_progress,
+                    )
+                    .map(|()| secret)
                 })
             } else {
                 match mode {
-                    GeneratorMode::Memorable => gpg.generate_entry(&store, &entry, options, &worker_cancel, &worker_progress),
-                    GeneratorMode::PassDefault => gpg.generate_pass_default_entry(&store, &entry, &worker_cancel, &worker_progress),
+                    GeneratorMode::Memorable => gpg.generate_entry(
+                        &store,
+                        &entry,
+                        options,
+                        &worker_cancel,
+                        &worker_progress,
+                    ),
+                    GeneratorMode::PassDefault => gpg.generate_pass_default_entry(
+                        &store,
+                        &entry,
+                        &worker_cancel,
+                        &worker_progress,
+                    ),
                     GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
                 }
-            }.map(|secret| (entry, secret));
+            }
+            .map(|secret| (entry, secret));
             let _ = sender.send(result);
         });
         self.clear_generated(cx);
@@ -1773,25 +1975,39 @@ impl PassApp {
         };
         match store.entry_revision(&entry) {
             Ok(_) => {
-                self.confirming_overwrite = Some(OverwriteConfirmation { entry, kind: OverwriteKind::Custom });
+                self.confirming_overwrite = Some(OverwriteConfirmation {
+                    entry,
+                    kind: OverwriteKind::Custom,
+                });
                 cx.notify();
                 return;
             }
             Err(Error::EntryNotFound) => self.start_custom_save(entry, None, cx),
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); }
-        }
-    }
-
-    fn start_custom_save(&mut self, entry: Entry, revision: Option<EntryRevision>, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
-        let secret = match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
-            Ok(secret) => secret,
             Err(error) => {
                 self.set_message(error.to_string());
                 cx.notify();
-                return;
             }
-        };
+        }
+    }
+
+    fn start_custom_save(
+        &mut self,
+        entry: Entry,
+        revision: Option<EntryRevision>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.saving.is_some() {
+            return;
+        }
+        let secret =
+            match Secret::from_bytes(Zeroizing::new(self.generator_name.as_bytes().to_vec())) {
+                Ok(secret) => secret,
+                Err(error) => {
+                    self.set_message(error.to_string());
+                    cx.notify();
+                    return;
+                }
+            };
         let gpg = match Gpg::new(&self.gpg) {
             Ok(gpg) => gpg,
             Err(error) => {
@@ -1815,11 +2031,18 @@ impl PassApp {
         let (sender, receiver) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
             let result = if let Some(revision) = revision {
-                gpg.update_entry_if_unchanged(&store, &entry, &secret, &revision, &worker_cancel, &worker_progress)
+                gpg.update_entry_if_unchanged(
+                    &store,
+                    &entry,
+                    &secret,
+                    &revision,
+                    &worker_cancel,
+                    &worker_progress,
+                )
             } else {
                 gpg.create_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
             }
-                .map(|()| (entry, secret));
+            .map(|()| (entry, secret));
             let _ = sender.send(result);
         });
         self.clear_generated(cx);
@@ -1832,7 +2055,9 @@ impl PassApp {
     }
 
     fn confirm_overwrite(&mut self, cx: &mut Context<Self>) {
-        let Some(pending) = self.confirming_overwrite.take() else { return; };
+        let Some(pending) = self.confirming_overwrite.take() else {
+            return;
+        };
         let Some(store) = self.store.as_ref() else {
             self.set_message(i18n::text("custom-entry-store-required"));
             cx.notify();
@@ -1840,16 +2065,24 @@ impl PassApp {
         };
         let revision = match store.entry_revision(&pending.entry) {
             Ok(revision) => revision,
-            Err(error) => { self.set_message(error.to_string()); cx.notify(); return; }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+                return;
+            }
         };
         match pending.kind {
-            OverwriteKind::Generated { mode, options } => self.start_generated_save(pending.entry, mode, options, Some(revision), cx),
+            OverwriteKind::Generated { mode, options } => {
+                self.start_generated_save(pending.entry, mode, options, Some(revision), cx)
+            }
             OverwriteKind::Custom => self.start_custom_save(pending.entry, Some(revision), cx),
         }
     }
 
     fn overwrite_confirmation_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(pending) = &self.confirming_overwrite else { return div().into_any_element(); };
+        let Some(pending) = &self.confirming_overwrite else {
+            return div().into_any_element();
+        };
         div()
             .id("overwrite-confirmation")
             .absolute()
@@ -1861,22 +2094,54 @@ impl PassApp {
             .items_center()
             .justify_center()
             .bg(rgb(self.theme.colors.background))
-            .child(self.theme.panel()
-                .w(px(520.))
-                .max_w(px(520.))
-                .p(px(32.))
-                .flex()
-                .flex_col()
-                .gap(px(20.))
-                .child(self.theme.label(i18n::text("overwrite-entry-title")))
-                .child(div().text_size(px(22.)).font_weight(FontWeight::MEDIUM).child(pending.entry.name().to_owned()))
-                .child(div().text_size(px(13.)).line_height(px(21.)).text_color(rgb(self.theme.colors.muted))
-                    .child(i18n::text("overwrite-entry-help")))
-                .child(div().flex().justify_end().gap(px(10.))
-                    .child(self.theme.button("cancel-overwrite", "Cancel", false)
-                        .on_click(cx.listener(|app, _, _, cx| { app.confirming_overwrite = None; cx.notify(); })))
-                    .child(self.theme.danger_button("confirm-overwrite", i18n::text("overwrite-entry-confirm"))
-                        .on_click(cx.listener(|app, _, _, cx| app.confirm_overwrite(cx))))))
+            .child(
+                self.theme
+                    .panel()
+                    .w(px(520.))
+                    .max_w(px(520.))
+                    .p(px(32.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(20.))
+                    .child(self.theme.label(i18n::text("overwrite-entry-title")))
+                    .child(
+                        div()
+                            .text_size(px(22.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(pending.entry.name().to_owned()),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .line_height(px(21.))
+                            .text_color(rgb(self.theme.colors.muted))
+                            .child(i18n::text("overwrite-entry-help")),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .justify_end()
+                            .gap(px(10.))
+                            .child(
+                                self.theme
+                                    .button("cancel-overwrite", "Cancel", false)
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.confirming_overwrite = None;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                self.theme
+                                    .danger_button(
+                                        "confirm-overwrite",
+                                        i18n::text("overwrite-entry-confirm"),
+                                    )
+                                    .on_click(
+                                        cx.listener(|app, _, _, cx| app.confirm_overwrite(cx)),
+                                    ),
+                            ),
+                    ),
+            )
             .into_any_element()
     }
 
@@ -1962,7 +2227,10 @@ impl PassApp {
                             .text_color(rgb(self.theme.colors.nav_foreground))
                             .cursor_pointer()
                             .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
-                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                            )
                             .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
                             .child("−"),
                     )
@@ -1979,7 +2247,10 @@ impl PassApp {
                             .text_color(rgb(self.theme.colors.nav_foreground))
                             .cursor_pointer()
                             .hover(|style| style.bg(rgb(self.theme.colors.danger_hover)))
-                            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                            .on_mouse_down(
+                                gpui::MouseButton::Left,
+                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                            )
                             .on_click(cx.listener(|_, _, _, cx| cx.quit()))
                             .child("×"),
                     ),
@@ -2004,31 +2275,70 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(div().text_size(px(24.)).font_weight(FontWeight::MEDIUM).child(i18n::text("custom-entry-title")))
-                    .child(self.theme.button("cancel-custom-entry", "← Back", false)
-                        .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx)))),
+                    .child(
+                        div()
+                            .text_size(px(24.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(i18n::text("custom-entry-title")),
+                    )
+                    .child(
+                        self.theme
+                            .button("cancel-custom-entry", "← Back", false)
+                            .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
+                    ),
             )
             .child(self.theme.label(i18n::text("entry-name")))
             .child(self.custom_entry_name_field(window, cx))
-            .child(div().max_w(px(500.)).text_size(px(13.)).line_height(px(21.))
-                .text_color(rgb(self.theme.colors.muted)).child(i18n::text("custom-entry-name-help")))
+            .child(
+                div()
+                    .max_w(px(500.))
+                    .text_size(px(13.))
+                    .line_height(px(21.))
+                    .text_color(rgb(self.theme.colors.muted))
+                    .child(i18n::text("custom-entry-name-help")),
+            )
             .child(self.theme.label(i18n::text("custom-entry-contents")))
-            .child(div().w_full().min_h(px(180.)).child(self.generator_name_field(window, cx)))
-            .child(div().max_w(px(520.)).text_size(px(12.)).line_height(px(19.))
-                .text_color(rgb(self.theme.colors.muted)).child(i18n::text("custom-entry-help")))
+            .child(
+                div()
+                    .w_full()
+                    .min_h(px(180.))
+                    .child(self.generator_name_field(window, cx)),
+            )
+            .child(
+                div()
+                    .max_w(px(520.))
+                    .text_size(px(12.))
+                    .line_height(px(19.))
+                    .text_color(rgb(self.theme.colors.muted))
+                    .child(i18n::text("custom-entry-help")),
+            )
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
                     .gap(px(16.))
-                    .child(div().max_w(px(340.)).text_size(px(11.)).line_height(px(17.))
-                        .text_color(rgb(self.theme.colors.muted)).child(i18n::text("no-overwrite")))
-                    .child(self.theme.button(
-                        "custom-entry-save",
-                        if self.saving_custom_entry { i18n::text("custom-entry-saving") } else { i18n::text("custom-entry-save") },
-                        true,
-                    ).on_click(cx.listener(|app, _, _, cx| app.save_custom_entry(cx)))),
+                    .child(
+                        div()
+                            .max_w(px(340.))
+                            .text_size(px(11.))
+                            .line_height(px(17.))
+                            .text_color(rgb(self.theme.colors.muted))
+                            .child(i18n::text("no-overwrite")),
+                    )
+                    .child(
+                        self.theme
+                            .button(
+                                "custom-entry-save",
+                                if self.saving_custom_entry {
+                                    i18n::text("custom-entry-saving")
+                                } else {
+                                    i18n::text("custom-entry-save")
+                                },
+                                true,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| app.save_custom_entry(cx))),
+                    ),
             );
 
         div()
@@ -2135,7 +2445,9 @@ impl PassApp {
                     .child("8 WORDS"),
             );
 
-        let mut panel = self.theme.panel()
+        let mut panel = self
+            .theme
+            .panel()
             .w(px(640.))
             .max_w(px(640.))
             .p(px(36.))
@@ -2156,101 +2468,131 @@ impl PassApp {
                             .child(i18n::text("password-generator")),
                     )
                     .child(
-                        self.theme.button("close-generator", "← Back", false)
+                        self.theme
+                            .button("close-generator", "← Back", false)
                             .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
                     ),
             )
             .child(self.theme.label(i18n::text("entry-name")))
             .child(self.generator_name_field(window, cx))
             .child(
-                div().flex().items_center().gap(px(8.))
-                    .child(self.theme.button("mode-pass-default", "Pass default", self.generator_mode == GeneratorMode::PassDefault)
-                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::PassDefault; cx.notify(); })))
-                    .child(self.theme.button("mode-memorable", "Memorable phrase", self.generator_mode == GeneratorMode::Memorable)
-                        .on_click(cx.listener(|app, _, _, cx| { app.generator_mode = GeneratorMode::Memorable; cx.notify(); })))
-            )
-            .when(self.generator_mode == GeneratorMode::Memorable, |panel| panel
-            .child(
                 div()
                     .flex()
-                    .items_start()
-                    .justify_between()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        self.theme
+                            .button(
+                                "mode-pass-default",
+                                "Pass default",
+                                self.generator_mode == GeneratorMode::PassDefault,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.generator_mode = GeneratorMode::PassDefault;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        self.theme
+                            .button(
+                                "mode-memorable",
+                                "Memorable phrase",
+                                self.generator_mode == GeneratorMode::Memorable,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.generator_mode = GeneratorMode::Memorable;
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .when(self.generator_mode == GeneratorMode::Memorable, |panel| {
+                panel
+                    .child(
+                        div().flex().items_start().justify_between().child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .gap(px(8.))
+                                .child(self.theme.label("PASSWORD GENERATOR"))
+                                .child(
+                                    div()
+                                        .text_size(px(28.))
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(i18n::text("phrase-description")),
+                                ),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .max_w(px(500.))
+                            .text_size(px(13.))
+                            .line_height(px(21.))
+                            .text_color(rgb(self.theme.colors.muted))
+                            .child(i18n::text("random-phrase-help")),
+                    )
                     .child(
                         div()
                             .flex()
-                            .flex_col()
-                            .gap(px(8.))
-                            .child(self.theme.label("PASSWORD GENERATOR"))
+                            .items_center()
+                            .justify_between()
+                            .gap(px(24.))
+                            .child(slider)
                             .child(
                                 div()
-                                    .text_size(px(28.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child(i18n::text("phrase-description")),
+                                    .min_w(px(126.))
+                                    .font_family(self.theme.mono_font)
+                                    .text_size(px(11.))
+                                    .text_color(rgb(self.theme.colors.accent))
+                                    .child(format!(
+                                        "{} WORDS  ·  {:.0} BITS",
+                                        options.words,
+                                        options.entropy_bits()
+                                    )),
                             ),
                     )
-            )
-            .child(
-                div()
-                    .max_w(px(500.))
-                    .text_size(px(13.))
-                    .line_height(px(21.))
-                    .text_color(rgb(self.theme.colors.muted))
-                    .child(i18n::text("random-phrase-help")),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(24.))
-                    .child(slider)
                     .child(
                         div()
-                            .min_w(px(126.))
-                            .font_family(self.theme.mono_font)
-                            .text_size(px(11.))
-                            .text_color(rgb(self.theme.colors.accent))
-                            .child(format!("{} WORDS  ·  {:.0} BITS", options.words, options.entropy_bits())),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(24.))
-                    .child(
-                        div()
-                            .id("toggle-generator-digits")
                             .flex()
                             .items_center()
-                            .gap(px(8.))
-                            .text_size(px(12.))
-                            .text_color(rgb(self.theme.colors.muted))
-                            .cursor_pointer()
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                app.generation_digits = !app.generation_digits;
-                                cx.notify();
-                            }))
-                            .child(if self.generation_digits { "☑" } else { "☐" })
-                            .child(i18n::text("append-digit")),
+                            .gap(px(24.))
+                            .child(
+                                div()
+                                    .id("toggle-generator-digits")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(12.))
+                                    .text_color(rgb(self.theme.colors.muted))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.generation_digits = !app.generation_digits;
+                                        cx.notify();
+                                    }))
+                                    .child(if self.generation_digits { "☑" } else { "☐" })
+                                    .child(i18n::text("append-digit")),
+                            )
+                            .child(
+                                div()
+                                    .id("toggle-generator-separators")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(12.))
+                                    .text_color(rgb(self.theme.colors.muted))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.generation_separators = !app.generation_separators;
+                                        cx.notify();
+                                    }))
+                                    .child(if self.generation_separators {
+                                        "☑"
+                                    } else {
+                                        "☐"
+                                    })
+                                    .child(i18n::text("separate-words")),
+                            ),
                     )
-                    .child(
-                        div()
-                            .id("toggle-generator-separators")
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .text_size(px(12.))
-                            .text_color(rgb(self.theme.colors.muted))
-                            .cursor_pointer()
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                app.generation_separators = !app.generation_separators;
-                                cx.notify();
-                            }))
-                            .child(if self.generation_separators { "☑" } else { "☐" })
-                            .child(i18n::text("separate-words")),
-                    ),
-            ));
+            });
 
         panel = panel.when(self.generator_mode == GeneratorMode::PassDefault, |panel| {
             panel.child(
@@ -2293,19 +2635,20 @@ impl PassApp {
                             }),
                     )
                     .child(
-                        self.theme.button(
-                            "toggle-generated-visibility",
-                            if self.generated_visible {
-                                "Hide"
-                            } else {
-                                "Show"
-                            },
-                            false,
-                        )
-                        .on_click(cx.listener(|app, _, _, cx| {
-                            app.generated_visible = !app.generated_visible;
-                            cx.notify();
-                        })),
+                        self.theme
+                            .button(
+                                "toggle-generated-visibility",
+                                if self.generated_visible {
+                                    "Hide"
+                                } else {
+                                    "Show"
+                                },
+                                false,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.generated_visible = !app.generated_visible;
+                                cx.notify();
+                            })),
                     )
                     .child(
                         div()
@@ -2322,31 +2665,38 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        self.theme.button(
-                            "copy-generated",
-                            if self.generator_mode == GeneratorMode::Memorable {
-                                "Copy phrase"
-                            } else {
-                                "Copy password"
-                            },
-                            true,
-                        )
-                        .on_click(cx.listener(|app, _, _, cx| {
-                            if let Some((secret, _)) = &app.generated {
-                                let text = secret.expose().to_owned();
-                                let source = app.saved_entry_name.clone().unwrap_or_else(|| "generated password".into());
-                                app.copy_to_clipboard(text, source, cx);
-                                cx.notify();
-                            }
-                        })),
+                        self.theme
+                            .button(
+                                "copy-generated",
+                                if self.generator_mode == GeneratorMode::Memorable {
+                                    "Copy phrase"
+                                } else {
+                                    "Copy password"
+                                },
+                                true,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                if let Some((secret, _)) = &app.generated {
+                                    let text = secret.expose().to_owned();
+                                    let source = app
+                                        .saved_entry_name
+                                        .clone()
+                                        .unwrap_or_else(|| "generated password".into());
+                                    app.copy_to_clipboard(text, source, cx);
+                                    cx.notify();
+                                }
+                            })),
                     )
-                    .child(div().text_size(px(11.)).text_color(rgb(self.theme.colors.muted)).child(
-                        if self.saved_entry_name.is_some() {
-                            "Saved and copied."
-                        } else {
-                            "Available for 30 seconds."
-                        },
-                    )),
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(rgb(self.theme.colors.muted))
+                            .child(if self.saved_entry_name.is_some() {
+                                "Saved and copied."
+                            } else {
+                                "Available for 30 seconds."
+                            }),
+                    ),
             );
         } else {
             panel = panel.child(
@@ -2381,7 +2731,16 @@ impl PassApp {
                         .child(i18n::text("no-overwrite")),
                 )
                 .child(
-                    self.theme.button("generate-phrase", if self.saving.is_some() { "Saving…" } else { "Generate & Save" }, true)
+                    self.theme
+                        .button(
+                            "generate-phrase",
+                            if self.saving.is_some() {
+                                "Saving…"
+                            } else {
+                                "Generate & Save"
+                            },
+                            true,
+                        )
                         .on_click(cx.listener(|app, _, _, cx| app.save_generated(cx))),
                 ),
         );
@@ -2453,7 +2812,9 @@ impl PassApp {
                                         gpui::MouseButton::Left,
                                         cx.listener(|_, _, _, cx| cx.stop_propagation()),
                                     )
-                                    .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
+                                    .on_click(
+                                        cx.listener(|_, _, window, _| window.minimize_window()),
+                                    )
                                     .child("−"),
                             )
                             .child(
@@ -2503,7 +2864,9 @@ impl PassApp {
     fn copy_to_clipboard(&mut self, content: String, source: String, cx: &mut Context<Self>) {
         let timeout = std::env::var("PASSWORD_STORE_CLIP_TIME").ok();
         let deadline = clipboard::clipboard_deadline(Instant::now(), timeout.as_deref());
-        let item = self.clipboard.copy(content, source, cx.read_from_clipboard(), deadline);
+        let item = self
+            .clipboard
+            .copy(content, source, cx.read_from_clipboard(), deadline);
         cx.write_to_clipboard(item);
         self.clipboard_seconds = None;
         cx.notify();
@@ -2517,7 +2880,11 @@ impl PassApp {
 
     fn reveal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window);
-        if self.copy_pending.is_some() || self.device_verification.running() || self.session.is_pending() || !window.is_window_active() {
+        if self.copy_pending.is_some()
+            || self.device_verification.running()
+            || self.session.is_pending()
+            || !window.is_window_active()
+        {
             return;
         }
         if self.session.revealed(Instant::now()).is_some() {
@@ -2554,7 +2921,10 @@ impl PassApp {
             let progress = request.progress.clone();
             let (sender, receiver) = mpsc::sync_channel(1);
             std::thread::spawn(move || {
-                let _ = sender.send(gpg.decrypt_with_revision(&store, &entry, &cancel, &progress).map(|(secret, revision)| (secret, Some(revision))));
+                let _ = sender.send(
+                    gpg.decrypt_with_revision(&store, &entry, &cancel, &progress)
+                        .map(|(secret, revision)| (secret, Some(revision))),
+                );
             });
             receiver
         };
@@ -2563,8 +2933,16 @@ impl PassApp {
     }
 
     fn copy_selected(&mut self, cx: &mut Context<Self>) {
-        if self.copy_pending.is_some() || self.reveal.is_some() || self.saving.is_some() || self.device_verification.running() { return; }
-        let Some(entry) = self.session.selected().cloned() else { return; };
+        if self.copy_pending.is_some()
+            || self.reveal.is_some()
+            || self.saving.is_some()
+            || self.device_verification.running()
+        {
+            return;
+        }
+        let Some(entry) = self.session.selected().cloned() else {
+            return;
+        };
         self.clear_generated(cx);
         self.clear_message();
         let (sender, receiver) = mpsc::sync_channel(1);
@@ -2580,20 +2958,39 @@ impl PassApp {
             let worker_entry = entry.clone();
             let worker_progress = progress.clone();
             let worker_cancel = cancellation.clone();
-            std::thread::spawn(move || { let _ = sender.send(gpg.decrypt_with_progress(&store, &worker_entry, &worker_cancel, &worker_progress)); });
-            self.copy_pending = Some(PendingCopy { entry, progress, cancellation, receiver });
+            std::thread::spawn(move || {
+                let _ = sender.send(gpg.decrypt_with_progress(
+                    &store,
+                    &worker_entry,
+                    &worker_cancel,
+                    &worker_progress,
+                ));
+            });
+            self.copy_pending = Some(PendingCopy {
+                entry,
+                progress,
+                cancellation,
+                receiver,
+            });
             cx.notify();
             return;
         } else {
             self.set_message("Open a password store before copying an entry.".into());
             return;
         }
-        self.copy_pending = Some(PendingCopy { entry, progress, cancellation, receiver });
+        self.copy_pending = Some(PendingCopy {
+            entry,
+            progress,
+            cancellation,
+            receiver,
+        });
         cx.notify();
     }
 
     fn open_store(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.saving.is_some() { return; }
+        if self.saving.is_some() {
+            return;
+        }
         self.hide(cx);
         let picker = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
@@ -2605,7 +3002,9 @@ impl PassApp {
             if let Ok(Ok(Some(paths))) = picker.await {
                 if let Some(path) = paths.into_iter().next() {
                     let _ = entity.update(cx, |app, cx| {
-                        if app.saving.is_some() { return; }
+                        if app.saving.is_some() {
+                            return;
+                        }
                         app.load = None;
                         app.demo = false;
                         app.path = Some(path);
@@ -2633,8 +3032,16 @@ impl PassApp {
             .border_b_1()
             .border_color(rgb(self.theme.colors.border))
             .border_l_2()
-            .border_color(rgb(if active { self.theme.colors.accent } else { self.theme.colors.border }))
-            .bg(rgb(if active { self.theme.colors.accent_surface } else { self.theme.colors.background }))
+            .border_color(rgb(if active {
+                self.theme.colors.accent
+            } else {
+                self.theme.colors.border
+            }))
+            .bg(rgb(if active {
+                self.theme.colors.accent_surface
+            } else {
+                self.theme.colors.background
+            }))
             .cursor_pointer()
             .hover(|style| style.bg(rgb(self.theme.colors.hover)))
             .on_click(cx.listener(move |app, _, window, cx| {
@@ -2779,14 +3186,26 @@ impl PassApp {
     }
 
     fn verify_device(&mut self, cx: &mut Context<Self>) {
-        if self.device_verification.running() { return; }
+        if self.device_verification.running() {
+            return;
+        }
         self.clear_message();
         self.verification_state_seen = VerificationState::Idle;
         self.verification_notification_until = None;
-        if self.reveal.is_some() || self.copy_pending.is_some() || self.saving.is_some() || self.yubikey_info_check.is_some() || self.yubikey_check.is_some() {
+        if self.reveal.is_some()
+            || self.copy_pending.is_some()
+            || self.saving.is_some()
+            || self.yubikey_info_check.is_some()
+            || self.yubikey_check.is_some()
+        {
             self.device_verification.busy();
-        } else if let Some(usb) = self.usb_reader_details.as_ref().filter(|usb| usb.vendor_id == 0x1050) {
-            self.device_verification.start(self.card_refresh.generation(), usb.product_id);
+        } else if let Some(usb) = self
+            .usb_reader_details
+            .as_ref()
+            .filter(|usb| usb.vendor_id == 0x1050)
+        {
+            self.device_verification
+                .start(self.card_refresh.generation(), usb.product_id);
         } else {
             self.device_verification.unavailable();
         }
@@ -2803,10 +3222,14 @@ impl PassApp {
 
     fn yubikey_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let latest = self.yubikey_history.front().copied();
-        let is_yubikey = self.usb_reader_details.as_ref()
+        let is_yubikey = self
+            .usb_reader_details
+            .as_ref()
             .is_some_and(|usb| usb.vendor_id == 0x1050)
             || self.yubikey_info.is_some()
-            || self.yubikey_details.as_ref()
+            || self
+                .yubikey_details
+                .as_ref()
                 .and_then(|details| details.manufacturer.as_ref())
                 .is_some_and(|manufacturer| manufacturer.eq_ignore_ascii_case("Yubico"));
         let mut page = div()
@@ -2826,35 +3249,50 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(8.))
-                            .child(
-                                div()
-                                    .text_size(px(32.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .child("Smartcard status"),
-                            ),
+                        div().flex().flex_col().gap(px(8.)).child(
+                            div()
+                                .text_size(px(32.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("Smartcard status"),
+                        ),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(12.))
-                            .when(is_yubikey, |actions| actions.child(
-                                self.theme.button("verify-device", if self.device_verification.running() { "Verifying…" } else { "Verify" }, true)
-                                    .on_click(cx.listener(|app, _, _, cx| app.verify_device(cx))),
-                            ))
-                            .when(self.device_verification.running(), |actions| actions.child(
-                                self.theme.button("cancel-verification", "Cancel", false).on_click(cx.listener(|app, _, _, cx| {
-                                    app.device_verification.cancel();
-                                    cx.notify();
-                                })),
-                            ))
-                            .child(self.theme.button("yubikey-back", "← Back", false).on_click(
-                                cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
-                            )),
+                            .when(is_yubikey, |actions| {
+                                actions.child(
+                                    self.theme
+                                        .button(
+                                            "verify-device",
+                                            if self.device_verification.running() {
+                                                "Verifying…"
+                                            } else {
+                                                "Verify"
+                                            },
+                                            true,
+                                        )
+                                        .on_click(
+                                            cx.listener(|app, _, _, cx| app.verify_device(cx)),
+                                        ),
+                                )
+                            })
+                            .when(self.device_verification.running(), |actions| {
+                                actions.child(
+                                    self.theme
+                                        .button("cancel-verification", "Cancel", false)
+                                        .on_click(cx.listener(|app, _, _, cx| {
+                                            app.device_verification.cancel();
+                                            cx.notify();
+                                        })),
+                                )
+                            })
+                            .child(
+                                self.theme.button("yubikey-back", "← Back", false).on_click(
+                                    cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
+                                ),
+                            ),
                     ),
             );
 
@@ -2914,19 +3352,23 @@ impl PassApp {
             );
         }
 
-        let mut rows = div()
-            .max_w(px(760.))
-            .flex()
-            .flex_col()
-            .gap(px(1.));
+        let mut rows = div().max_w(px(760.)).flex().flex_col().gap(px(1.));
         let mut has_details = false;
         if let Some(usb) = &self.usb_reader_details {
             rows = rows
-                .child(yubi_info_row(&self.theme,
+                .child(yubi_info_row(
+                    &self.theme,
                     "USB device",
-                    format!("{} · {:04x}:{:04x}", usb.product, usb.vendor_id, usb.product_id),
+                    format!(
+                        "{} · {:04x}:{:04x}",
+                        usb.product, usb.vendor_id, usb.product_id
+                    ),
                 ))
-                .child(yubi_info_row(&self.theme, "USB location", usb.location.clone()));
+                .child(yubi_info_row(
+                    &self.theme,
+                    "USB location",
+                    usb.location.clone(),
+                ));
             has_details = true;
         }
         if let Some(info) = &self.yubikey_info {
@@ -2935,16 +3377,28 @@ impl PassApp {
                 has_details = true;
             }
             if let Some(form_factor) = &info.form_factor {
-                rows = rows.child(yubi_info_row(&self.theme, "Form factor", form_factor.clone()));
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
+                    "Form factor",
+                    form_factor.clone(),
+                ));
                 has_details = true;
             }
             if let Some(firmware_version) = &info.firmware_version {
-                rows = rows.child(yubi_info_row(&self.theme, "Firmware", firmware_version.clone()));
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
+                    "Firmware",
+                    firmware_version.clone(),
+                ));
                 has_details = true;
             }
         }
         if let Some(details) = &self.yubikey_details {
-            rows = rows.child(yubi_info_row(&self.theme, "Application", details.application.clone()));
+            rows = rows.child(yubi_info_row(
+                &self.theme,
+                "Application",
+                details.application.clone(),
+            ));
             has_details = true;
             if let Some(reader) = &details.reader {
                 rows = rows.child(yubi_info_row(&self.theme, "Reader", reader.clone()));
@@ -2953,22 +3407,32 @@ impl PassApp {
                 rows = rows.child(yubi_info_row(&self.theme, "Card version", version.clone()));
             }
             if let Some(manufacturer) = &details.manufacturer {
-                rows = rows.child(yubi_info_row(&self.theme, "Manufacturer", manufacturer.clone()));
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
+                    "Manufacturer",
+                    manufacturer.clone(),
+                ));
             }
             if !details.key_attributes.is_empty() {
-                rows = rows.child(yubi_info_row(&self.theme,
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
                     "Key algorithms",
                     details.key_attributes.join(" · "),
                 ));
             }
             if let Some(retries) = details.pin_retries {
-                rows = rows.child(yubi_info_row(&self.theme,
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
                     "PIN retries",
                     format!("{} · {} · {}", retries[0], retries[1], retries[2]),
                 ));
             }
             if let Some(count) = details.signature_count {
-                rows = rows.child(yubi_info_row(&self.theme, "Signature count", count.to_string()));
+                rows = rows.child(yubi_info_row(
+                    &self.theme,
+                    "Signature count",
+                    count.to_string(),
+                ));
             }
         }
         if has_details {
@@ -2981,21 +3445,19 @@ impl PassApp {
                     .child(rows),
             );
         }
-        if self.yubikey_connection == YubiConnection::Connected
-            && self.yubikey_details.is_none()
-        {
+        if self.yubikey_connection == YubiConnection::Connected && self.yubikey_details.is_none() {
             page = page.child(
                 div()
                     .max_w(px(760.))
                     .text_size(px(12.))
                     .text_color(rgb(self.theme.colors.muted))
-                    .child(if self.yubikey_check.is_some()
-                        || self.card_detail_retry_at.is_some()
-                    {
-                        "Loading card details from GnuPG…"
-                    } else {
-                        "GnuPG has not reported additional card details."
-                    }),
+                    .child(
+                        if self.yubikey_check.is_some() || self.card_detail_retry_at.is_some() {
+                            "Loading card details from GnuPG…"
+                        } else {
+                            "GnuPG has not reported additional card details."
+                        },
+                    ),
             );
         }
 
@@ -3058,7 +3520,10 @@ impl PassApp {
                         .flex()
                         .flex_col()
                         .gap(px(17.))
-                        .child(self.theme.label(format!("STORE   /   {}", folder.to_uppercase())))
+                        .child(
+                            self.theme
+                                .label(format!("STORE   /   {}", folder.to_uppercase())),
+                        )
                         .child(
                             div()
                                 .flex()
@@ -3110,7 +3575,7 @@ impl PassApp {
                                         .text_color(rgb(self.theme.colors.muted))
                                         .child(i18n::text("encrypted-on-disk")),
                                 ),
-                        )
+                        ),
                 );
 
             let mut body = div()
@@ -3132,7 +3597,11 @@ impl PassApp {
                         div()
                             .font_family(self.theme.mono_font)
                             .text_size(px(10.))
-                            .text_color(rgb(if revealed.is_some() { self.theme.colors.accent } else { self.theme.colors.muted }))
+                            .text_color(rgb(if revealed.is_some() {
+                                self.theme.colors.accent
+                            } else {
+                                self.theme.colors.muted
+                            }))
                             .child(if revealed.is_some() {
                                 format!("HIDES IN {:02}s", self.seconds)
                             } else if pending {
@@ -3142,7 +3611,9 @@ impl PassApp {
                             }),
                     ),
             );
-            let mut password = self.theme.panel()
+            let mut password = self
+                .theme
+                .panel()
                 .bg(rgb(self.theme.colors.background))
                 .w_full()
                 .min_w_0()
@@ -3242,40 +3713,77 @@ impl PassApp {
                 .items_center()
                 .gap(px(18.))
                 .child(
-                    self.theme.button(
-                        "reveal",
-                        if pending {
-                            "Cancel reveal"
-                        } else if revealed.is_some() {
-                            "Hide password"
-                        } else {
-                            "Reveal password  ↗"
-                        },
-                        true,
-                    )
-                    .on_click(cx.listener(|app, _, window, cx| {
-                        if app.session.is_pending() {
-                            app.hide(cx);
-                        } else {
-                            app.reveal(window, cx);
-                        }
-                    })),
+                    self.theme
+                        .button(
+                            "reveal",
+                            if pending {
+                                "Cancel reveal"
+                            } else if revealed.is_some() {
+                                "Hide password"
+                            } else {
+                                "Reveal password  ↗"
+                            },
+                            true,
+                        )
+                        .on_click(cx.listener(|app, _, window, cx| {
+                            if app.session.is_pending() {
+                                app.hide(cx);
+                            } else {
+                                app.reveal(window, cx);
+                            }
+                        })),
                 )
-                .when(self.editing_entry, |controls| controls
-                    .when(!self.edit_conflict, |controls| controls
-                        .child(self.theme.button("save-entry-edit", if self.saving_edit { "Saving…" } else { "Save changes" }, true)
-                            .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx)))))
-                    .child(self.theme.button("cancel-entry-edit", "Cancel", false)
-                        .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx)))))
-                .when(!self.editing_entry, |controls| controls
-                    .child(self.theme.button("edit-entry", "Edit entry", true)
-                        .on_click(cx.listener(|app, _, window, cx| app.begin_edit(window, cx))))
-                    .child(self.theme.button("copy-password", if self.copy_pending.is_some() { "Copying…" } else { "Copy entry" }, false)
-                        .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))))
-                    .child(
-                        self.theme.danger_button("delete-entry", "Delete")
-                            .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
-                    ))
+                .when(self.editing_entry, |controls| {
+                    controls
+                        .when(!self.edit_conflict, |controls| {
+                            controls.child(
+                                self.theme
+                                    .button(
+                                        "save-entry-edit",
+                                        if self.saving_edit {
+                                            "Saving…"
+                                        } else {
+                                            "Save changes"
+                                        },
+                                        true,
+                                    )
+                                    .on_click(cx.listener(|app, _, _, cx| app.save_edit(cx))),
+                            )
+                        })
+                        .child(
+                            self.theme
+                                .button("cancel-entry-edit", "Cancel", false)
+                                .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx))),
+                        )
+                })
+                .when(!self.editing_entry, |controls| {
+                    controls
+                        .child(
+                            self.theme
+                                .button("edit-entry", "Edit entry", true)
+                                .on_click(
+                                    cx.listener(|app, _, window, cx| app.begin_edit(window, cx)),
+                                ),
+                        )
+                        .child(
+                            self.theme
+                                .button(
+                                    "copy-password",
+                                    if self.copy_pending.is_some() {
+                                        "Copying…"
+                                    } else {
+                                        "Copy entry"
+                                    },
+                                    false,
+                                )
+                                .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))),
+                        )
+                        .child(
+                            self.theme
+                                .danger_button("delete-entry", "Delete")
+                                .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
+                        )
+                })
                 .when(pending, |controls| {
                     controls.child(
                         div()
@@ -3314,7 +3822,11 @@ impl PassApp {
                     .border_color(rgb(self.theme.colors.border))
                     .flex()
                     .justify_between()
-                    .child(self.theme.label(if self.demo { "FICTIONAL DATA" } else { "LOCAL STORE" })),
+                    .child(self.theme.label(if self.demo {
+                        "FICTIONAL DATA"
+                    } else {
+                        "LOCAL STORE"
+                    })),
             )
             .into_any_element()
     }
@@ -3335,14 +3847,26 @@ impl Render for PassApp {
                 .child(self.details(window, cx))
                 .into_any_element()
         };
-        let status = self.session.pending_status()
-            .or_else(|| self.copy_pending.as_ref().map(|pending| pending.progress.snapshot()))
-            .or_else(|| self.saving.as_ref().map(|(_, progress, _)| progress.snapshot()));
+        let status = self
+            .session
+            .pending_status()
+            .or_else(|| {
+                self.copy_pending
+                    .as_ref()
+                    .map(|pending| pending.progress.snapshot())
+            })
+            .or_else(|| {
+                self.saving
+                    .as_ref()
+                    .map(|(_, progress, _)| progress.snapshot())
+            });
         let footer = if let Some(message) = &self.message {
             notification_bar(&self.theme, message.clone())
         } else if let Some(status) = status {
             notification_bar(&self.theme, format!("{} · {}", status.title, status.detail))
-        } else if self.device_verification.running() || self.verification_notification_until.is_some() {
+        } else if self.device_verification.running()
+            || self.verification_notification_until.is_some()
+        {
             notification_bar(&self.theme, self.device_verification.state().message())
         } else if let Some(seconds) = self.clipboard.remaining_seconds(Instant::now()) {
             let entry_name = self.clipboard.source().unwrap_or("entry");
@@ -3375,7 +3899,8 @@ impl Render for PassApp {
                         })),
                 )
                 .child(
-                    self.theme.button("restore-clipboard-now", "Restore now", false)
+                    self.theme
+                        .button("restore-clipboard-now", "Restore now", false)
                         .h(px(28.))
                         .on_click(cx.listener(|app, _, _, cx| app.restore_pass_clipboard(cx))),
                 )
@@ -3405,9 +3930,9 @@ impl Render for PassApp {
             .key_context("Pass")
             .track_focus(&self.focus)
             .on_action(cx.listener(|app, _: &Hide, _, cx| app.hide(cx)))
-            .on_action(cx.listener(|app, _: &OpenGenerator, window, cx| {
-                app.open_generator(window, cx)
-            }))
+            .on_action(
+                cx.listener(|app, _: &OpenGenerator, window, cx| app.open_generator(window, cx)),
+            )
             .on_action(cx.listener(|app, _: &Reveal, window, cx| {
                 if !app.navigation.generator_open()
                     && app.confirming_delete.is_none()
@@ -3513,154 +4038,186 @@ impl Render for PassApp {
             .on_action(cx.listener(|_, _: &ToggleFullscreen, window, _| {
                 window.toggle_fullscreen();
             }))
-            .when(!self.navigation.generator_open(), |view| view.child(
-                div()
-                    .id("titlebar")
-                    .w_full()
-                    .h(px(48.))
-                    .flex_shrink_0()
-                    .px(px(9.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .bg(rgb(self.theme.colors.nav_background))
-                    .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
-                        if event.click_count == 2 {
-                            window.toggle_fullscreen();
-                        } else {
-                            window.start_window_move();
-                        }
-                        cx.stop_propagation();
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .id("home-logo")
-                            .ml(px(17.))
-                            .cursor_pointer()
-                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .on_click(cx.listener(|app, _, window, cx| {
-                                app.device_verification.cancel();
-                                app.navigation.go_to(Page::Entries);
-                                app.search_focus.focus(window);
-                                cx.notify();
-                            }))
-                            .child(self.brand_logotype()),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(18.))
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .font_family(self.theme.mono_font)
-                                    .text_color(rgb(self.theme.colors.nav_muted))
-                                    .child(if self.demo { "DEMO / 01" } else { "LOCAL / 01" }),
-                            )
-                            .when(!self.demo && self.store.is_some(), |header| header.child(
-                                div()
-                                    .id("open-custom-entry")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .cursor_pointer()
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                    .on_click(cx.listener(|app, _, window, cx| app.open_custom_entry(window, cx)))
-                                    .child(i18n::text("new-entry")),
-                            ))
-                            .child(
-                                div()
-                                    .id("open-generator")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .cursor_pointer()
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                                        cx.stop_propagation();
-                                    })
-                                    .on_click(cx.listener(|app, _, window, cx| {
-                                        app.open_generator(window, cx)
-                                    }))
-                                    .child(i18n::text("generate")),
-                            )
-                            .when(self.yubikey_connection == YubiConnection::Connected, |header| {
-                                header.child(
+            .when(!self.navigation.generator_open(), |view| {
+                view.child(
+                    div()
+                        .id("titlebar")
+                        .w_full()
+                        .h(px(48.))
+                        .flex_shrink_0()
+                        .px(px(9.))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .bg(rgb(self.theme.colors.nav_background))
+                        .on_mouse_down(gpui::MouseButton::Left, |event, window, cx| {
+                            if event.click_count == 2 {
+                                window.toggle_fullscreen();
+                            } else {
+                                window.start_window_move();
+                            }
+                            cx.stop_propagation();
+                        })
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .id("home-logo")
+                                .ml(px(17.))
+                                .cursor_pointer()
+                                .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation()
+                                })
+                                .on_click(cx.listener(|app, _, window, cx| {
+                                    app.device_verification.cancel();
+                                    app.navigation.go_to(Page::Entries);
+                                    app.search_focus.focus(window);
+                                    cx.notify();
+                                }))
+                                .child(self.brand_logotype()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(18.))
+                                .child(
                                     div()
-                                    .id("open-yubikey-status")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(if self.navigation.page() == Page::CardDetails { self.theme.colors.nav_selected } else { self.theme.colors.nav_foreground }))
-                                    .cursor_pointer()
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                                        cx.stop_propagation();
-                                    })
-                                    .on_click(cx.listener(|app, _, _, cx| {
-                                        app.navigation.go_to(Page::CardDetails);
-                                        cx.notify();
-                                    }))
-                                    .child(i18n::text("card-status")),
+                                        .text_size(px(10.))
+                                        .font_family(self.theme.mono_font)
+                                        .text_color(rgb(self.theme.colors.nav_muted))
+                                        .child(if self.demo { "DEMO / 01" } else { "LOCAL / 01" }),
                                 )
-                            })
-                            .child(
-                                div()
-                                    .id("refresh")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(self.theme.colors.nav_foreground))
-                                    .cursor_pointer()
-                                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                                        cx.stop_propagation();
-                                    })
-                                    .on_click(cx.listener(|app, _, _, cx| app.refresh(cx)))
-                                    .child(i18n::text("refresh")),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(9.))
-                                    .child(
+                                .when(!self.demo && self.store.is_some(), |header| {
+                                    header.child(
                                         div()
-                                            .id("minimize-window")
-                                            .size(px(30.))
-                                            .border_1()
-                                            .border_color(rgb(self.theme.colors.nav_border))
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_size(px(17.))
+                                            .id("open-custom-entry")
+                                            .text_size(px(12.))
                                             .text_color(rgb(self.theme.colors.nav_foreground))
                                             .cursor_pointer()
-                                            .hover(|style| style.bg(rgb(self.theme.colors.nav_hover)))
-                                            .on_mouse_down(
-                                                gpui::MouseButton::Left,
-                                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
-                                            )
-                                            .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
-                                            .child("−"),
+                                            .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                                cx.stop_propagation()
+                                            })
+                                            .on_click(cx.listener(|app, _, window, cx| {
+                                                app.open_custom_entry(window, cx)
+                                            }))
+                                            .child(i18n::text("new-entry")),
                                     )
-                                    .child(
-                                        div()
-                                            .id("close-window")
-                                            .size(px(30.))
-                                            .border_1()
-                                            .border_color(rgb(self.theme.colors.nav_border))
-                                            .flex()
-                                            .items_center()
-                                            .justify_center()
-                                            .text_size(px(20.))
-                                            .text_color(rgb(self.theme.colors.nav_foreground))
-                                            .cursor_pointer()
-                                            .hover(|style| style.bg(rgb(self.theme.colors.danger_hover)))
-                                            .on_mouse_down(
-                                                gpui::MouseButton::Left,
-                                                cx.listener(|_, _, _, cx| cx.stop_propagation()),
-                                            )
-                                            .on_click(cx.listener(|_, _, _, cx| cx.quit()))
-                                            .child("×"),
-                                    ),
-                            ),
-                    ),
-            ))
+                                })
+                                .child(
+                                    div()
+                                        .id("open-generator")
+                                        .text_size(px(12.))
+                                        .text_color(rgb(self.theme.colors.nav_foreground))
+                                        .cursor_pointer()
+                                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                            cx.stop_propagation();
+                                        })
+                                        .on_click(cx.listener(|app, _, window, cx| {
+                                            app.open_generator(window, cx)
+                                        }))
+                                        .child(i18n::text("generate")),
+                                )
+                                .when(
+                                    self.yubikey_connection == YubiConnection::Connected,
+                                    |header| {
+                                        header.child(
+                                            div()
+                                                .id("open-yubikey-status")
+                                                .text_size(px(12.))
+                                                .text_color(rgb(
+                                                    if self.navigation.page() == Page::CardDetails {
+                                                        self.theme.colors.nav_selected
+                                                    } else {
+                                                        self.theme.colors.nav_foreground
+                                                    },
+                                                ))
+                                                .cursor_pointer()
+                                                .on_mouse_down(
+                                                    gpui::MouseButton::Left,
+                                                    |_, _, cx| {
+                                                        cx.stop_propagation();
+                                                    },
+                                                )
+                                                .on_click(cx.listener(|app, _, _, cx| {
+                                                    app.navigation.go_to(Page::CardDetails);
+                                                    cx.notify();
+                                                }))
+                                                .child(i18n::text("card-status")),
+                                        )
+                                    },
+                                )
+                                .child(
+                                    div()
+                                        .id("refresh")
+                                        .text_size(px(12.))
+                                        .text_color(rgb(self.theme.colors.nav_foreground))
+                                        .cursor_pointer()
+                                        .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
+                                            cx.stop_propagation();
+                                        })
+                                        .on_click(cx.listener(|app, _, _, cx| app.refresh(cx)))
+                                        .child(i18n::text("refresh")),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(9.))
+                                        .child(
+                                            div()
+                                                .id("minimize-window")
+                                                .size(px(30.))
+                                                .border_1()
+                                                .border_color(rgb(self.theme.colors.nav_border))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_size(px(17.))
+                                                .text_color(rgb(self.theme.colors.nav_foreground))
+                                                .cursor_pointer()
+                                                .hover(|style| {
+                                                    style.bg(rgb(self.theme.colors.nav_hover))
+                                                })
+                                                .on_mouse_down(
+                                                    gpui::MouseButton::Left,
+                                                    cx.listener(|_, _, _, cx| {
+                                                        cx.stop_propagation()
+                                                    }),
+                                                )
+                                                .on_click(cx.listener(|_, _, window, _| {
+                                                    window.minimize_window()
+                                                }))
+                                                .child("−"),
+                                        )
+                                        .child(
+                                            div()
+                                                .id("close-window")
+                                                .size(px(30.))
+                                                .border_1()
+                                                .border_color(rgb(self.theme.colors.nav_border))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .text_size(px(20.))
+                                                .text_color(rgb(self.theme.colors.nav_foreground))
+                                                .cursor_pointer()
+                                                .hover(|style| {
+                                                    style.bg(rgb(self.theme.colors.danger_hover))
+                                                })
+                                                .on_mouse_down(
+                                                    gpui::MouseButton::Left,
+                                                    cx.listener(|_, _, _, cx| {
+                                                        cx.stop_propagation()
+                                                    }),
+                                                )
+                                                .on_click(cx.listener(|_, _, _, cx| cx.quit()))
+                                                .child("×"),
+                                        ),
+                                ),
+                        ),
+                )
+            })
             .child(main_content)
             .child(footer)
             .when(self.confirming_delete.is_some(), |view| {
@@ -3788,10 +4345,19 @@ fn check_card_status(executable: &std::path::Path, probe_id: u64) -> CardProbeRe
     let started = Instant::now();
     let output = match process_output::collect(child, Duration::from_secs(5)) {
         Ok(output) => output,
-        Err(_) => return CardProbeResult { connection: YubiConnection::Busy, details: None },
+        Err(_) => {
+            return CardProbeResult {
+                connection: YubiConnection::Busy,
+                details: None,
+            };
+        }
     };
-    trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
-        output.stdout.len(), output.stderr.len(), started.elapsed().as_millis());
+    trace!(
+        "probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
+        output.stdout.len(),
+        output.stderr.len(),
+        started.elapsed().as_millis()
+    );
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined_output = format!("{stdout}\n{stderr}");
@@ -3821,10 +4387,15 @@ fn check_card_status(executable: &std::path::Path, probe_id: u64) -> CardProbeRe
     // Diagnostics are consulted only to classify failures and are never retained or displayed.
     for line in stderr.lines() {
         for status in ["ERROR", "FAILURE", "SC_OP_FAILURE"] {
-            if line.strip_prefix("[GNUPG:] ").and_then(|line| line.strip_prefix(status))
+            if line
+                .strip_prefix("[GNUPG:] ")
+                .and_then(|line| line.strip_prefix(status))
                 .is_some_and(|rest| rest.starts_with(' '))
             {
-                let code = line.split_whitespace().last().and_then(|value| value.parse::<u32>().ok());
+                let code = line
+                    .split_whitespace()
+                    .last()
+                    .and_then(|value| value.parse::<u32>().ok());
                 trace!("probe.gpg_error id={probe_id} status={status} code={code:?}");
             }
         }
@@ -3909,8 +4480,12 @@ fn query_yubikey_info(probe_id: u64) -> YubiKeyInfo {
     let Ok(output) = process_output::collect(child, Duration::from_secs(2)) else {
         return YubiKeyInfo::default();
     };
-    trace!("probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
-        output.stdout.len(), output.stderr.len(), started.elapsed().as_millis());
+    trace!(
+        "probe.output id={probe_id} stdout_bytes={} stderr_bytes={} elapsed_ms={}",
+        output.stdout.len(),
+        output.stderr.len(),
+        started.elapsed().as_millis()
+    );
     if !output.status.success() {
         return YubiKeyInfo::default();
     }
@@ -3979,8 +4554,7 @@ fn usb_reader_for_card(reader: Option<&str>, yubico: bool) -> Option<UsbReaderDe
         let normalized_display_name = normalize_usb_label(&display_name);
         let reader_match = !reader.is_empty()
             && normalized_product.len() >= 4
-            && (reader.contains(&normalized_product)
-                || reader.contains(&normalized_display_name));
+            && (reader.contains(&normalized_product) || reader.contains(&normalized_display_name));
         let location = format!("Bus {bus} · port {port}");
         readers.push((
             UsbReaderDetails {
@@ -4043,29 +4617,32 @@ fn connected_yubikey_usb_paths() -> HashSet<String> {
                 return None;
             }
             let canonical = path.canonicalize().ok()?;
-            let devpath = canonical.strip_prefix("/sys").ok()?.to_string_lossy().into_owned();
+            let devpath = canonical
+                .strip_prefix("/sys")
+                .ok()?
+                .to_string_lossy()
+                .into_owned();
             Some(devpath)
         })
         .collect()
 }
 
-fn update_yubikey_usb_presence(event: &[String], known_devices: &mut HashSet<String>) -> Option<bool> {
-    let property = |name: &str| {
-        event
-            .iter()
-            .find_map(|line| line.strip_prefix(name))
-    };
-    if property("SUBSYSTEM=") != Some("usb")
-        || property("DEVTYPE=") != Some("usb_device")
-    {
+fn update_yubikey_usb_presence(
+    event: &[String],
+    known_devices: &mut HashSet<String>,
+) -> Option<bool> {
+    let property = |name: &str| event.iter().find_map(|line| line.strip_prefix(name));
+    if property("SUBSYSTEM=") != Some("usb") || property("DEVTYPE=") != Some("usb_device") {
         return None;
     }
     let devpath = property("DEVPATH=")?;
     match property("ACTION=")? {
         "add"
-            if property("ID_VENDOR_ID=").is_some_and(|vendor| vendor.eq_ignore_ascii_case("1050"))
-                && property("ID_USB_INTERFACES=")
-                    .is_some_and(|interfaces| interfaces.split(':').any(|class| class.starts_with("0b"))) =>
+            if property("ID_VENDOR_ID=")
+                .is_some_and(|vendor| vendor.eq_ignore_ascii_case("1050"))
+                && property("ID_USB_INTERFACES=").is_some_and(|interfaces| {
+                    interfaces.split(':').any(|class| class.starts_with("0b"))
+                }) =>
         {
             known_devices.insert(devpath.to_owned()).then_some(true)
         }
@@ -4089,10 +4666,14 @@ fn parse_card_status(output: &str) -> ParsedCardStatus {
     let mut offset = 0;
     let mut reader_seen = false;
     for line in output.split_inclusive('\n') {
-        let label = line.split_once(':').map(|(label, _)| label.trim().trim_matches('.').trim());
+        let label = line
+            .split_once(':')
+            .map(|(label, _)| label.trim().trim_matches('.').trim());
         if label.is_some_and(|label| label.eq_ignore_ascii_case("reader")) {
             if reader_seen {
-                if let ParsedCardStatus::Detected(details) = parse_one_card_status(&output[start..offset]) {
+                if let ParsedCardStatus::Detected(details) =
+                    parse_one_card_status(&output[start..offset])
+                {
                     return ParsedCardStatus::Detected(details);
                 }
                 start = offset;
@@ -4169,9 +4750,11 @@ fn parse_one_card_status(output: &str) -> ParsedCardStatus {
                 }
             }
             "key attributes" => {
-                key_attributes.extend(value.split_whitespace().map(|attribute| {
-                    format!("Key: {}", safe_card_text(attribute))
-                }));
+                key_attributes.extend(
+                    value
+                        .split_whitespace()
+                        .map(|attribute| format!("Key: {}", safe_card_text(attribute))),
+                );
             }
             "pinretry" => {
                 if let (Some(first), Some(second), Some(third)) = (
@@ -4256,8 +4839,10 @@ fn safe_card_text(value: &str) -> String {
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index] == b'%' && index + 2 < bytes.len()
-            && let (Some(high), Some(low)) = (hex_digit(bytes[index + 1]), hex_digit(bytes[index + 2]))
+        if bytes[index] == b'%'
+            && index + 2 < bytes.len()
+            && let (Some(high), Some(low)) =
+                (hex_digit(bytes[index + 1]), hex_digit(bytes[index + 2]))
         {
             decoded.push(high * 16 + low);
             index += 3;
@@ -4414,8 +4999,14 @@ mod card_detection_tests {
     #[test]
     fn status_query_requests_a_reader_rescan_and_handles_no_cards() {
         use std::{fs, os::unix::fs::PermissionsExt};
-        let unique = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let root = std::env::temp_dir().join(format!("gpui-pass-card-probe-{}-{unique}", std::process::id()));
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!(
+            "gpui-pass-card-probe-{}-{unique}",
+            std::process::id()
+        ));
         fs::create_dir(&root).unwrap();
         let executable = root.join("gpg");
         let fixture = |body: &str| {
@@ -4464,22 +5055,24 @@ mod card_detection_tests {
     fn udev_ignores_duplicates_and_unrelated_devices() {
         let mut devices = HashSet::new();
         assert_eq!(
-            update_yubikey_usb_presence(
-                &usb_event("add", "1234", ":0b0000:"), &mut devices
-            ),
+            update_yubikey_usb_presence(&usb_event("add", "1234", ":0b0000:"), &mut devices),
             None
         );
         assert_eq!(
-            update_yubikey_usb_presence(
-                &usb_event("add", "1050", ":030101:"), &mut devices
-            ),
+            update_yubikey_usb_presence(&usb_event("add", "1050", ":030101:"), &mut devices),
             None
         );
         let inserted = usb_event("add", "1050", ":0b0000:");
-        assert_eq!(update_yubikey_usb_presence(&inserted, &mut devices), Some(true));
+        assert_eq!(
+            update_yubikey_usb_presence(&inserted, &mut devices),
+            Some(true)
+        );
         assert_eq!(update_yubikey_usb_presence(&inserted, &mut devices), None);
         let removed = usb_event("remove", "", "");
-        assert_eq!(update_yubikey_usb_presence(&removed, &mut devices), Some(false));
+        assert_eq!(
+            update_yubikey_usb_presence(&removed, &mut devices),
+            Some(false)
+        );
         assert_eq!(update_yubikey_usb_presence(&removed, &mut devices), None);
     }
 }
@@ -4501,7 +5094,11 @@ fn main() {
     Application::new().run(move |cx: &mut App| {
         cx.text_system()
             .add_fonts(vec![Cow::Borrowed(
-                include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../assets/fonts/InterVariable.ttf")).as_slice(),
+                include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../assets/fonts/InterVariable.ttf"
+                ))
+                .as_slice(),
             )])
             .expect("load bundled Inter font");
         cx.bind_keys([

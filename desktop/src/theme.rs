@@ -184,7 +184,12 @@ impl Theme {
             .child(text.into())
     }
 
-    pub fn button(&self, id: &'static str, text: impl Into<SharedString>, primary: bool) -> Stateful<Div> {
+    pub fn button(
+        &self,
+        id: &'static str,
+        text: impl Into<SharedString>,
+        primary: bool,
+    ) -> Stateful<Div> {
         let colors = self.colors.clone();
         div()
             .id(id)

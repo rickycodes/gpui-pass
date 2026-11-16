@@ -20,15 +20,20 @@ pub(crate) struct TextLayout {
 
 impl TextLayout {
     pub fn index_for_point(&self, point: Point<Pixels>) -> usize {
-        let Some(line) = self.lines.iter().find(|line| {
-            point.y >= line.bounds.top() && point.y <= line.bounds.bottom()
-        }).or_else(|| {
-            if point.y < self.lines.first()?.bounds.top() {
-                self.lines.first()
-            } else {
-                self.lines.last()
-            }
-        }) else { return 0; };
+        let Some(line) = self
+            .lines
+            .iter()
+            .find(|line| point.y >= line.bounds.top() && point.y <= line.bounds.bottom())
+            .or_else(|| {
+                if point.y < self.lines.first()?.bounds.top() {
+                    self.lines.first()
+                } else {
+                    self.lines.last()
+                }
+            })
+        else {
+            return 0;
+        };
         if point.x <= line.bounds.left() {
             return line.range.start;
         }
@@ -69,8 +74,12 @@ impl Element for EntryTextElement {
     type RequestLayoutState = ();
     type PrepaintState = PrepaintState;
 
-    fn id(&self) -> Option<ElementId> { None }
-    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> { None }
+    fn id(&self) -> Option<ElementId> {
+        None
+    }
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
+    }
 
     fn request_layout(
         &mut self,
@@ -117,7 +126,12 @@ impl Element for EntryTextElement {
                 underline: None,
                 strikethrough: None,
             };
-            let shaped = window.text_system().shape_line(text.to_owned().into(), font_size, &[text_run], None);
+            let shaped = window.text_system().shape_line(
+                text.to_owned().into(),
+                font_size,
+                &[text_run],
+                None,
+            );
             let line_bounds = Bounds::new(
                 point(bounds.left(), bounds.top() + row_height * row as f32),
                 size(bounds.size.width, row_height),
@@ -127,26 +141,53 @@ impl Element for EntryTextElement {
             let selection = (overlap_start < overlap_end).then(|| {
                 fill(
                     Bounds::from_corners(
-                        point(line_bounds.left() + shaped.x_for_index(overlap_start - range.start), line_bounds.top()),
-                        point(line_bounds.left() + shaped.x_for_index(overlap_end - range.start), line_bounds.bottom()),
+                        point(
+                            line_bounds.left() + shaped.x_for_index(overlap_start - range.start),
+                            line_bounds.top(),
+                        ),
+                        point(
+                            line_bounds.left() + shaped.x_for_index(overlap_end - range.start),
+                            line_bounds.bottom(),
+                        ),
                     ),
                     rgba(app.theme.colors.selection),
                 )
             });
-            let cursor = (focused && selected.is_empty() && cursor_offset >= range.start && cursor_offset <= range.end)
-                .then(|| fill(
-                    Bounds::new(
-                        point(line_bounds.left() + shaped.x_for_index(cursor_offset - range.start), line_bounds.top()),
-                        size(px(1.5), line_bounds.size.height),
-                    ),
-                    gpui::rgb(app.theme.colors.accent),
-                ));
-            layouts.push(LineLayout { range, bounds: line_bounds, shaped: shaped.clone() });
-            prepared.push(PreparedLine { line: shaped, bounds: line_bounds, selection, cursor });
+            let cursor = (focused
+                && selected.is_empty()
+                && cursor_offset >= range.start
+                && cursor_offset <= range.end)
+                .then(|| {
+                    fill(
+                        Bounds::new(
+                            point(
+                                line_bounds.left()
+                                    + shaped.x_for_index(cursor_offset - range.start),
+                                line_bounds.top(),
+                            ),
+                            size(px(1.5), line_bounds.size.height),
+                        ),
+                        gpui::rgb(app.theme.colors.accent),
+                    )
+                });
+            layouts.push(LineLayout {
+                range,
+                bounds: line_bounds,
+                shaped: shaped.clone(),
+            });
+            prepared.push(PreparedLine {
+                line: shaped,
+                bounds: line_bounds,
+                selection,
+                cursor,
+            });
             byte_start += text.len() + 1;
         }
 
-        PrepaintState { lines: prepared, layout: TextLayout { lines: layouts } }
+        PrepaintState {
+            lines: prepared,
+            layout: TextLayout { lines: layouts },
+        }
     }
 
     fn paint(
@@ -160,18 +201,43 @@ impl Element for EntryTextElement {
         cx: &mut App,
     ) {
         let focus = self.app.read(cx).generator_name_focus.clone();
-        window.handle_input(&focus, ElementInputHandler::new(
-            prepaint.layout.lines.first().map_or(Bounds::default(), |line| {
-                let last = prepaint.layout.lines.last().unwrap();
-                Bounds::from_corners(line.bounds.origin, point(last.bounds.right(), last.bounds.bottom()))
-            }),
-            self.app.clone(),
-        ), cx);
+        window.handle_input(
+            &focus,
+            ElementInputHandler::new(
+                prepaint
+                    .layout
+                    .lines
+                    .first()
+                    .map_or(Bounds::default(), |line| {
+                        let last = prepaint.layout.lines.last().unwrap();
+                        Bounds::from_corners(
+                            line.bounds.origin,
+                            point(last.bounds.right(), last.bounds.bottom()),
+                        )
+                    }),
+                self.app.clone(),
+            ),
+            cx,
+        );
         for prepared in &mut prepaint.lines {
-            if let Some(selection) = prepared.selection.take() { window.paint_quad(selection); }
-            prepared.line.paint(prepared.bounds.origin, prepared.bounds.size.height, window, cx).ok();
-            if let Some(cursor) = prepared.cursor.take() { window.paint_quad(cursor); }
+            if let Some(selection) = prepared.selection.take() {
+                window.paint_quad(selection);
+            }
+            prepared
+                .line
+                .paint(
+                    prepared.bounds.origin,
+                    prepared.bounds.size.height,
+                    window,
+                    cx,
+                )
+                .ok();
+            if let Some(cursor) = prepared.cursor.take() {
+                window.paint_quad(cursor);
+            }
         }
-        self.app.update(cx, |app, _| app.editor_layout = Some(prepaint.layout.clone()));
+        self.app.update(cx, |app, _| {
+            app.editor_layout = Some(prepaint.layout.clone())
+        });
     }
 }
