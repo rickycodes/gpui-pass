@@ -77,18 +77,18 @@ impl PassApp {
             || self.state.yubikey_info_check.is_some()
         {
             ACTIVE_POLL_INTERVAL
+        } else if cfg!(target_os = "linux")
+            || self.state.card_watcher.is_some()
+            || self.state.usb_card_watcher.is_some()
+        {
+            // Drain hotplug events promptly and reconcile USB presence even if
+            // a watcher stays alive without delivering a removal notification.
+            ACTIVE_POLL_INTERVAL
         } else if self.state.session.revealed(Instant::now()).is_some()
             || self.state.generated.is_some()
             || self.state.clipboard.active()
             || self.state.message_until.is_some()
         {
-            UI_TIMER_INTERVAL
-        } else if self.state.card_watcher.is_some()
-            || self.state.usb_card_watcher.is_some()
-            || self.state.card_watcher_retry_at.is_some()
-            || self.state.usb_watcher_retry_at.is_some()
-        {
-            // Watchers are event-driven; this only bounds how long their queued events wait.
             UI_TIMER_INTERVAL
         } else {
             IDLE_POLL_INTERVAL
