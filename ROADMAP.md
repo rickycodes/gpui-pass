@@ -126,6 +126,8 @@ QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
 - Credential rotation sessions, hand-typing view, quick-copy fields, and local TOTP.
 - Export a single entry to another recipient and local links that open a selected entry.
 - Investigate macOS support; evaluate Windows only after reviewing safe file and subprocess handling.
+- Favorites and recent entries, storing only entry paths in local app state and
+  never caching decrypted contents.
 
 ## Ideas to revisit
 
