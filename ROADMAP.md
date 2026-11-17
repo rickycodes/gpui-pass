@@ -1,55 +1,95 @@
-# Roadmap
+# Roadmap to v1
 
-This roadmap describes the next product work. It has no delivery dates; order reflects dependencies and risk.
+The goal is a dependable Linux desktop client for an existing `pass` store. A v1 release should make the supported workflows clear, protect against ordinary data loss, and be straightforward to install and verify. There are no target dates.
+
+## v1 scope
+
+- Linux desktop, using the user's existing GnuPG keyring, `gpg-agent`, and optional OpenPGP smartcard/YubiKey.
+- Existing `pass` store format and commands remain usable alongside the app.
+- Local store operations: browse, search, reveal, copy, edit, delete, generate, and create entries.
+- Manual full-store backup and restore, separate from synchronization. The archive workflow must state clearly what happens to encrypted entries, selected secret keys, and ownertrust, and must never silently replace an existing store.
+- Current built-in visual design and theme configuration. English (`en-US`) is the supported v1 language; the Fluent setup can make later translation possible without making translation a release gate.
+- Optimized Linux x86_64 release artifact, checksum, installation instructions, and CI checks.
+
+Git integration, remote sync, cross-platform support, key management, and additional credential-management features are outside the v1 target.
 
 ## Current baseline
 
-- Browse and search an existing `pass` store, reveal multiline entries, and edit or delete individual entries.
-- Copy an entry's complete contents without revealing it, with `PASSWORD_STORE_CLIP_TIME` timeout and prior clipboard restoration.
-- Show a persistent bottom-bar clipboard indicator with the copied entry, restoration countdown, and a manual restore action.
-- Generate random passwords or memorable phrases and save them encrypted to the store's configured recipients.
-- Create custom single-line or multiline entries, preserving and encrypting the complete entered content without revealing it. Warn before replacing an existing entry and check its revision before saving.
-- Route transient copy, reveal, save, verification, and app feedback through a shared bottom notification bar, while leaving persistent card details on the card status page.
-- Use the existing GnuPG agent and OpenPGP card, with PIN and touch flows handled by the user's configured tools and copy/reveal progress shown in the app.
-- Start UI localization with an embedded `en-US` Fluent catalog; core navigation, generator guidance, editor-limit feedback, and clipboard status now use message IDs.
+Implemented:
 
-## Planned
+- Browse nested entries, search names without decrypting, reveal multiline entries, and hide secrets on timeout, selection changes, Escape, and window deactivation.
+- Copy the complete entry without displaying it. `PASSWORD_STORE_CLIP_TIME` controls the timeout (45 seconds by default); the app restores the previous clipboard contents when it still owns the clipboard and shows a countdown.
+- Generate random passwords or memorable phrases, and create custom single-line or multiline entries. New and generated entries warn before replacement.
+- Edit and delete individual entries. The editor is bounded and preserves supported text exactly. Revision checks, explicit conflict choices, and a per-entry lock protect app writes; other store writers do not participate in that lock and may still race the final check and rename.
+- Use the existing GnuPG agent and card flow, show operation feedback in a shared notification bar, and report card status. YubiKey model and verification support are available where dependencies and hardware permit.
+- Load optional TOML theme settings, with square corners in the default theme. User-facing text is being moved into an embedded `en-US` Fluent catalog.
+- Build and publish a Linux x86_64 release artifact and checksum through GitHub Actions.
 
-1. **Complete safe write policy handling.** Signed `.gpg-id` policies are verified against `PASSWORD_STORE_SIGNING_KEY`, with the policy snapshot rechecked before commit. Edited entries use revision checks, a bounded per-entry lock shared by app instances, and explicit conflict choices to overwrite the current version or discard edits and reveal it. Still needed: coordination with other store writers such as `pass`; they can race the final check and rename.
-2. **Require authentication for replacement (optional).** Add a preference that asks the OS to reauthenticate the local user after the replacement warning and before saving over an existing entry. Canceling leaves the entry unchanged. Use a lightweight platform authentication mechanism; this is separate from GPG/YubiKey and does not aim to prevent other processes running as the same user from changing the store.
-3. **Move and duplicate entries.** Support individual entries and directories. Re-encrypt entries when the destination's recipient policy differs, and handle name conflicts without silently overwriting data.
-4. **Add Git support.** Stage and commit app-created, edited, moved, copied, and deleted entries. Add explicit sync actions with clear conflict handling; never silently overwrite local changes.
-5. **Add configurable UI themes.** Move visual values into semantic design tokens and load an optional user theme config for colors, spacing, and corner radii. Keep the current appearance as the default; validate values and fall back safely when configuration is missing or invalid.
-6. **Add full-store backup and restore.** Provide a manual archive workflow, separate from Git and remote sync. Export the encrypted store and, for a complete migration, the selected GnuPG secret keys and ownertrust. Treat archives containing private key material as highly sensitive, use restrictive permissions, and validate archive paths and contents before restoring. Stage and review a restore before changing the destination; preserve an existing store instead of silently replacing it. Support inspecting or restoring the store and key material as deliberate steps.
-7. **Improve key and store diagnostics.** Show which recipients protect a store or entry and help users diagnose missing keys without managing or transferring private key material.
-8. **Expand localization.** Move remaining user-facing UI text into Fluent catalogs, add locale selection with `en-US` fallback, and add translated catalogs as they are ready to maintain. Keep logs, file formats, and password-store contents independent of UI locale.
+The maintainer reports having exercised the normal workflows against a real
+password store throughout development and confirms they work as expected so
+far. This includes store selection, nested search, reveal/hide, hidden copy and
+clipboard restoration, create and replacement, edit conflicts, delete,
+generation, operation feedback, cleanup during navigation and shutdown, and
+handling of GnuPG errors and failed writes. This is hands-on validation on the
+maintainer's setup, not a claim of coverage across all Linux environments or
+hardware.
 
-## Additional planned features
+## Remaining work before v1
 
-- **Credential rotation sessions.** Keep the current password available while generating and copying a replacement. Replace the stored entry only after the user confirms that the change succeeded on the target service; cancellation preserves the original entry. Build on the safe write and conflict handling above.
-- **A view for typing passwords by hand.** Display explicitly revealed passwords in numbered character groups, with a highlighted group and keyboard navigation. Useful where pasting is difficult; retain the existing hide, focus-loss, and timeout behavior.
-- **Awareness of external store changes.** Refresh when `pass`, scripts, or other applications change the store, and indicate which encrypted entries were added, changed, or removed without decrypting them. Detect changes to an entry being edited and preserve the user's work while resolving the conflict.
-- **Generator profiles by folder.** Remember generation preferences such as length, character restrictions, or memorable phrases for selected store folders. Keep these preferences in app config without changing the entry format.
-- **Export one entry for another recipient.** Encrypt a separate copy of a selected entry to a chosen public key for manual transfer. Confirm the recipient before exporting and preserve the original entry and its recipient policy.
-- **Named store profiles.** Save shortcuts to multiple stores with clear names and visual identities, and remember the last selection and search separately for each store.
-- **Links to entries.** Support local links that open the app with an entry selected for an explicit copy or reveal. Validate the target within the selected store; links contain no secret contents and never trigger automatic decryption.
+### 1. Finish manual store backup and restore
 
-## Later
+Implement an explicit export/import workflow for a full store, independent of Git or sync. Settle and document the archive contents before implementation:
 
-- Add native macOS support after validating GnuPG discovery, pinentry, fonts, and keyboard behavior.
-- Evaluate Windows support with reviewed file-access and subprocess handling.
+- Include the encrypted store tree and required store metadata while preserving paths and permissions safely.
+- Make private-key export an explicit, separate choice; explain that an encrypted store alone cannot be recovered without its recipient secret keys. Include ownertrust only when the user chooses to include key material.
+- Protect exported archives with restrictive local permissions and validate archive paths, file types, size, and contents before import.
+- Preview the restore target and conflicts. Restore into a new or empty location by default; require a deliberate, recoverable action before replacing anything.
+- Add tests for malformed archives, traversal and link entries, partial failures, existing destinations, and round-trip preservation.
+
+### 2. Close the v1 reliability gaps
+
+- Keep the maintainer's real-store workflow validation current as features change; record any environment-specific gaps rather than treating one setup as universal coverage.
+- Keep external-writer conflict behavior explicit: preserve edits and warn on changes observed before replacement. Document the remaining narrow race with non-cooperating tools such as `pass` unless a portable coordination mechanism is added.
+- Update or archive the 2026-11-14 source review and 2026-11-15 follow-up so their findings and validation counts are not mistaken for the current state.
+
+### 3. Define and verify the supported release
+
+- Specify the tested Linux baseline and runtime requirements, including GnuPG, graphical pinentry, graphics stack, and optional YubiKey packages.
+- Verify a clean optimized build, packaged artifact contents, checksum instructions, and a fresh install/run from a release download.
+- Run CI checks and integration fixtures from a clean checkout. Keep release notes and README status aligned with what was actually tested.
+- Perform a final GUI pass at normal and compact window sizes, with both light and dark themes, using fictional data. Exercise keyboard navigation and accessibility-relevant focus states.
+- Perform and record a hardware check for card detection, PIN/touch prompts, reveal, hidden copy, removal/reconnection, and retry. Clearly separate tested behavior from unsupported cards or environments.
+- Review the security and privacy documentation against actual behavior, especially clipboard-manager history, crash cleanup limits, logs, filesystem permissions, GnuPG configuration, and the limits of local-user authentication.
+
+## After v1
+
+These are worthwhile follow-ups but are not release blockers:
+
+- Optional OS reauthentication before replacing an existing entry.
+- Move and duplicate entries, with recipient-policy-aware re-encryption.
+- Recipient and missing-key diagnostics.
+- Complete the Fluent migration and add maintained translations.
+- Awareness of external store changes.
+- Generator profiles by folder and named store profiles.
+- Credential rotation sessions, hand-typing view, quick-copy fields, and local TOTP.
+- Export a single entry to another recipient and local links that open a selected entry.
+- Investigate macOS support; evaluate Windows only after reviewing safe file and subprocess handling.
 
 ## Ideas to revisit
 
-These are recorded for future consideration and are not current product targets:
+These are exploratory and not current targets:
 
-- Consider extracting read-only USB/udev CCID presence detection into a standalone FOSS crate. Keep it focused on detecting device presence without opening PC/SC or taking over GnuPG's card access; assess existing Rust device-discovery crates before committing to the extraction.
-- Quick-copy conventional fields such as usernames or URLs from an entry.
-- Local TOTP setup and code display.
-- Opt-in search across decrypted entry contents.
+- Extract read-only USB/udev CCID detection into a standalone FOSS crate after checking existing Rust crates and defining a useful, narrow API. It must not open PC/SC or take over GnuPG card access.
+- Search decrypted entry contents, only with clear opt-in behavior and a reviewed secret-lifetime model.
 
-## Verification work
+## Explicitly out of scope for v1
 
-- Run the real `pass` integration fixture in an environment that can start a disposable `gpg-agent`.
-- Validate behavior with graphical pinentry and tampered OpenPGP ciphertext.
-- Keep the Linux GUI and hardware-card workflows covered during changes to reveal, cancellation, and card detection.
+- Git history management, remotes, push/pull, or automatic synchronization.
+- Automatic cloud backup or synchronization.
+- Managing, creating, rotating, or provisioning GPG keys and smartcards.
+- Windows or macOS release support.
+- Full localization beyond the maintained English catalog.
+
+## Release completion checklist
+
+V1 is ready when manual backup/restore is implemented and tested; all advertised local workflows pass the documented checks; detected edit conflicts preserve the user's work; restore cannot silently replace an existing store; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.
