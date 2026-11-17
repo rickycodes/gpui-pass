@@ -9,6 +9,7 @@ impl PassApp {
         let subscription = cx.observe_window_activation(window, |app, window, cx| {
             app.state.active = window.is_window_active();
             if !app.state.active {
+                app.state.sidebar_scroll.cancel();
                 app.state.session.deactivate();
                 app.clear_generated(cx);
                 app.cancel_edit(cx);
@@ -100,6 +101,7 @@ impl PassApp {
     }
 
     pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
+        self.state.sidebar_scroll.cancel();
         if self.state.saving.is_some() {
             return;
         }
@@ -397,6 +399,7 @@ impl PassApp {
     }
 
     pub(super) fn filter(&mut self, cx: &mut Context<Self>) {
+        self.state.sidebar_scroll.cancel();
         if self.state.saving.is_some() {
             return;
         }
@@ -447,6 +450,7 @@ impl PassApp {
     }
 
     pub(super) fn navigate(&mut self, delta: isize, cx: &mut Context<Self>) {
+        self.state.sidebar_scroll.cancel();
         if self.state.filtered.is_empty() {
             return;
         }

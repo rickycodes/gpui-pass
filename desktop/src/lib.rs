@@ -50,6 +50,8 @@ mod i18n;
 mod loading_spinner;
 #[path = "input/search.rs"]
 mod search;
+#[path = "ui/sidebar_scroll.rs"]
+mod sidebar_scroll;
 #[path = "input/text_input_ime.rs"]
 mod text_input_ime;
 #[path = "input/text_input_views.rs"]

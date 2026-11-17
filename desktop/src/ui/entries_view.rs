@@ -101,6 +101,7 @@ impl PassApp {
             .child(
                 div()
                     .id("entry-list")
+                    .relative()
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
@@ -120,6 +121,7 @@ impl PassApp {
                             .track_scroll(self.state.list_scroll.clone())
                             .size_full(),
                         )
+                        .child(self.sidebar_scroll_input(cx))
                     })
                     .when(self.state.filtered.is_empty(), |view| {
                         view.child(
