@@ -65,6 +65,58 @@ Implement an explicit export/import workflow for a full store, independent of Gi
 
 These are worthwhile follow-ups but are not release blockers:
 
+### QR-code display for secret values
+
+This is an after-v1, non-blocking feature. Upstream `pass` supports
+`show --qrcode`/`-q` and `generate --qrcode`/`-q`; both encode the selected
+password with `qrencode` instead of printing it. The client should provide the
+same useful workflows without requiring the `pass` executable or an external
+display helper.
+
+#### Proposed scope
+
+- Add an explicit **Show QR code** action for the selected existing entry.
+- Add the same action to the generated-password result. A generated password
+  is one line, so the generated value is the complete payload.
+- For an existing entry, encode only its first line by default. This matches
+  `pass`'s normal password convention and prevents usernames, URLs, notes, and
+  other multiline metadata from being disclosed accidentally.
+- Render the code in an in-app modal or overlay with the entry name and a
+  concise warning that anyone who can see the code can read the secret.
+- Generate and render locally with a maintained Rust/library path. Do not
+  invoke `qrencode`, write an image or plaintext temporary file, use the
+  clipboard, make a network request, or add data to logs.
+
+#### Security and failure behavior
+
+- Decrypt only after the user explicitly requests the action; keep the
+  plaintext/encoded image within the existing secret lifecycle.
+- Hide and discard the QR view on Escape, selection or search changes, refresh,
+  window deactivation, timeout, and cancellation, matching reveal behavior.
+- Keep the existing reveal and hidden-copy actions available; QR display is not
+  an alternate authentication or storage path.
+- Encode the exact first-line UTF-8 value. If the encoder cannot represent the
+  payload within its supported QR capacity, show a bounded error and do not
+  fall back to displaying or copying the secret.
+- Never place the payload in accessibility labels, status messages, error
+  strings, diagnostics, or telemetry.
+
+#### Acceptance criteria
+
+- A selected multiline entry produces a scannable code for its first line only;
+  generated passwords produce a scannable code for the generated value.
+- The modal has no plaintext fallback, and all documented hide/cancel paths
+  remove the QR view and associated secret state.
+- Oversized or otherwise unencodable values fail visibly without changing the
+  store or clipboard.
+- Tests cover exact payload selection, multiline exclusion, generated values,
+  lifecycle cancellation, and the oversized-payload failure. Manual
+  verification scans a fictional QR code and checks that no external process,
+  file, or network access is required.
+
+The initial version deliberately excludes arbitrary line selection, whole-entry
+QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
+
 - Optional OS reauthentication before replacing an existing entry.
 - Move and duplicate entries, with recipient-policy-aware re-encryption.
 - Recipient and missing-key diagnostics.
