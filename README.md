@@ -192,3 +192,11 @@ The prototype rejects symlinks, multiply linked files, traversal, backslashes, a
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 
 See [ROADMAP.md](ROADMAP.md) for planned work and [SECURITY.md](SECURITY.md) for the security boundary and limitations.
+
+## AI disclosure
+
+AI tools are used to assist with development and documentation. The maintainer is responsible for reviewing and maintaining the project.
+
+## License
+
+The project is licensed under the [MIT License](LICENSE). Third-party components and bundled assets may have separate license terms; retain their notices.
