@@ -26,6 +26,8 @@ rustix = { version = "=1.1.4", features = ["fs"] }
 xattr = { path = "../vendor/xattr" }
 # Avoid CPU rendering when a stale PRIME flag hides the only hardware GPU.
 blade-graphics = { path = "../vendor/blade-graphics" }
+# Fix a private extern-crate re-export rejected by future Rust versions.
+proc-macro-error2 = { path = "../vendor/proc-macro-error2" }
 
 [profile.release]
 panic = "abort"

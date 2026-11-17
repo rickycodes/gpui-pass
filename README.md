@@ -75,6 +75,9 @@ See [GPUI](https://gpui.rs/) and [Zed's Linux build documentation](https://zed.d
 
 GPUI's archive dependency still uses `xattr 0.2.3`, which references the removed Linux `libc::ENOATTR` alias. The desktop uses a small [vendored compatibility patch](vendor/xattr/PATCH.md) selecting Linux/Android `ENODATA` while preserving macOS/BSD behavior. Current libc remains in use. The patch is selected automatically; do not edit Cargo's registry cache or apply the compiler's unrelated `ENOSTR` suggestion.
 
+GPUI's macro dependency also needs a [one-line compatibility patch](vendor/proc-macro-error2/PATCH.md)
+to make its public `proc_macro` re-export valid on future Rust versions.
+
 If linking reports `unable to find library -lxkbcommon-x11`, install `libxkbcommon-x11-dev` (Ubuntu/Debian). Having the runtime `.so.0` installed alone is insufficient for a normal build.
 
 GnuPG defaults to `/usr/bin/gpg`. `--gpg` requires an absolute executable path. The folder picker requires a working desktop portal; use `--store` if unavailable.
@@ -94,10 +97,12 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 ## Verification
 
-GitHub Actions runs core and desktop Rust checks, Python helper tests, and the disposable real `pass`/GnuPG integration fixture. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
+GitHub Actions runs core and desktop Rust checks, Python helper tests, and the disposable real `pass`/GnuPG integration fixture. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
 ```sh
 cargo test --locked
+bash scripts/check-rust-warnings.sh
+bash scripts/check-rust-warnings.sh --manifest-path desktop/Cargo.toml
 cargo clippy --locked --all-targets -- -D warnings
 cargo fmt --all --check
 cargo fmt --manifest-path desktop/Cargo.toml --all --check

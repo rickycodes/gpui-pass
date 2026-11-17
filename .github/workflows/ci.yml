@@ -39,6 +39,10 @@ jobs:
           python3 -m unittest discover -s desktop/tests -v
       - name: Lint core
         run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Reject compiler and dependency warnings
+        run: |
+          bash scripts/check-rust-warnings.sh
+          bash scripts/check-rust-warnings.sh --manifest-path desktop/Cargo.toml
       - name: Test core
         run: cargo test --locked
       - name: Lint desktop

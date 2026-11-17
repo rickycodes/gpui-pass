@@ -40,3 +40,7 @@ cargo test --manifest-path desktop/Cargo.toml -p blade-graphics --lib prime_pres
 
 The upstream documentation images are omitted; source, text documentation, and
 the upstream MIT license are included.
+
+Seven Vulkan return types in `mod.rs`, `command.rs`, and `pipeline.rs` also spell
+out their elided lifetimes as `<'_>`, as recommended by the compiler. This fixes
+`mismatched_lifetime_syntaxes` warnings without changing lifetime relationships.
