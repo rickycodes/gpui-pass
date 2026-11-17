@@ -517,7 +517,6 @@ impl PassApp {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(17.))
                             .text_color(rgb(self.state.theme.colors.nav_foreground))
                             .cursor_pointer()
                             .hover(|style| style.bg(rgb(self.state.theme.colors.nav_hover)))
@@ -526,7 +525,10 @@ impl PassApp {
                                 cx.listener(|_, _, _, cx| cx.stop_propagation()),
                             )
                             .on_click(cx.listener(|_, _, window, _| window.minimize_window()))
-                            .child("−"),
+                            .child(window_control_glyph(
+                                false,
+                                self.state.theme.colors.nav_foreground,
+                            )),
                     )
                     .child(
                         div()
@@ -537,7 +539,6 @@ impl PassApp {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .text_size(px(20.))
                             .text_color(rgb(self.state.theme.colors.nav_foreground))
                             .cursor_pointer()
                             .hover(|style| style.bg(rgb(self.state.theme.colors.danger_hover)))
@@ -546,7 +547,10 @@ impl PassApp {
                                 cx.listener(|_, _, _, cx| cx.stop_propagation()),
                             )
                             .on_click(cx.listener(|_, _, _, cx| cx.quit()))
-                            .child("×"),
+                            .child(window_control_glyph(
+                                true,
+                                self.state.theme.colors.nav_foreground,
+                            )),
                     ),
             )
             .into_any_element()
@@ -1110,7 +1114,6 @@ impl PassApp {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(17.))
                                     .text_color(rgb(self.state.theme.colors.nav_foreground))
                                     .cursor_pointer()
                                     .hover(|style| style.bg(rgb(self.state.theme.colors.nav_hover)))
@@ -1121,7 +1124,10 @@ impl PassApp {
                                     .on_click(
                                         cx.listener(|_, _, window, _| window.minimize_window()),
                                     )
-                                    .child("−"),
+                                    .child(window_control_glyph(
+                                        false,
+                                        self.state.theme.colors.nav_foreground,
+                                    )),
                             )
                             .child(
                                 div()
@@ -1132,7 +1138,6 @@ impl PassApp {
                                     .flex()
                                     .items_center()
                                     .justify_center()
-                                    .text_size(px(20.))
                                     .text_color(rgb(self.state.theme.colors.nav_foreground))
                                     .cursor_pointer()
                                     .hover(|style| {
@@ -1143,7 +1148,10 @@ impl PassApp {
                                         cx.listener(|_, _, _, cx| cx.stop_propagation()),
                                     )
                                     .on_click(cx.listener(|_, _, _, cx| cx.quit()))
-                                    .child("×"),
+                                    .child(window_control_glyph(
+                                        true,
+                                        self.state.theme.colors.nav_foreground,
+                                    )),
                             ),
                     ),
             )

@@ -182,13 +182,15 @@ impl Render for PassApp {
                             .flex()
                             .items_center()
                             .gap(px(6.))
-                            .child(
-                                div()
-                                    .text_size(px(10.))
-                                    .font_family(self.state.theme.mono_font)
-                                    .text_color(rgb(self.state.theme.colors.nav_muted))
-                                    .child(if self.state.demo { "DEMO" } else { "LOCAL" }),
-                            )
+                            .when(self.state.demo, |header| {
+                                header.child(
+                                    div()
+                                        .text_size(px(10.))
+                                        .font_family(self.state.theme.mono_font)
+                                        .text_color(rgb(self.state.theme.colors.nav_muted))
+                                        .child("DEMO"),
+                                )
+                            })
                             .when(!self.state.demo && self.state.store.is_some(), |header| {
                                 header.child(
                                     self.state
@@ -261,7 +263,6 @@ impl Render for PassApp {
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .text_size(px(17.))
                                             .text_color(rgb(self.state.theme.colors.nav_foreground))
                                             .cursor_pointer()
                                             .hover(|style| {
@@ -274,7 +275,10 @@ impl Render for PassApp {
                                             .on_click(cx.listener(|_, _, window, _| {
                                                 window.minimize_window()
                                             }))
-                                            .child("−"),
+                                            .child(window_control_glyph(
+                                                false,
+                                                self.state.theme.colors.nav_foreground,
+                                            )),
                                     )
                                     .child(
                                         div()
@@ -285,7 +289,6 @@ impl Render for PassApp {
                                             .flex()
                                             .items_center()
                                             .justify_center()
-                                            .text_size(px(20.))
                                             .text_color(rgb(self.state.theme.colors.nav_foreground))
                                             .cursor_pointer()
                                             .hover(|style| {
@@ -296,7 +299,10 @@ impl Render for PassApp {
                                                 cx.listener(|_, _, _, cx| cx.stop_propagation()),
                                             )
                                             .on_click(cx.listener(|_, _, _, cx| cx.quit()))
-                                            .child("×"),
+                                            .child(window_control_glyph(
+                                                true,
+                                                self.state.theme.colors.nav_foreground,
+                                            )),
                                     ),
                             ),
                     ),

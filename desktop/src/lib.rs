@@ -58,6 +58,8 @@ mod text_input_ime;
 mod text_input_views;
 #[path = "ui/theme.rs"]
 mod theme;
+#[path = "ui/window_control_glyph.rs"]
+mod window_control_glyph;
 #[path = "security/yubikey_detection.rs"]
 mod yubikey_detection;
 
@@ -91,6 +93,7 @@ use std::{
     time::{Duration, Instant},
 };
 use theme::Theme;
+use window_control_glyph::window_control_glyph;
 use yubikey_detection::{
     CardDetails, CardProbeResult, CardWatcher, UsbCardWatcher, UsbReaderDetails, YubiConnection,
     YubiKeyInfo, YubiRecord,
