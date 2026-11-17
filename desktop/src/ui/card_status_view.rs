@@ -97,8 +97,8 @@ impl PassApp {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(54.))
-            .py(px(42.))
+            .px(px(40.))
+            .py(px(32.))
             .flex()
             .flex_col()
             .gap(px(26.))
@@ -109,12 +109,11 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        div().flex().flex_col().gap(px(8.)).child(
-                            div()
-                                .text_size(px(32.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .child("Smartcard status"),
-                        ),
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(8.))
+                            .child(self.state.theme.page_title(i18n::text("smartcard-status"))),
                     )
                     .child(
                         div()
@@ -187,7 +186,7 @@ impl PassApp {
                     .child(
                         div()
                             .size(px(190.))
-                            .rounded(px(10.))
+                            .rounded(px(self.state.theme.radii.panel))
                             .bg(rgb(0xf2f0eb))
                             .flex()
                             .items_center()
@@ -198,8 +197,13 @@ impl PassApp {
                         div()
                             .flex()
                             .flex_col()
+                            .items_start()
                             .gap(px(10.))
-                            .child(self.state.theme.label(i18n::text("connected-device")))
+                            .child(
+                                self.state
+                                    .theme
+                                    .status_badge(i18n::text("device-connected")),
+                            )
                             .child(
                                 div()
                                     .text_size(px(24.))

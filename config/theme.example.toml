@@ -33,6 +33,6 @@ control_horizontal = 20.0
 panel_padding = 24.0
 
 [radii]
-control = 6.0
-panel = 10.0
-field = 6.0
+control = 0.0
+panel = 0.0
+field = 0.0

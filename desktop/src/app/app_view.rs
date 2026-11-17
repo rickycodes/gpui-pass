@@ -93,10 +93,37 @@ impl Render for PassApp {
                 .items_center()
                 .border_t_1()
                 .border_color(rgb(self.state.theme.colors.border))
+                .gap(px(18.))
+                .overflow_hidden()
                 .child(
-                    div().text_size(px(10.)).text_color(rgb(self.state.theme.colors.muted)).child(
-                        "Ctrl F  Search     ↑ ↓  Browse     Enter  Reveal     Ctrl Shift C  Copy     Ctrl G  Generate     Esc  Hide",
-                    ),
+                    self.state
+                        .theme
+                        .shortcut("Ctrl F", i18n::text("shortcut-search")),
+                )
+                .child(
+                    self.state
+                        .theme
+                        .shortcut("↑ ↓", i18n::text("shortcut-browse")),
+                )
+                .child(
+                    self.state
+                        .theme
+                        .shortcut("Enter", i18n::text("shortcut-reveal")),
+                )
+                .child(
+                    self.state
+                        .theme
+                        .shortcut("Ctrl Shift C", i18n::text("shortcut-copy")),
+                )
+                .child(
+                    self.state
+                        .theme
+                        .shortcut("Ctrl G", i18n::text("shortcut-generate")),
+                )
+                .child(
+                    self.state
+                        .theme
+                        .shortcut("Esc", i18n::text("shortcut-hide")),
                 )
         };
         app_actions::bind_actions(
@@ -154,86 +181,71 @@ impl Render for PassApp {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(18.))
+                            .gap(px(6.))
                             .child(
                                 div()
                                     .text_size(px(10.))
                                     .font_family(self.state.theme.mono_font)
                                     .text_color(rgb(self.state.theme.colors.nav_muted))
-                                    .child(if self.state.demo {
-                                        "DEMO / 01"
-                                    } else {
-                                        "LOCAL / 01"
-                                    }),
+                                    .child(if self.state.demo { "DEMO" } else { "LOCAL" }),
                             )
                             .when(!self.state.demo && self.state.store.is_some(), |header| {
                                 header.child(
-                                    div()
-                                        .id("open-custom-entry")
-                                        .text_size(px(12.))
-                                        .text_color(rgb(self.state.theme.colors.nav_foreground))
-                                        .cursor_pointer()
+                                    self.state
+                                        .theme
+                                        .nav_link(
+                                            "open-custom-entry",
+                                            i18n::text("new-entry"),
+                                            false,
+                                        )
                                         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                             cx.stop_propagation()
                                         })
                                         .on_click(cx.listener(|app, _, window, cx| {
                                             app.open_custom_entry(window, cx)
-                                        }))
-                                        .child(i18n::text("new-entry")),
+                                        })),
                                 )
                             })
                             .child(
-                                div()
-                                    .id("open-generator")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(self.state.theme.colors.nav_foreground))
-                                    .cursor_pointer()
+                                self.state
+                                    .theme
+                                    .nav_link("open-generator", i18n::text("generate"), false)
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
                                     })
                                     .on_click(cx.listener(|app, _, window, cx| {
                                         app.open_generator(window, cx)
-                                    }))
-                                    .child(i18n::text("generate")),
+                                    })),
                             )
                             .when(
                                 self.state.yubikey_connection == YubiConnection::Connected,
                                 |header| {
                                     header.child(
-                                        div()
-                                            .id("open-yubikey-status")
-                                            .text_size(px(12.))
-                                            .text_color(rgb(
-                                                if self.state.navigation.page() == Page::CardDetails
-                                                {
-                                                    self.state.theme.colors.nav_selected
-                                                } else {
-                                                    self.state.theme.colors.nav_foreground
-                                                },
-                                            ))
-                                            .cursor_pointer()
+                                        self.state
+                                            .theme
+                                            .nav_link(
+                                                "open-yubikey-status",
+                                                i18n::text("card-status"),
+                                                self.state.navigation.page() == Page::CardDetails,
+                                            )
                                             .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                                 cx.stop_propagation();
                                             })
                                             .on_click(cx.listener(|app, _, _, cx| {
                                                 app.state.navigation.go_to(Page::CardDetails);
                                                 cx.notify();
-                                            }))
-                                            .child(i18n::text("card-status")),
+                                            })),
                                     )
                                 },
                             )
                             .child(
-                                div()
-                                    .id("refresh")
-                                    .text_size(px(12.))
-                                    .text_color(rgb(self.state.theme.colors.nav_foreground))
-                                    .cursor_pointer()
+                                self.state
+                                    .theme
+                                    .nav_link("refresh", i18n::text("refresh"), false)
                                     .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation();
                                     })
-                                    .on_click(cx.listener(|app, _, _, cx| app.refresh(cx)))
-                                    .child(i18n::text("refresh")),
+                                    .on_click(cx.listener(|app, _, _, cx| app.refresh(cx))),
                             )
                             .child(
                                 div()

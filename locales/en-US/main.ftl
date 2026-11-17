@@ -1,11 +1,11 @@
 # English source catalog. Keep message IDs stable; add translated catalogs by locale.
 search-entries = Search entries
-generate = Generate ↗
-card-status = Card status ↗
+generate = Generate
+card-status = Card status
 refresh = ↻  Refresh
 password-generator = Password generator
 entry-name = ENTRY NAME
-new-entry = New entry ↗
+new-entry = New entry
 custom-entry-title = New entry
 custom-entry-name-help = Choose a name or folder path, such as Email/example.com.
 custom-entry-continue = Continue
@@ -39,10 +39,19 @@ phrase-description = A phrase worth remembering.
 random-phrase-help = Choose the number of random whole words. More words make a stronger phrase; digits and punctuation add variety.
 append-digit = Append a digit to each word
 separate-words = Separate words with punctuation
-random-password-help = Random characters using pass’s default punctuation and letters. Respects PASSWORD_STORE_GENERATED_LENGTH and PASSWORD_STORE_CHARACTER_SET when set.
+random-password-help = Random characters using your pass generation settings.
 edit-conflict-title = This entry changed on disk
 edit-conflict-help = Your edits are still here. Replace the version on disk with your edits, or discard them and reveal the current version.
 edit-conflict-notice = The entry changed on disk. Your edits are still available to resolve the conflict.
 edit-conflict-overwrite = Overwrite disk version
 edit-conflict-discard = Discard edits
 edit-conflict-discarded = Your edits were discarded. Reveal the entry to load its current contents.
+
+smartcard-status = Smartcard status
+device-connected = Connected
+shortcut-search = Search
+shortcut-browse = Browse
+shortcut-reveal = Reveal
+shortcut-copy = Copy
+shortcut-generate = Generate
+shortcut-hide = Hide

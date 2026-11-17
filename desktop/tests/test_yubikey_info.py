@@ -42,6 +42,14 @@ class HidMetadataTests(unittest.TestCase):
         self.connect.assert_called_once_with(connection_types=(self.connection_type,))
         self.assertEqual(output.getvalue(), "")
 
+    def test_structured_firmware_is_displayed_as_a_version_number(self):
+        self.connect.return_value[2].version = types.SimpleNamespace(major=5, minor=7, patch=4)
+        output = io.StringIO()
+        with patch.dict(sys.modules, self.modules), contextlib.redirect_stdout(output):
+            self.helper["main"]()
+        self.assertIn("Firmware version: 5.7.4\n", output.getvalue())
+        self.assertNotIn("major=", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

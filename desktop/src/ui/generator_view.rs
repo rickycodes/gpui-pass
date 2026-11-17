@@ -575,10 +575,9 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        div()
-                            .text_size(px(24.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .child(i18n::text("custom-entry-title")),
+                        self.state
+                            .theme
+                            .panel_title(i18n::text("custom-entry-title")),
                     )
                     .child(
                         self.state
@@ -769,11 +768,9 @@ impl PassApp {
                     .items_center()
                     .justify_between()
                     .child(
-                        div()
-                            .text_size(px(22.))
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_color(rgb(self.state.theme.colors.ink))
-                            .child(i18n::text("password-generator")),
+                        self.state
+                            .theme
+                            .panel_title(i18n::text("password-generator")),
                     )
                     .child(
                         self.state
@@ -1023,24 +1020,6 @@ impl PassApp {
                                 "Available for 30 seconds."
                             }),
                     ),
-            );
-        } else {
-            panel = panel.child(
-                div()
-                    .h(px(76.))
-                    .border_1()
-                    .border_color(rgb(self.state.theme.colors.border))
-                    .bg(rgb(self.state.theme.colors.background))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(12.))
-                    .text_color(rgb(self.state.theme.colors.muted))
-                    .child(if self.state.saving.is_some() {
-                        "Encrypting and saving entry…"
-                    } else {
-                        "Choose a name, then generate and save."
-                    }),
             );
         }
         panel = panel.child(

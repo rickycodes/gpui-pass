@@ -192,80 +192,54 @@ impl PassApp {
             } else {
                 entry.folder()
             };
-            detail = detail
-                .child(
-                    div()
-                        .px(px(46.))
-                        .pt(px(40.))
-                        .pb(px(28.))
-                        .flex()
-                        .flex_col()
-                        .gap(px(17.))
-                        .child(
-                            self.state
-                                .theme
-                                .label(format!("STORE   /   {}", folder.to_uppercase())),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_between()
-                                .gap(px(16.))
-                                .child(
-                                    div()
-                                        .text_size(px(36.))
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .child(entry.title().to_owned()),
-                                )
-                                .child(
-                                    div()
-                                        .border_1()
-                                        .border_color(rgb(self.state.theme.colors.border))
-                                        .px(px(10.))
-                                        .py(px(6.))
-                                        .font_family(self.state.theme.mono_font)
-                                        .text_size(px(10.))
-                                        .text_color(rgb(self.state.theme.colors.muted))
-                                        .child(".gpg"),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(12.))
-                                .text_color(rgb(self.state.theme.colors.muted))
-                                .child(entry.name().to_owned()),
-                        ),
-                )
-                .child(
-                    div()
-                        .px(px(46.))
-                        .pb(px(24.))
-                        .flex()
-                        .items_center()
-                        .border_b_1()
-                        .border_color(rgb(self.state.theme.colors.border))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(7.))
-                                .child(div().size(px(5.)).bg(rgb(self.state.theme.colors.accent)))
-                                .child(
-                                    div()
-                                        .text_size(px(11.))
-                                        .text_color(rgb(self.state.theme.colors.muted))
-                                        .child(i18n::text("encrypted-on-disk")),
-                                ),
-                        ),
-                );
+            detail = detail.child(
+                div()
+                    .px(px(40.))
+                    .pt(px(32.))
+                    .pb(px(28.))
+                    .border_b_1()
+                    .border_color(rgb(self.state.theme.colors.border))
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child(self.state.theme.label(folder.to_owned()))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(16.))
+                            .child(
+                                self.state
+                                    .theme
+                                    .page_title(entry.title().to_owned())
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate(),
+                            )
+                            .child(
+                                self.state
+                                    .theme
+                                    .status_badge(i18n::text("encrypted-on-disk")),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .font_family(self.state.theme.mono_font)
+                            .text_size(px(11.))
+                            .text_color(rgb(self.state.theme.colors.muted))
+                            .overflow_hidden()
+                            .text_ellipsis()
+                            .child(entry.name().to_owned()),
+                    ),
+            );
 
             let mut body = div()
                 .id("detail-scroll")
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .p(px(46.))
+                .p(px(40.))
                 .flex()
                 .flex_col()
                 .gap(px(24.));
@@ -274,7 +248,7 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(self.state.theme.label("PASSWORD"))
+                    .child(self.state.theme.label(i18n::text("password")))
                     .child(
                         div()
                             .font_family(self.state.theme.mono_font)
@@ -300,7 +274,7 @@ impl PassApp {
                 .bg(rgb(self.state.theme.colors.background))
                 .w_full()
                 .min_w_0()
-                .min_h(px(84.));
+                .min_h(px(96.));
             if self.state.editing_entry {
                 password = password.child(self.generator_name_field(window, cx));
             } else if let Some(secret) = revealed {
@@ -315,23 +289,12 @@ impl PassApp {
                 );
             } else {
                 password = password.child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .child(
-                            div()
-                                .text_size(px(24.))
-                                .text_color(rgb(self.state.theme.colors.placeholder))
-                                .child("••••••••••••"),
-                        )
-                        .child(
-                            div()
-                                .font_family(self.state.theme.mono_font)
-                                .text_size(px(10.))
-                                .text_color(rgb(self.state.theme.colors.muted))
-                                .child(i18n::text("concealed")),
-                        ),
+                    div().flex().items_center().justify_between().child(
+                        div()
+                            .text_size(px(24.))
+                            .text_color(rgb(self.state.theme.colors.placeholder))
+                            .child("••••••••••••"),
+                    ),
                 );
             }
             body = body.child(password);
@@ -396,7 +359,7 @@ impl PassApp {
             let controls = div()
                 .flex()
                 .items_center()
-                .gap(px(18.))
+                .gap(px(10.))
                 .child(
                     self.state
                         .theme
@@ -407,9 +370,9 @@ impl PassApp {
                             } else if revealed.is_some() {
                                 "Hide password"
                             } else {
-                                "Reveal password  ↗"
+                                "Reveal password"
                             },
-                            true,
+                            false,
                         )
                         .on_click(cx.listener(|app, _, window, cx| {
                             if app.state.session.is_pending() {
@@ -449,7 +412,7 @@ impl PassApp {
                         .child(
                             self.state
                                 .theme
-                                .button("edit-entry", "Edit entry", true)
+                                .button("edit-entry", "Edit entry", false)
                                 .on_click(
                                     cx.listener(|app, _, window, cx| app.begin_edit(window, cx)),
                                 ),
@@ -464,15 +427,9 @@ impl PassApp {
                                     } else {
                                         "Copy entry"
                                     },
-                                    false,
+                                    true,
                                 )
                                 .on_click(cx.listener(|app, _, _, cx| app.copy_selected(cx))),
-                        )
-                        .child(
-                            self.state
-                                .theme
-                                .danger_button("delete-entry", "Delete")
-                                .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
                         )
                 })
                 .when(pending, |controls| {
@@ -483,7 +440,22 @@ impl PassApp {
                             .child(i18n::text("esc-to-cancel")),
                     )
                 });
-            body = body.child(controls);
+            body = body.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(16.))
+                    .child(controls)
+                    .when(!self.state.editing_entry, |row| {
+                        row.child(
+                            self.state
+                                .theme
+                                .danger_button("delete-entry", "Delete")
+                                .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
+                        )
+                    }),
+            );
             if let Some(secret) = revealed {
                 if secret.expose().len() > 16_384 {
                     body = body.child(
@@ -507,7 +479,7 @@ impl PassApp {
                 );
             } else {
                 detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
-                    .child(div().text_size(px(56.)).font_weight(FontWeight::LIGHT).text_color(rgb(self.state.theme.colors.accent)).child("[ / ]"))
+                    .child(self.brand_mark(56., self.state.theme.colors.accent))
                     .child(div().text_size(px(30.)).child(if !self.state.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
                     .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.state.theme.colors.muted))
                         .child(if !self.state.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
@@ -515,21 +487,6 @@ impl PassApp {
     );
             }
         }
-        detail
-            .child(
-                div()
-                    .px(px(46.))
-                    .py(px(20.))
-                    .border_t_1()
-                    .border_color(rgb(self.state.theme.colors.border))
-                    .flex()
-                    .justify_between()
-                    .child(self.state.theme.label(if self.state.demo {
-                        "FICTIONAL DATA"
-                    } else {
-                        "LOCAL STORE"
-                    })),
-            )
-            .into_any_element()
+        detail.into_any_element()
     }
 }

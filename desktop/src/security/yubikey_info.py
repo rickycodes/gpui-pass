@@ -12,8 +12,12 @@ def main():
 
     connection, device, info = connect_to_device(connection_types=(FidoConnection,))
     with connection:
+        version = info.version
+        firmware = (f"{version.major}.{version.minor}.{version.patch}"
+                    if all(hasattr(version, part) for part in ("major", "minor", "patch"))
+                    else str(version))
         print("Device type:", get_name(info, device.pid.get_type()))
-        print("Firmware version:", info.version)
+        print("Firmware version:", firmware)
         print("Form factor:", info.form_factor)
 
 

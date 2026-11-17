@@ -149,6 +149,96 @@ struct RadiusOverrides {
 }
 
 impl Theme {
+    pub fn page_title(&self, text: impl Into<SharedString>) -> Div {
+        div()
+            .text_size(px(32.))
+            .line_height(px(40.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rgb(self.colors.ink))
+            .child(text.into())
+    }
+
+    pub fn panel_title(&self, text: impl Into<SharedString>) -> Div {
+        self.page_title(text)
+            .text_size(px(24.))
+            .line_height(px(32.))
+    }
+
+    pub fn status_badge(&self, text: impl Into<SharedString>) -> Div {
+        div()
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(6.))
+            .h(px(26.))
+            .px(px(10.))
+            .rounded(px(self.radii.control))
+            .bg(rgb(self.colors.accent_surface))
+            .text_size(px(11.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rgb(self.colors.accent))
+            .child(
+                div()
+                    .size(px(5.))
+                    .rounded_full()
+                    .bg(rgb(self.colors.accent)),
+            )
+            .child(text.into())
+    }
+
+    pub fn nav_link(
+        &self,
+        id: &'static str,
+        text: impl Into<SharedString>,
+        active: bool,
+    ) -> Stateful<Div> {
+        let colors = self.colors.clone();
+        div()
+            .id(id)
+            .h(px(30.))
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .rounded(px(self.radii.control))
+            .text_size(px(12.))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(rgb(if active {
+                colors.nav_selected
+            } else {
+                colors.nav_foreground
+            }))
+            .bg(rgb(if active {
+                colors.nav_hover
+            } else {
+                colors.nav_background
+            }))
+            .cursor_pointer()
+            .hover(move |style| style.bg(rgb(colors.nav_hover)))
+            .child(text.into())
+    }
+
+    pub fn shortcut(&self, keys: &'static str, label: impl Into<SharedString>) -> Div {
+        div()
+            .flex()
+            .flex_shrink_0()
+            .items_center()
+            .gap(px(7.))
+            .text_size(px(11.))
+            .text_color(rgb(self.colors.muted))
+            .child(
+                div()
+                    .px(px(5.))
+                    .py(px(2.))
+                    .rounded(px(self.radii.control.min(4.)))
+                    .border_1()
+                    .border_color(rgb(self.colors.border))
+                    .font_family(self.mono_font)
+                    .text_size(px(10.))
+                    .child(keys),
+            )
+            .child(label.into())
+    }
+
     /// Load the optional user theme over the built-in defaults. Invalid files
     /// are ignored as a whole so partial parsing cannot leave a mixed theme.
     pub fn load_user() -> Self {
