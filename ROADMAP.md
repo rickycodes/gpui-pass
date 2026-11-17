@@ -7,7 +7,6 @@ The goal is a dependable Linux desktop client for an existing `pass` store. A v1
 - Linux desktop, using the user's existing GnuPG keyring, `gpg-agent`, and optional OpenPGP smartcard/YubiKey.
 - Existing `pass` store format and commands remain usable alongside the app.
 - Local store operations: browse, search, reveal, copy, edit, delete, generate, and create entries.
-- Manual full-store backup and restore, separate from synchronization. The archive workflow must state clearly what happens to encrypted entries, selected secret keys, and ownertrust, and must never silently replace an existing store.
 - Current built-in visual design and theme configuration. English (`en-US`) is the supported v1 language; the Fluent setup can make later translation possible without making translation a release gate.
 - Optimized Linux x86_64 release artifact, checksum, installation instructions, and CI checks.
 
@@ -39,23 +38,13 @@ hardware.
 
 ## Remaining work before v1
 
-### 1. Finish manual store backup and restore
-
-Implement an explicit export/import workflow for a full store, independent of Git or sync. Settle and document the archive contents before implementation:
-
-- Include the encrypted store tree and required store metadata while preserving paths and permissions safely.
-- Make private-key export an explicit, separate choice; explain that an encrypted store alone cannot be recovered without its recipient secret keys. Include ownertrust only when the user chooses to include key material.
-- Protect exported archives with restrictive local permissions and validate archive paths, file types, size, and contents before import.
-- Preview the restore target and conflicts. Restore into a new or empty location by default; require a deliberate, recoverable action before replacing anything.
-- Add tests for malformed archives, traversal and link entries, partial failures, existing destinations, and round-trip preservation.
-
-### 2. Close the v1 reliability gaps
+### 1. Close the v1 reliability gaps
 
 - Keep the maintainer's real-store workflow validation current as features change; record any environment-specific gaps rather than treating one setup as universal coverage.
 - Keep external-writer conflict behavior explicit: preserve edits and warn on changes observed before replacement. Document the remaining narrow race with non-cooperating tools such as `pass` unless a portable coordination mechanism is added.
 - Update or archive the 2026-11-14 source review and 2026-11-15 follow-up so their findings and validation counts are not mistaken for the current state.
 
-### 3. Define and verify the supported release
+### 2. Define and verify the supported release
 
 - Specify the tested Linux baseline and runtime requirements, including GnuPG, graphical pinentry, graphics stack, and optional YubiKey packages.
 - Verify a clean optimized build, packaged artifact contents, checksum instructions, and a fresh install/run from a release download.
@@ -67,6 +56,41 @@ Implement an explicit export/import workflow for a full store, independent of Gi
 ## After v1
 
 These are worthwhile follow-ups but are not release blockers:
+
+### Manual store backup and restore
+
+This is an after-v1, non-blocking feature. It will provide an explicit
+export/import workflow for encrypted store entries, independent of Git or sync.
+The initial format is intentionally not a complete clone of a `pass` store.
+
+- Use a versioned `.tar.gz` containing `manifest.toml` and a
+  `password-store/` tree. Backwards compatibility with existing personal
+  scripts is not a requirement.
+- Include only non-hidden regular files and directories under the store.
+  Exclude all dotfiles and dot-directories, including `.gpg-id`, `.git`, and
+  `.extensions`, for the initial version. Preserve encrypted file bytes and
+  relative paths. Restore must warn that recipient policy metadata was omitted
+  and that writes require the user to re-establish `.gpg-id` or
+  `PASSWORD_STORE_KEY`.
+- Make public-key export, private-key export, and ownertrust export separate
+  explicit choices. Ownertrust affects the user's GnuPG trust database and may
+  be useful even when keys are already present; importing it must have its own
+  warning and result.
+- Leave archive encryption out of the initial version. Exported archives still
+  receive restrictive local permissions and a clear warning that key-bearing
+  archives are sensitive.
+- Validate archive paths, file types, size, manifest version, and contents
+  before any store or GnuPG changes. Reject traversal, links, device files,
+  unexpected dotfiles, and malformed or incomplete archives.
+- Preview the restore target and conflicts. Restore into a new or empty
+  location by default; require a deliberate, recoverable action before
+  replacing anything.
+- Stage and install the store before importing optional keys or ownertrust,
+  then report each import result independently. Do not claim a transactional
+  rollback for GnuPG changes.
+- Add tests for malformed archives, traversal and link entries, dotfile
+  exclusion, partial failures, existing destinations, optional key/ownertrust
+  components, and round-trip preservation.
 
 ### QR-code display for secret values
 
@@ -149,4 +173,4 @@ These are exploratory and not current targets:
 
 ## Release completion checklist
 
-V1 is ready when manual backup/restore is implemented and tested; all advertised local workflows pass the documented checks; detected edit conflicts preserve the user's work; restore cannot silently replace an existing store; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.
+V1 is ready when all advertised local workflows pass the documented checks; detected edit conflicts preserve the user's work; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.
