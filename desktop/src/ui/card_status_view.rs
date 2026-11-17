@@ -187,6 +187,8 @@ impl PassApp {
                         div()
                             .size(px(190.))
                             .rounded(px(self.state.theme.radii.panel))
+                            .border_1()
+                            .border_color(rgb(self.state.theme.colors.border))
                             .bg(rgb(0xf2f0eb))
                             .flex()
                             .items_center()
