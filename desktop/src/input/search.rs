@@ -1,8 +1,44 @@
 use crate::PassApp;
-use gpui::{Context, Pixels, Point, Window};
+use gpui::{Context, Hsla, Pixels, Point, ShapedLine, TextRun, Window, font, px};
 use std::ops::Range;
 
-pub(super) const ADVANCE: f32 = 7.8;
+fn input_text_layout(window: &mut Window, text: &str, font_family: &'static str) -> ShapedLine {
+    window.text_system().shape_line(
+        text.to_owned().into(),
+        px(13.),
+        &[TextRun {
+            len: text.len(),
+            font: font(font_family),
+            color: Hsla::default(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        }],
+        None,
+    )
+}
+
+pub(super) fn input_byte_at_x(
+    window: &mut Window,
+    text: &str,
+    x: Pixels,
+    origin_x: Pixels,
+    font_family: &'static str,
+) -> usize {
+    let layout = input_text_layout(window, text, font_family);
+    layout.closest_index_for_x((x - origin_x).max(px(0.)))
+}
+
+pub(super) fn input_x_for_byte(
+    window: &mut Window,
+    text: &str,
+    byte: usize,
+    origin_x: Pixels,
+    font_family: &'static str,
+) -> Pixels {
+    let layout = input_text_layout(window, text, font_family);
+    origin_x + layout.x_for_index(byte.min(text.len()))
+}
 
 pub(super) fn byte_at_utf16(text: &str, offset: usize) -> usize {
     let mut utf16 = 0;

@@ -39,6 +39,9 @@ Follow-up to the [2026-11-14 application review](application-review-2026-11-14.m
   per filter. Post-generation sorting caches sort keys. Product image lookup
   initializes only the selected image. Generated secret visibility reuses the
   shared reveal duration constant.
+- Shared titlebar/window-control construction now serves the main, generator,
+  and custom-entry views. Input hit testing and IME cursor bounds use measured
+  GPUI text layout instead of a fixed character advance.
 
 ## Remaining work and limits
 
@@ -55,9 +58,6 @@ Follow-up to the [2026-11-14 application review](application-review-2026-11-14.m
   can be measured with real hardware. Large-store search latency has not been
   benchmarked. The editor now has a firm bound; viewport virtualization and
   layout caching can be considered if larger editing is needed.
-- Input fields still use fixed character advance for hit testing. Titlebars
-  and window controls still have duplicate view construction. These are good
-  smaller follow-ups, separate from the state and security changes above.
 - GPUI, clipboard, allocator, and compositor copies remain outside complete
   zeroization guarantees. Log parent directories still depend on the user's
   trusted filesystem configuration. Clipboard ownership is determined by text

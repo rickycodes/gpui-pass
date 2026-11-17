@@ -1,4 +1,4 @@
-use crate::{PassApp, search::ADVANCE};
+use crate::{PassApp, search::input_byte_at_x};
 use gpui::{Context, ElementInputHandler, Window, canvas, div, prelude::*, px, rgb};
 
 impl PassApp {
@@ -141,14 +141,13 @@ impl PassApp {
                 cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
                     app.state.generator_name_focus.focus(window);
                     if let Some(bounds) = app.state.generator_name_bounds {
-                        let column =
-                            ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-                        let byte = app
-                            .state
-                            .generator_name
-                            .char_indices()
-                            .nth(column)
-                            .map_or(app.state.generator_name.len(), |(byte, _)| byte);
+                        let byte = input_byte_at_x(
+                            window,
+                            &app.state.generator_name,
+                            event.position.x,
+                            bounds.origin.x,
+                            app.state.theme.mono_font,
+                        );
                         app.state.generator_name_selection = byte..byte;
                         app.state.generator_name_cursor = byte;
                     }
@@ -269,14 +268,13 @@ impl PassApp {
                 cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
                     app.state.custom_entry_name_focus.focus(window);
                     if let Some(bounds) = app.state.custom_entry_name_bounds {
-                        let column =
-                            ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-                        let byte = app
-                            .state
-                            .custom_entry_name
-                            .char_indices()
-                            .nth(column)
-                            .map_or(app.state.custom_entry_name.len(), |(byte, _)| byte);
+                        let byte = input_byte_at_x(
+                            window,
+                            &app.state.custom_entry_name,
+                            event.position.x,
+                            bounds.origin.x,
+                            app.state.theme.mono_font,
+                        );
                         app.state.custom_entry_name_selection = byte..byte;
                         app.state.custom_entry_name_cursor = byte;
                     }
@@ -384,14 +382,13 @@ impl PassApp {
                 cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
                     app.state.search_focus.focus(window);
                     if let Some(bounds) = app.state.input_bounds {
-                        let column =
-                            ((event.position.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-                        let byte = app
-                            .state
-                            .query
-                            .char_indices()
-                            .nth(column)
-                            .map_or(app.state.query.len(), |(byte, _)| byte);
+                        let byte = input_byte_at_x(
+                            window,
+                            &app.state.query,
+                            event.position.x,
+                            bounds.origin.x,
+                            app.state.theme.mono_font,
+                        );
                         app.state.selection = byte..byte;
                     }
                     cx.notify();

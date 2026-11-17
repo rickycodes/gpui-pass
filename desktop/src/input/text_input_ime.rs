@@ -1,6 +1,6 @@
 use crate::{
     PassApp,
-    search::{ADVANCE, byte_at_utf16, utf16_at_byte},
+    search::{byte_at_utf16, input_byte_at_x, input_x_for_byte, utf16_at_byte},
 };
 use gpui::{Bounds, Context, EntityInputHandler, Pixels, Point, UTF16Selection, Window, px};
 use std::ops::Range;
@@ -186,10 +186,16 @@ impl EntityInputHandler for PassApp {
     ) -> Option<Bounds<Pixels>> {
         if self.state.custom_entry_name_focus.is_focused(window) {
             let byte = byte_at_utf16(&self.state.custom_entry_name, range.start);
-            let column = self.state.custom_entry_name[..byte].chars().count() as f32;
+            let x = input_x_for_byte(
+                window,
+                &self.state.custom_entry_name,
+                byte,
+                bounds.origin.x,
+                self.state.theme.mono_font,
+            );
             return Some(Bounds::new(
                 Point {
-                    x: bounds.origin.x + px(column * ADVANCE),
+                    x,
                     y: bounds.origin.y,
                 },
                 gpui::size(px(1.), bounds.size.height),
@@ -222,31 +228,21 @@ impl EntityInputHandler for PassApp {
                 gpui::size(px(1.), line.bounds.size.height),
             ));
         }
-        let (column, row) =
-            if self.state.generator_name_focus.is_focused(window) && self.text_editor_active() {
-                let prefix = &text[..byte];
-                let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
-                (
-                    text[line_start..byte].chars().count() as f32,
-                    prefix.matches('\n').count() as f32,
-                )
-            } else {
-                (text[..byte].chars().count() as f32, 0.)
-            };
-        Some(Bounds {
-            origin: Point {
-                x: bounds.origin.x + px(column * ADVANCE),
-                y: bounds.origin.y + px(row * 26.),
+        let byte = byte_at_utf16(text, range.start);
+        let x = input_x_for_byte(
+            window,
+            text,
+            byte,
+            bounds.origin.x,
+            self.state.theme.mono_font,
+        );
+        Some(Bounds::new(
+            Point {
+                x,
+                y: bounds.origin.y,
             },
-            size: gpui::size(
-                px(1.),
-                if self.state.generator_name_focus.is_focused(window) && self.text_editor_active() {
-                    px(26.)
-                } else {
-                    bounds.size.height
-                },
-            ),
-        })
+            gpui::size(px(1.), bounds.size.height),
+        ))
     }
 
     fn character_index_for_point(
@@ -257,9 +253,14 @@ impl EntityInputHandler for PassApp {
     ) -> Option<usize> {
         if self.state.custom_entry_name_focus.is_focused(window) {
             let text = self.state.custom_entry_name.as_str();
-            let column = ((point.x - self.state.custom_entry_name_bounds?.origin.x) / px(ADVANCE))
-                .max(0.) as usize;
-            return Some(text.chars().take(column).map(char::len_utf16).sum());
+            let byte = input_byte_at_x(
+                window,
+                text,
+                point.x,
+                self.state.custom_entry_name_bounds?.origin.x,
+                self.state.theme.mono_font,
+            );
+            return Some(utf16_at_byte(text, byte));
         }
         let name_focused = self.state.generator_name_focus.is_focused(window);
         let text = if name_focused {
@@ -276,7 +277,13 @@ impl EntityInputHandler for PassApp {
         } else {
             self.state.input_bounds?
         };
-        let column = ((point.x - bounds.origin.x) / px(ADVANCE)).max(0.) as usize;
-        Some(text.chars().take(column).map(char::len_utf16).sum())
+        let byte = input_byte_at_x(
+            window,
+            text,
+            point.x,
+            bounds.origin.x,
+            self.state.theme.mono_font,
+        );
+        Some(utf16_at_byte(text, byte))
     }
 }
