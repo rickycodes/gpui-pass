@@ -23,6 +23,9 @@ Implemented:
 - Edit and delete individual entries. The editor is bounded and preserves supported text exactly. Revision checks, explicit conflict choices, and a per-entry lock protect app writes; other store writers do not participate in that lock and may still race the final check and rename.
 - Use the existing GnuPG agent and card flow, show operation feedback in a shared notification bar, and report card status. YubiKey model and verification support are available where dependencies and hardware permit.
 - Load optional TOML theme settings, with square corners in the default theme. User-facing text is being moved into an embedded `en-US` Fluent catalog.
+- Share titlebar and window-control construction across the main, generator,
+  and custom-entry views; input hit testing and IME cursor placement use
+  measured GPUI text layout rather than a fixed character advance.
 - Build and publish a Linux x86_64 release artifact and checksum through GitHub Actions.
 
 The maintainer reports having exercised the normal workflows against a real
