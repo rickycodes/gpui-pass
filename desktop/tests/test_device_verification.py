@@ -14,7 +14,7 @@ from fido2.ctap1 import RegistrationData
 from fido2.attestation import InvalidSignature
 
 
-HELPER = runpy.run_path(str(Path(__file__).parents[1] / "src/verify_device.py"))
+HELPER = runpy.run_path(str(Path(__file__).parents[1] / "src/security/verify_device.py"))
 
 
 def certificate(name, key, issuer, issuer_key, ca, expired=False):

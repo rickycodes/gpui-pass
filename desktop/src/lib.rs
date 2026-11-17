@@ -223,7 +223,17 @@ pub fn run() {
                     app_id: Some("dev.gpui-pass.desktop".into()),
                     ..Default::default()
                 },
-                move |window, cx| cx.new(|cx| PassApp::new(options, window, cx)),
+                move |window, cx| {
+                    if let Some(gpu) = window.gpu_specs() {
+                        trace!(
+                            "renderer.start device={} software={} debug_build={}",
+                            gpu.device_name,
+                            gpu.is_software_emulated,
+                            cfg!(debug_assertions)
+                        );
+                    }
+                    cx.new(|cx| PassApp::new(options, window, cx))
+                },
             )
             .is_err()
         {

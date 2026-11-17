@@ -44,7 +44,9 @@ jobs:
       - name: Lint desktop
         run: cargo clippy --manifest-path desktop/Cargo.toml --all-targets --locked -- -D warnings
       - name: Test desktop
-        run: cargo test --manifest-path desktop/Cargo.toml --locked
+        run: |
+          cargo test --manifest-path desktop/Cargo.toml --locked
+          cargo test --manifest-path desktop/Cargo.toml -p blade-graphics --lib prime_presentation_tests --locked
 
   pass-integration:
     name: pass and GnuPG integration

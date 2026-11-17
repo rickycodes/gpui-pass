@@ -150,6 +150,7 @@ impl PassApp {
     }
 
     pub(super) fn tick(&mut self, cx: &mut Context<Self>) {
+        diagnostics::performance_tick(self.store_is_loading(), self.state.active);
         if self
             .state
             .device_verification

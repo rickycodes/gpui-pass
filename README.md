@@ -157,6 +157,23 @@ previous file (`diagnostics.log.1`); newly created files are readable only by th
 current user. Events are also printed to stderr. Logs can be inspected directly
 after reproducing a problem without copying terminal output.
 
+Startup diagnostics also record the Vulkan device and whether it uses software
+rendering (`software=true` means graphics run on the CPU). For resource-use
+investigations, launch with `GPUI_PASS_PERF=1 cargo run --manifest-path desktop/Cargo.toml`
+and leave the window idle. Every five seconds, `performance.sample` records the
+number of app renders and timer ticks, plus the time spent building the render
+tree (excluding layout, painting, and GPU work). An idle entries screen should
+settle to zero renders; countdowns and loading animations intentionally redraw.
+These counters contain no entry data. Development builds optimize dependencies
+to reduce the cost of GPUI rendering; the first build after this setting changes
+will recompile them. Use `--release` to measure the fully optimized application.
+
+The desktop backports Blade's upstream Vulkan device-selection fix: PCI GPU
+topology and Wayland/X11 detection replace the `/etc/prime-discrete` heuristic.
+A stale flag otherwise made Intel-only systems fall back to llvmpipe. The patch
+applies to development and release builds; see
+[the patch notes](vendor/blade-graphics/GPUI-PASS-PATCH.md).
+
 ## Compatibility and future platforms
 
 `src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.

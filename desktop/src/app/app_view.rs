@@ -2,6 +2,7 @@ use super::*;
 
 impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let _render_sample = diagnostics::measure_render();
         let main_content = if self.state.navigation.generator_open() {
             self.generator_view(window, cx)
         } else if self.state.navigation.page() == Page::CardDetails {

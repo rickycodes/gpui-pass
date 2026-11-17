@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 class HidMetadataTests(unittest.TestCase):
     def setUp(self):
-        self.helper = runpy.run_path(str(Path(__file__).parents[1] / "src/yubikey_info.py"))
+        self.helper = runpy.run_path(str(Path(__file__).parents[1] / "src/security/yubikey_info.py"))
         self.connection_type = type("FidoConnection", (), {})
         self.connection = MagicMock()
         device = types.SimpleNamespace(pid=types.SimpleNamespace(get_type=lambda: "fixture"))

@@ -12,6 +12,72 @@ use std::{
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 static LOG: OnceLock<Mutex<Option<Log>>> = OnceLock::new();
 static STARTED: OnceLock<Instant> = OnceLock::new();
+static PERFORMANCE: OnceLock<Option<Mutex<Performance>>> = OnceLock::new();
+
+struct Performance {
+    since: Instant,
+    renders: u64,
+    render_time: std::time::Duration,
+    ticks: u64,
+}
+
+fn performance() -> Option<&'static Mutex<Performance>> {
+    PERFORMANCE
+        .get_or_init(|| {
+            (std::env::var_os("GPUI_PASS_PERF").as_deref() == Some(std::ffi::OsStr::new("1"))).then(
+                || {
+                    Mutex::new(Performance {
+                        since: Instant::now(),
+                        renders: 0,
+                        render_time: std::time::Duration::ZERO,
+                        ticks: 0,
+                    })
+                },
+            )
+        })
+        .as_ref()
+}
+
+pub(crate) struct RenderSample(Instant);
+
+impl Drop for RenderSample {
+    fn drop(&mut self) {
+        if let Some(performance) = performance() {
+            let mut stats = performance.lock().unwrap_or_else(|e| e.into_inner());
+            stats.renders += 1;
+            stats.render_time += self.0.elapsed();
+        }
+    }
+}
+
+pub(crate) fn measure_render() -> Option<RenderSample> {
+    performance().map(|_| RenderSample(Instant::now()))
+}
+
+pub(crate) fn performance_tick(loading: bool, active: bool) {
+    let Some(performance) = performance() else {
+        return;
+    };
+    let mut stats = performance.lock().unwrap_or_else(|e| e.into_inner());
+    stats.ticks += 1;
+    let elapsed = stats.since.elapsed();
+    if elapsed < std::time::Duration::from_secs(5) {
+        return;
+    }
+    let message = format!(
+        "performance.sample elapsed_ms={} renders={} render_build_us={} ticks={} loading={loading} active={active}",
+        elapsed.as_millis(),
+        stats.renders,
+        stats.render_time.as_micros(),
+        stats.ticks
+    );
+    stats.since = Instant::now();
+    stats.renders = 0;
+    stats.render_time = std::time::Duration::ZERO;
+    stats.ticks = 0;
+    drop(stats);
+    event(format_args!("{message}"));
+}
 
 struct Log {
     path: PathBuf,

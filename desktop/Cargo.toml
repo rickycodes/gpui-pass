@@ -24,9 +24,16 @@ rustix = { version = "=1.1.4", features = ["fs"] }
 [patch.crates-io]
 # GPUI's zed-async-tar still requires xattr 0.2; adapt its Linux errno to current libc.
 xattr = { path = "../vendor/xattr" }
+# Avoid CPU rendering when a stale PRIME flag hides the only hardware GPU.
+blade-graphics = { path = "../vendor/blade-graphics" }
 
 [profile.release]
 panic = "abort"
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# GPUI, text shaping, and path tessellation are expensive without optimization.
+# Keep application code easy to debug while making normal `cargo run` practical.
+[profile.dev.package."*"]
+opt-level = 2
