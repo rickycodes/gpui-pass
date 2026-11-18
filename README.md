@@ -32,7 +32,8 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Create entries in one composer with explicit New (manual), Pass default
   (pass-compatible random password generated on save), and Memorable phrase
   (editable generated content); manual and memorable text is encrypted exactly
-  as entered.
+  as entered. The composer stays open with cleared fields after a successful
+  save, including confirmed replacements.
 - Existing entry names warn before replacement and verify the stored revision
   has not changed before saving.
 - Remove an individual encrypted entry after a confirmation prompt; folder deletion is not implemented.

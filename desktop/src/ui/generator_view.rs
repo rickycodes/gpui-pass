@@ -152,7 +152,7 @@ impl PassApp {
                 self.state.confirming_overwrite = Some(OverwriteConfirmation { entry });
                 cx.notify();
             }
-            Err(Error::EntryNotFound) => self.start_entry_save(entry, None, cx),
+            Err(Error::EntryNotFound) => self.start_entry_save(entry, None, false, cx),
             Err(error) => {
                 self.set_message(error.to_string());
                 cx.notify();
@@ -164,6 +164,7 @@ impl PassApp {
         &mut self,
         entry: Entry,
         revision: Option<EntryRevision>,
+        clear_form: bool,
         cx: &mut Context<Self>,
     ) {
         if self.state.saving.is_some() {
@@ -199,6 +200,9 @@ impl PassApp {
             cx.notify();
             return;
         };
+        if clear_form {
+            self.clear_create_entry();
+        }
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
             if pass_default {
@@ -282,7 +286,7 @@ impl PassApp {
                 return;
             }
         };
-        self.start_entry_save(pending.entry, Some(revision), cx);
+        self.start_entry_save(pending.entry, Some(revision), true, cx);
     }
 
     pub(super) fn overwrite_confirmation_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
