@@ -7,6 +7,11 @@ pub(super) enum GeneratorMode {
     PassDefault,
 }
 
+const CREATE_CONTENT_HEIGHT: f32 = 100.;
+const CREATE_OPTIONS_HEIGHT: f32 = 80.;
+const CREATE_CONTENT_LABEL_HEIGHT: f32 = 16.;
+const CREATE_PANEL_MIN_HEIGHT: f32 = 560.;
+
 pub(super) struct OverwriteConfirmation {
     entry: Entry,
 }
@@ -457,6 +462,7 @@ impl PassApp {
             .w(px(640.))
             .max_w(px(640.))
             .p(px(36.))
+            .min_h(px(CREATE_PANEL_MIN_HEIGHT))
             .flex()
             .flex_shrink_0()
             .flex_col()
@@ -480,22 +486,37 @@ impl PassApp {
             )
             .child(self.state.theme.label(i18n::text("entry-name")))
             .child(self.custom_entry_name_field(window, cx))
-            .child(self.state.theme.label(i18n::text("custom-entry-contents")))
+            .when(
+                self.state.generator_mode != GeneratorMode::PassDefault,
+                |panel| panel.child(self.state.theme.label(i18n::text("custom-entry-contents"))),
+            )
+            .when(
+                self.state.generator_mode == GeneratorMode::PassDefault,
+                |panel| panel.child(div().h(px(CREATE_CONTENT_LABEL_HEIGHT))),
+            )
             .when(
                 self.state.generator_mode == GeneratorMode::PassDefault,
                 |panel| {
                     panel.child(
                         div()
                             .w_full()
-                            .min_h(px(180.))
+                            .h(px(CREATE_CONTENT_HEIGHT))
                             .flex()
-                            .items_center()
+                            .items_start()
                             .justify_center()
-                            .px(px(24.))
-                            .text_size(px(13.))
-                            .line_height(px(21.))
-                            .text_color(rgb(self.state.theme.colors.muted))
-                            .child(i18n::text("pass-default-help")),
+                            .child(
+                                div()
+                                    .w_full()
+                                    .rounded(px(self.state.theme.radii.field))
+                                    .border_1()
+                                    .border_color(rgb(self.state.theme.colors.accent))
+                                    .bg(rgb(self.state.theme.colors.accent_surface))
+                                    .p(px(12.))
+                                    .text_size(px(13.))
+                                    .line_height(px(18.))
+                                    .text_color(rgb(self.state.theme.colors.ink))
+                                    .child(i18n::text("pass-default-help")),
+                            ),
                     )
                 },
             )
@@ -505,7 +526,9 @@ impl PassApp {
                     panel.child(
                         div()
                             .w_full()
-                            .min_h(px(180.))
+                            .id("create-entry-content")
+                            .h(px(CREATE_CONTENT_HEIGHT))
+                            .overflow_y_scroll()
                             .child(self.generator_name_field(window, cx)),
                     )
                 },
@@ -669,9 +692,17 @@ impl PassApp {
                                 ),
                         )
                 },
+            )
+            .when(
+                self.state.generator_mode != GeneratorMode::Memorable,
+                |panel| panel.child(div().h(px(CREATE_OPTIONS_HEIGHT))),
             );
-
-        let mut footer = div().flex().items_center().justify_end().gap(px(8.));
+        let mut footer = div()
+            .mt_auto()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap(px(8.));
         if self.state.generator_mode == GeneratorMode::Memorable {
             footer = footer.child(
                 self.state
