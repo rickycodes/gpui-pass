@@ -74,9 +74,8 @@ use gpui::{
 };
 use gpui_pass_core::{
     Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg,
-    OperationProgress, OperationStatus, REVEAL_DURATION, RevealRequest, Secret, Session, Store,
-    default_store_path, generate_memorable_password, generate_pass_default_password,
-    harden_process,
+    OperationProgress, OperationStatus, RevealRequest, Secret, Session, Store, default_store_path,
+    generate_memorable_password, generate_pass_default_password, harden_process,
 };
 use loading_spinner::loading_spinner;
 use std::{
@@ -179,7 +178,7 @@ pub(crate) struct PassApp {
 
 impl PassApp {
     pub(crate) fn text_editor_active(&self) -> bool {
-        self.state.editing_entry || self.state.generator_mode == GeneratorMode::Custom
+        self.state.editing_entry || self.state.navigation.generator_open()
     }
 }
 

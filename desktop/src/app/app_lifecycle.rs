@@ -11,8 +11,7 @@ impl PassApp {
             if !app.state.active {
                 app.state.sidebar_scroll.cancel();
                 app.state.session.deactivate();
-                app.clear_generated(cx);
-                app.cancel_edit(cx);
+                app.state.pending_generation = None;
             }
             cx.notify();
         });
@@ -86,7 +85,6 @@ impl PassApp {
             // a watcher stays alive without delivering a removal notification.
             ACTIVE_POLL_INTERVAL
         } else if self.state.session.revealed(Instant::now()).is_some()
-            || self.state.generated.is_some()
             || self.state.clipboard.active()
             || self.state.message_until.is_some()
         {
@@ -113,7 +111,6 @@ impl PassApp {
         self.state.session.select(None);
         self.state.copy_pending = None;
         self.state.reveal = None;
-        self.clear_generated(cx);
         self.clear_message();
         self.state.store = None;
         self.state.entries.clear();
@@ -268,15 +265,6 @@ impl PassApp {
             self.state.message_until = None;
             cx.notify();
         }
-        if self
-            .state
-            .generated
-            .as_ref()
-            .is_some_and(|(_, deadline)| Instant::now() >= *deadline)
-        {
-            self.clear_generated(cx);
-            cx.notify();
-        }
         let now = Instant::now();
         let clipboard_seconds = self.state.clipboard.remaining_seconds(now);
         if self.state.clipboard_seconds != clipboard_seconds {
@@ -302,8 +290,10 @@ impl PassApp {
         {
             self.state.saving = None;
             let was_edit = self.state.saving_edit;
-            let was_custom_entry = self.state.saving_custom_entry;
-            self.state.saving_custom_entry = false;
+            let was_new_entry = self.state.saving_new_entry;
+            let was_generated = self.state.content_generated;
+            self.state.saving_new_entry = false;
+            self.state.content_generated = false;
             match result {
                 Ok((entry, secret)) => {
                     let name = entry.name().to_owned();
@@ -330,23 +320,19 @@ impl PassApp {
                             .find(|entry| entry.name() == name)
                             .cloned(),
                     );
-                    if was_custom_entry {
-                        self.state.saved_entry_name = None;
+                    if was_new_entry {
+                        if was_generated {
+                            self.copy_to_clipboard(secret.expose().to_owned(), name.clone(), cx);
+                        }
                         self.close_generator(cx);
                         self.set_message(i18n::text("custom-entry-saved"));
                     } else {
-                        self.state.saved_entry_name = Some(name.clone());
-                        if !self.state.close_after_save && self.state.active {
-                            let text = secret.expose().to_owned();
-                            self.copy_to_clipboard(text, name, cx);
-                            self.state.generated = Some((secret, Instant::now() + REVEAL_DURATION));
-                        }
                         self.clear_message();
                     }
                 }
                 Err(error) => {
                     self.state.saving_edit = false;
-                    self.state.saving_custom_entry = false;
+                    self.state.saving_new_entry = false;
                     if matches!(&error, Error::EntryConflict) && was_edit {
                         self.state.edit_conflict = true;
                         self.set_message(i18n::text("edit-conflict-notice"));
@@ -408,7 +394,6 @@ impl PassApp {
         self.state.session.hide();
         self.state.copy_pending = None;
         self.state.reveal = None;
-        self.clear_generated(cx);
         self.clear_message();
         let terms: Vec<_> = self
             .state
@@ -444,7 +429,6 @@ impl PassApp {
             .select(self.state.entries.get(index).cloned());
         self.state.reveal = None;
         self.state.copy_pending = None;
-        self.clear_generated(cx);
         self.clear_message();
         cx.notify();
     }
@@ -493,7 +477,6 @@ impl PassApp {
         self.state.session.hide();
         self.state.copy_pending = None;
         self.state.reveal = None;
-        self.clear_generated(cx);
         self.clear_message();
         cx.notify();
     }

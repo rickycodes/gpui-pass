@@ -119,6 +119,9 @@ impl PassApp {
         text: &str,
         cx: &mut Context<Self>,
     ) -> Range<usize> {
+        if self.state.navigation.generator_open() {
+            self.state.content_generated = false;
+        }
         let range = range
             .map(|range| {
                 byte_at_utf16(self.state.generator_name.as_str(), range.start)

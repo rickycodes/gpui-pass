@@ -34,7 +34,6 @@ impl PassApp {
         if let Some(entry) = self.state.session.selected().cloned() {
             self.state.session.hide();
             self.state.reveal = None;
-            self.clear_generated(cx);
             self.state.confirming_delete = Some(entry);
             cx.notify();
         }
@@ -176,7 +175,6 @@ impl PassApp {
             Ok(()) => {
                 self.state.session.hide();
                 self.state.reveal = None;
-                self.clear_generated(cx);
                 self.state.entries.retain(|existing| existing != &entry);
                 self.filter(cx);
             }
@@ -280,7 +278,6 @@ impl PassApp {
             return;
         }
         self.state.revealed_revision = None;
-        self.clear_generated(cx);
         let Some(request) = self.state.session.begin_reveal() else {
             return;
         };
@@ -331,7 +328,6 @@ impl PassApp {
         let Some(entry) = self.state.session.selected().cloned() else {
             return;
         };
-        self.clear_generated(cx);
         self.clear_message();
         let (sender, receiver) = mpsc::sync_channel(1);
         let cancellation = Cancellation::default();

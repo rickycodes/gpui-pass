@@ -4,21 +4,10 @@ use super::*;
 pub(super) enum GeneratorMode {
     Memorable,
     PassDefault,
-    Custom,
-}
-
-#[derive(Clone, Copy)]
-enum OverwriteKind {
-    Generated {
-        mode: GeneratorMode,
-        options: GeneratorOptions,
-    },
-    Custom,
 }
 
 pub(super) struct OverwriteConfirmation {
     entry: Entry,
-    kind: OverwriteKind,
 }
 
 impl PassApp {
@@ -32,21 +21,21 @@ impl PassApp {
         self.state.editor_layout = None;
     }
 
-    pub(super) fn clear_custom_entry(&mut self) {
-        if self.state.generator_mode == GeneratorMode::Custom {
-            self.state.generator_name.zeroize();
-            self.state.generator_mode = GeneratorMode::PassDefault;
-        }
+    pub(super) fn clear_create_entry(&mut self) {
+        self.state.pending_generation = None;
         self.state.custom_entry_name.zeroize();
         self.state.custom_entry_name_selection = 0..0;
         self.state.custom_entry_name_cursor = 0;
         self.state.custom_entry_name_anchor = None;
         self.state.custom_entry_name_marked = None;
         self.state.custom_entry_name_bounds = None;
+        self.state.generator_name.zeroize();
+        self.state.content_generated = false;
+        self.state.generator_mode = GeneratorMode::PassDefault;
         self.reset_generator_cursor();
     }
 
-    pub(super) fn open_custom_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn open_create_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.saving.is_some() {
             return;
         }
@@ -60,16 +49,7 @@ impl PassApp {
         self.state.copy_pending = None;
         self.state.session.hide();
         self.state.reveal = None;
-        self.clear_generated(cx);
-        self.state.generator_name.zeroize();
-        self.state.generator_mode = GeneratorMode::Custom;
-        self.state.custom_entry_name.clear();
-        self.reset_generator_cursor();
-        self.state.custom_entry_name_selection = 0..0;
-        self.state.custom_entry_name_cursor = 0;
-        self.state.custom_entry_name_anchor = None;
-        self.state.custom_entry_name_marked = None;
-        self.state.custom_entry_name_bounds = None;
+        self.clear_create_entry();
         self.state.custom_entry_name_focus.focus(window);
         self.state.navigation.open_generator();
         self.clear_message();
@@ -100,20 +80,40 @@ impl PassApp {
         }
     }
 
-    pub(super) fn open_generator(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.state.saving.is_some() {
-            return;
+    pub(super) fn generate_into_contents(&mut self, cx: &mut Context<Self>) {
+        let result = match self.state.generator_mode {
+            GeneratorMode::Memorable => generate_memorable_password(self.generator_options()),
+            GeneratorMode::PassDefault => generate_pass_default_password(),
+        };
+        match result {
+            Ok(secret) if self.state.generator_name.is_empty() => {
+                self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
+                self.state.content_generated = true;
+                self.reset_generator_cursor();
+                cx.notify();
+            }
+            Ok(secret) => {
+                self.state.pending_generation = Some(secret);
+                cx.notify();
+            }
+            Err(error) => {
+                self.set_message(error.to_string());
+                cx.notify();
+            }
         }
-        self.cancel_edit(cx);
-        self.state.device_verification.cancel();
-        self.state.copy_pending = None;
-        self.state.session.hide();
-        self.state.reveal = None;
-        self.clear_generated(cx);
-        self.state.generator_name_focus.focus(window);
-        self.state.generator_name_selection =
-            self.state.generator_name.len()..self.state.generator_name.len();
-        self.state.navigation.open_generator();
+    }
+
+    pub(super) fn replace_contents_with_generated(&mut self, cx: &mut Context<Self>) {
+        let Some(secret) = self.state.pending_generation.take() else {
+            return;
+        };
+        self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
+        self.state.content_generated = true;
+        self.reset_generator_cursor();
+        cx.notify();
+    }
+    pub(super) fn cancel_pending_generation(&mut self, cx: &mut Context<Self>) {
+        self.state.pending_generation = None;
         cx.notify();
     }
 
@@ -126,144 +126,11 @@ impl PassApp {
             return;
         }
         self.state.navigation.close_generator();
-        self.clear_generated(cx);
-        self.clear_custom_entry();
+        self.clear_create_entry();
         cx.notify();
     }
 
-    pub(super) fn save_generated(&mut self, cx: &mut Context<Self>) {
-        if self.state.generator_mode == GeneratorMode::Custom {
-            self.save_custom_entry(cx);
-            return;
-        }
-        if self.state.saving.is_some() {
-            return;
-        }
-        if self.state.demo {
-            self.set_message("Saving is disabled in fictional demo mode.".into());
-            cx.notify();
-            return;
-        }
-        let name = self
-            .state
-            .generator_name
-            .trim()
-            .strip_suffix(".gpg")
-            .unwrap_or(self.state.generator_name.trim());
-        if name.is_empty() {
-            self.set_message("Enter a name for this password entry.".into());
-            cx.notify();
-            return;
-        }
-        let entry = match Entry::from_relative_file(format!("{name}.gpg")) {
-            Ok(entry) => entry,
-            Err(error) => {
-                self.set_message(error.to_string());
-                cx.notify();
-                return;
-            }
-        };
-        let Some(store) = self.state.store.clone() else {
-            self.set_message("Open a password store before saving a generated entry.".into());
-            cx.notify();
-            return;
-        };
-        let mode = self.state.generator_mode;
-        let options = self.generator_options();
-        match store.entry_revision(&entry) {
-            Ok(_) => {
-                self.state.confirming_overwrite = Some(OverwriteConfirmation {
-                    entry,
-                    kind: OverwriteKind::Generated { mode, options },
-                });
-                cx.notify();
-            }
-            Err(Error::EntryNotFound) => self.start_generated_save(entry, mode, options, None, cx),
-            Err(error) => {
-                self.set_message(error.to_string());
-                cx.notify();
-            }
-        }
-    }
-
-    pub(super) fn start_generated_save(
-        &mut self,
-        entry: Entry,
-        mode: GeneratorMode,
-        options: GeneratorOptions,
-        revision: Option<EntryRevision>,
-        cx: &mut Context<Self>,
-    ) {
-        let gpg = match Gpg::new(&self.state.gpg) {
-            Ok(gpg) => gpg,
-            Err(error) => {
-                self.set_message(error.to_string());
-                cx.notify();
-                return;
-            }
-        };
-        let Some(store) = self.state.store.clone() else {
-            self.set_message("Open a password store before saving a generated entry.".into());
-            cx.notify();
-            return;
-        };
-        let cancellation = Cancellation::default();
-        let progress = OperationProgress::new(OperationStatus::working(
-            "Preparing new entry",
-            "The generated password stays in memory until GnuPG encrypts it.",
-        ));
-        let worker_cancel = cancellation.clone();
-        let worker_progress = progress.clone();
-        let (sender, receiver) = mpsc::sync_channel(1);
-        std::thread::spawn(move || {
-            let result = if let Some(revision) = revision {
-                let secret = match mode {
-                    GeneratorMode::Memorable => generate_memorable_password(options),
-                    GeneratorMode::PassDefault => generate_pass_default_password(),
-                    GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
-                };
-                secret.and_then(|secret| {
-                    gpg.update_generated_entry_if_unchanged(
-                        &store,
-                        &entry,
-                        &secret,
-                        &revision,
-                        &worker_cancel,
-                        &worker_progress,
-                    )
-                    .map(|()| secret)
-                })
-            } else {
-                match mode {
-                    GeneratorMode::Memorable => gpg.generate_entry(
-                        &store,
-                        &entry,
-                        options,
-                        &worker_cancel,
-                        &worker_progress,
-                    ),
-                    GeneratorMode::PassDefault => gpg.generate_pass_default_entry(
-                        &store,
-                        &entry,
-                        &worker_cancel,
-                        &worker_progress,
-                    ),
-                    GeneratorMode::Custom => unreachable!("custom entries use their own save path"),
-                }
-            }
-            .map(|secret| (entry, secret));
-            let _ = sender.send(result);
-        });
-        self.clear_generated(cx);
-        self.clear_message();
-        self.state.saved_entry_name = None;
-        self.state.saving_edit = false;
-        self.state.saving_custom_entry = false;
-        self.state.saving = Some((cancellation, progress, receiver));
-        cx.notify();
-    }
-
-    pub(super) fn save_custom_entry(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn save_entry(&mut self, cx: &mut Context<Self>) {
         if self.state.saving.is_some() {
             return;
         }
@@ -294,13 +161,10 @@ impl PassApp {
         };
         match store.entry_revision(&entry) {
             Ok(_) => {
-                self.state.confirming_overwrite = Some(OverwriteConfirmation {
-                    entry,
-                    kind: OverwriteKind::Custom,
-                });
+                self.state.confirming_overwrite = Some(OverwriteConfirmation { entry });
                 cx.notify();
             }
-            Err(Error::EntryNotFound) => self.start_custom_save(entry, None, cx),
+            Err(Error::EntryNotFound) => self.start_entry_save(entry, None, cx),
             Err(error) => {
                 self.set_message(error.to_string());
                 cx.notify();
@@ -308,7 +172,7 @@ impl PassApp {
         }
     }
 
-    pub(super) fn start_custom_save(
+    pub(super) fn start_entry_save(
         &mut self,
         entry: Entry,
         revision: Option<EntryRevision>,
@@ -342,7 +206,7 @@ impl PassApp {
         };
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
-            "Encrypting custom entry",
+            "Encrypting new entry",
             "Your text stays in memory until GnuPG encrypts it.",
         ));
         let worker_cancel = cancellation.clone();
@@ -364,11 +228,9 @@ impl PassApp {
             .map(|()| (entry, secret));
             let _ = sender.send(result);
         });
-        self.clear_generated(cx);
         self.clear_message();
-        self.state.saved_entry_name = None;
         self.state.saving_edit = false;
-        self.state.saving_custom_entry = true;
+        self.state.saving_new_entry = true;
         self.state.saving = Some((cancellation, progress, receiver));
         cx.notify();
     }
@@ -390,12 +252,7 @@ impl PassApp {
                 return;
             }
         };
-        match pending.kind {
-            OverwriteKind::Generated { mode, options } => {
-                self.start_generated_save(pending.entry, mode, options, Some(revision), cx)
-            }
-            OverwriteKind::Custom => self.start_custom_save(pending.entry, Some(revision), cx),
-        }
+        self.start_entry_save(pending.entry, Some(revision), cx);
     }
 
     pub(super) fn overwrite_confirmation_view(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -471,128 +328,11 @@ impl PassApp {
         self.titlebar("generator-titlebar", None, cx)
     }
 
-    pub(super) fn custom_entry_view(
-        &self,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> gpui::AnyElement {
-        let panel = self
-            .state
-            .theme
-            .panel()
-            .w(px(640.))
-            .max_w(px(640.))
-            .p(px(36.))
-            .flex()
-            .flex_shrink_0()
-            .flex_col()
-            .gap(px(22.));
-        let panel = panel
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .child(
-                        self.state
-                            .theme
-                            .panel_title(i18n::text("custom-entry-title")),
-                    )
-                    .child(
-                        self.state
-                            .theme
-                            .button("cancel-custom-entry", "← Back", false)
-                            .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
-                    ),
-            )
-            .child(self.state.theme.label(i18n::text("entry-name")))
-            .child(self.custom_entry_name_field(window, cx))
-            .child(
-                div()
-                    .max_w(px(500.))
-                    .text_size(px(13.))
-                    .line_height(px(21.))
-                    .text_color(rgb(self.state.theme.colors.muted))
-                    .child(i18n::text("custom-entry-name-help")),
-            )
-            .child(self.state.theme.label(i18n::text("custom-entry-contents")))
-            .child(
-                div()
-                    .w_full()
-                    .min_h(px(180.))
-                    .child(self.generator_name_field(window, cx)),
-            )
-            .child(
-                div()
-                    .max_w(px(520.))
-                    .text_size(px(12.))
-                    .line_height(px(19.))
-                    .text_color(rgb(self.state.theme.colors.muted))
-                    .child(i18n::text("custom-entry-help")),
-            )
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(16.))
-                    .child(
-                        div()
-                            .max_w(px(340.))
-                            .text_size(px(11.))
-                            .line_height(px(17.))
-                            .text_color(rgb(self.state.theme.colors.muted))
-                            .child(i18n::text("no-overwrite")),
-                    )
-                    .child(
-                        self.state
-                            .theme
-                            .button(
-                                "custom-entry-save",
-                                if self.state.saving_custom_entry {
-                                    i18n::text("custom-entry-saving")
-                                } else {
-                                    i18n::text("custom-entry-save")
-                                },
-                                true,
-                            )
-                            .on_click(cx.listener(|app, _, _, cx| app.save_custom_entry(cx))),
-                    ),
-            );
-
-        div()
-            .id("generator-window")
-            .flex_1()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .bg(rgb(self.state.theme.colors.background))
-            .child(self.generator_titlebar(cx))
-            .child(
-                div()
-                    .id("generator-content-scroll")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .flex()
-                    .items_start()
-                    .justify_center()
-                    .px(px(32.))
-                    .pt(px(48.))
-                    .pb(px(48.))
-                    .child(panel),
-            )
-            .into_any_element()
-    }
-
     pub(super) fn generator_view(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        if self.state.generator_mode == GeneratorMode::Custom {
-            return self.custom_entry_view(window, cx);
-        }
         let options = self.generator_options();
         let slider_left = ((self.state.generation_words - 4) as f32 / 4.) * 360.;
         let entity = cx.entity().clone();
@@ -689,7 +429,7 @@ impl PassApp {
                     .child(
                         self.state
                             .theme
-                            .panel_title(i18n::text("password-generator")),
+                            .panel_title(i18n::text("custom-entry-title")),
                     )
                     .child(
                         self.state
@@ -699,7 +439,30 @@ impl PassApp {
                     ),
             )
             .child(self.state.theme.label(i18n::text("entry-name")))
-            .child(self.generator_name_field(window, cx))
+            .child(self.custom_entry_name_field(window, cx))
+            .child(
+                div()
+                    .max_w(px(500.))
+                    .text_size(px(13.))
+                    .line_height(px(21.))
+                    .text_color(rgb(self.state.theme.colors.muted))
+                    .child(i18n::text("custom-entry-name-help")),
+            )
+            .child(self.state.theme.label(i18n::text("custom-entry-contents")))
+            .child(
+                div()
+                    .w_full()
+                    .min_h(px(180.))
+                    .child(self.generator_name_field(window, cx)),
+            )
+            .child(
+                div()
+                    .max_w(px(520.))
+                    .text_size(px(12.))
+                    .line_height(px(19.))
+                    .text_color(rgb(self.state.theme.colors.muted))
+                    .child(i18n::text("custom-entry-help")),
+            )
             .child(
                 div()
                     .flex()
@@ -844,100 +607,40 @@ impl PassApp {
             },
         );
 
-        if let Some((secret, deadline)) = &self.state.generated {
-            let remaining = deadline
-                .saturating_duration_since(Instant::now())
-                .as_secs()
-                .saturating_add(1);
-            panel = panel.child(
-                div()
-                    .border_1()
-                    .border_color(rgb(self.state.theme.colors.border))
-                    .bg(rgb(self.state.theme.colors.accent_surface))
-                    .p(px(18.))
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(16.))
-                    .child(
-                        div()
-                            .id("generated-password-text")
-                            .min_w_0()
-                            .overflow_x_scroll()
-                            .whitespace_nowrap()
-                            .font_family(self.state.theme.mono_font)
-                            .text_size(px(16.))
-                            .child(if self.state.generated_visible {
-                                secret.expose().to_owned()
-                            } else {
-                                "*".repeat(secret.expose().chars().count())
-                            }),
-                    )
-                    .child(
-                        self.state
-                            .theme
-                            .button(
-                                "toggle-generated-visibility",
-                                if self.state.generated_visible {
-                                    "Hide"
-                                } else {
-                                    "Show"
-                                },
-                                false,
-                            )
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                app.state.generated_visible = !app.state.generated_visible;
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .font_family(self.state.theme.mono_font)
-                            .text_size(px(9.))
-                            .text_color(rgb(self.state.theme.colors.muted))
-                            .child(format!("HIDES IN {remaining:02}s")),
-                    ),
-            );
+        if self.state.pending_generation.is_some() {
             panel = panel.child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .child(
-                        self.state
-                            .theme
-                            .button(
-                                "copy-generated",
-                                if self.state.generator_mode == GeneratorMode::Memorable {
-                                    "Copy phrase"
-                                } else {
-                                    "Copy password"
-                                },
-                                true,
-                            )
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                if let Some((secret, _)) = &app.state.generated {
-                                    let text = secret.expose().to_owned();
-                                    let source = app
-                                        .state
-                                        .saved_entry_name
-                                        .clone()
-                                        .unwrap_or_else(|| "generated password".into());
-                                    app.copy_to_clipboard(text, source, cx);
-                                    cx.notify();
-                                }
-                            })),
-                    )
+                    .gap(px(12.))
                     .child(
                         div()
+                            .flex_1()
                             .text_size(px(11.))
                             .text_color(rgb(self.state.theme.colors.muted))
-                            .child(if self.state.saved_entry_name.is_some() {
-                                "Saved and copied."
-                            } else {
-                                "Available for 30 seconds."
-                            }),
+                            .child("Replace the current contents with the generated value?"),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .child(
+                                self.state
+                                    .theme
+                                    .button("cancel-generated-content", "Cancel", false)
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.cancel_pending_generation(cx)
+                                    })),
+                            )
+                            .child(
+                                self.state
+                                    .theme
+                                    .button("replace-generated-content", "Replace", true)
+                                    .on_click(cx.listener(|app, _, _, cx| {
+                                        app.replace_contents_with_generated(cx)
+                                    })),
+                            ),
                     ),
             );
         }
@@ -946,27 +649,41 @@ impl PassApp {
                 .flex()
                 .items_center()
                 .justify_between()
+                .gap(px(16.))
                 .child(
                     div()
-                        .max_w(px(380.))
+                        .max_w(px(340.))
                         .text_size(px(11.))
                         .line_height(px(17.))
                         .text_color(rgb(self.state.theme.colors.muted))
                         .child(i18n::text("no-overwrite")),
                 )
                 .child(
-                    self.state
-                        .theme
-                        .button(
-                            "generate-phrase",
-                            if self.state.saving.is_some() {
-                                "Saving…"
-                            } else {
-                                "Generate & Save"
-                            },
-                            true,
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(
+                            self.state
+                                .theme
+                                .button("generate-into-contents", "Generate", false)
+                                .on_click(
+                                    cx.listener(|app, _, _, cx| app.generate_into_contents(cx)),
+                                ),
                         )
-                        .on_click(cx.listener(|app, _, _, cx| app.save_generated(cx))),
+                        .child(
+                            self.state
+                                .theme
+                                .button(
+                                    "save-entry",
+                                    if self.state.saving.is_some() {
+                                        i18n::text("custom-entry-saving")
+                                    } else {
+                                        i18n::text("custom-entry-save")
+                                    },
+                                    true,
+                                )
+                                .on_click(cx.listener(|app, _, _, cx| app.save_entry(cx))),
+                        ),
                 ),
         );
 
@@ -993,10 +710,5 @@ impl PassApp {
                     .child(panel),
             )
             .into_any_element()
-    }
-
-    pub(super) fn clear_generated(&mut self, _cx: &mut Context<Self>) {
-        self.state.generated = None;
-        self.state.generated_visible = false;
     }
 }

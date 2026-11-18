@@ -118,7 +118,7 @@ impl Render for PassApp {
                 .child(
                     self.state
                         .theme
-                        .shortcut("Ctrl G", i18n::text("shortcut-generate")),
+                        .shortcut("Ctrl N", i18n::text("shortcut-new-entry")),
                 )
                 .child(
                     self.state
@@ -326,22 +326,13 @@ impl PassApp {
                 header.child(
                     self.state
                         .theme
-                        .nav_link("open-custom-entry", i18n::text("new-entry"), false)
+                        .nav_link("open-create-entry", i18n::text("new-entry"), false)
                         .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| cx.stop_propagation())
                         .on_click(
-                            cx.listener(|app, _, window, cx| app.open_custom_entry(window, cx)),
+                            cx.listener(|app, _, window, cx| app.open_create_entry(window, cx)),
                         ),
                 )
             })
-            .child(
-                self.state
-                    .theme
-                    .nav_link("open-generator", i18n::text("generate"), false)
-                    .on_mouse_down(gpui::MouseButton::Left, |_, _, cx| {
-                        cx.stop_propagation();
-                    })
-                    .on_click(cx.listener(|app, _, window, cx| app.open_generator(window, cx))),
-            )
             .when(
                 self.state.yubikey_connection == YubiConnection::Connected,
                 |header| {

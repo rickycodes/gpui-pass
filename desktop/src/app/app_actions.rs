@@ -5,7 +5,7 @@ actions!(
     pass,
     [
         Hide,
-        OpenGenerator,
+        OpenCreateEntry,
         Reveal,
         Refresh,
         FocusSearch,
@@ -35,7 +35,7 @@ actions!(
 pub(super) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Hide, Some("Pass")),
-        KeyBinding::new("ctrl-g", OpenGenerator, Some("Pass")),
+        KeyBinding::new("ctrl-n", OpenCreateEntry, Some("Pass")),
         KeyBinding::new("enter", Reveal, Some("Pass")),
         KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
         KeyBinding::new("ctrl-f", FocusSearch, Some("Pass")),
@@ -65,7 +65,9 @@ pub(super) fn bind_keys(cx: &mut App) {
 
 pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
     view.on_action(cx.listener(|app, _: &Hide, _, cx| app.hide(cx)))
-        .on_action(cx.listener(|app, _: &OpenGenerator, window, cx| app.open_generator(window, cx)))
+        .on_action(
+            cx.listener(|app, _: &OpenCreateEntry, window, cx| app.open_create_entry(window, cx)),
+        )
         .on_action(cx.listener(|app, _: &Reveal, window, cx| {
             if !app.state.navigation.generator_open()
                 && app.state.confirming_delete.is_none()
