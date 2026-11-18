@@ -19,6 +19,10 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 
 ![Card status view showing a connected YubiKey](docs/screenshots/card-status.png)
 
+### Compose
+
+![Compose view showing new entry UI](docs/screenshots/compose.png)
+
 ## Initial scope
 
 - Browse nested `.gpg` entries in an existing store.
