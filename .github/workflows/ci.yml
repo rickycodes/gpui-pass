@@ -25,6 +25,9 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       pass: ${{ steps.filter.outputs.pass }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dorny/paths-filter@v3
         id: filter
         with:
