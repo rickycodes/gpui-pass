@@ -1,5 +1,22 @@
 use super::*;
 
+#[derive(Default)]
+struct FolderTree {
+    entries: Vec<usize>,
+    children: BTreeMap<String, FolderTree>,
+}
+
+impl FolderTree {
+    fn entry_count(&self) -> usize {
+        self.entries.len()
+            + self
+                .children
+                .values()
+                .map(FolderTree::entry_count)
+                .sum::<usize>()
+    }
+}
+
 impl PassApp {
     pub(super) fn new(options: Options, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
@@ -114,6 +131,9 @@ impl PassApp {
         self.state.store = None;
         self.state.entries.clear();
         self.state.filtered.clear();
+        self.state.sidebar_rows.clear();
+        self.state.sidebar_cursor = 0;
+        self.state.expanded_folders.clear();
         if self.state.loading_demo {
             cx.notify();
             return;
@@ -464,9 +484,171 @@ impl PassApp {
             .first()
             .map(|index| self.state.entries[*index].clone());
         self.state.session.select(first);
+        self.rebuild_sidebar_rows();
         self.state
             .list_scroll
             .scroll_to_item(0, ScrollStrategy::Top);
+    }
+
+    fn add_folder_paths(folder: &str, folders: &mut HashSet<String>) {
+        let mut path = String::new();
+        for part in folder.split('/').filter(|part| !part.is_empty()) {
+            if !path.is_empty() {
+                path.push('/');
+            }
+            path.push_str(part);
+            folders.insert(path.clone());
+        }
+    }
+
+    fn insert_entry(tree: &mut FolderTree, entry: &Entry, index: usize) {
+        let mut node = tree;
+        for part in entry.folder().split('/').filter(|part| !part.is_empty()) {
+            node = node.children.entry(part.to_owned()).or_default();
+        }
+        node.entries.push(index);
+    }
+
+    fn flatten_sidebar_rows(
+        tree: &FolderTree,
+        prefix: &str,
+        depth: usize,
+        expanded: &HashSet<String>,
+        rows: &mut Vec<SidebarRow>,
+    ) {
+        for index in &tree.entries {
+            rows.push(SidebarRow::Entry {
+                index: *index,
+                depth,
+            });
+        }
+        for (name, child) in &tree.children {
+            let path = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            rows.push(SidebarRow::Folder {
+                path: path.clone(),
+                depth,
+                count: child.entry_count(),
+            });
+            if expanded.contains(&path) {
+                Self::flatten_sidebar_rows(child, &path, depth + 1, expanded, rows);
+            }
+        }
+    }
+
+    fn rebuild_sidebar_rows(&mut self) {
+        let mut tree = FolderTree::default();
+        for index in &self.state.filtered {
+            Self::insert_entry(&mut tree, &self.state.entries[*index], *index);
+        }
+        if !self.state.query.trim().is_empty() {
+            for index in &self.state.filtered {
+                Self::add_folder_paths(
+                    self.state.entries[*index].folder(),
+                    &mut self.state.expanded_folders,
+                );
+            }
+        }
+        let previous = self
+            .state
+            .sidebar_rows
+            .get(self.state.sidebar_cursor)
+            .cloned();
+        let mut rows = Vec::new();
+        Self::flatten_sidebar_rows(&tree, "", 0, &self.state.expanded_folders, &mut rows);
+        self.state.sidebar_rows = rows;
+        self.state.sidebar_cursor = previous
+            .and_then(|row| {
+                self.state
+                    .sidebar_rows
+                    .iter()
+                    .position(|candidate| *candidate == row)
+            })
+            .or_else(|| {
+                self.state.session.selected().and_then(|selected| {
+                    self.state.sidebar_rows.iter().position(|row| {
+                        matches!(
+                            row,
+                            SidebarRow::Entry { index, .. }
+                                if self.state.entries[*index] == *selected
+                        )
+                    })
+                })
+            })
+            .or_else(|| {
+                self.state
+                    .sidebar_rows
+                    .iter()
+                    .position(|row| matches!(row, SidebarRow::Entry { .. }))
+            })
+            .unwrap_or(0);
+    }
+
+    pub(super) fn toggle_folder(&mut self, path: &str, cx: &mut Context<Self>) {
+        if self.state.expanded_folders.contains(path) {
+            self.state.expanded_folders.remove(path);
+        } else {
+            self.state.expanded_folders.insert(path.to_owned());
+        }
+        self.rebuild_sidebar_rows();
+        self.state.sidebar_cursor = self
+            .state
+            .sidebar_rows
+            .iter()
+            .position(
+                |row| matches!(row, SidebarRow::Folder { path: row_path, .. } if row_path == path),
+            )
+            .unwrap_or(self.state.sidebar_cursor);
+        cx.notify();
+    }
+
+    pub(super) fn move_sidebar_horizontally(
+        &mut self,
+        delta: isize,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.state.custom_entry_name_focus.is_focused(window)
+            || self.state.generator_name_focus.is_focused(window)
+            || !self.state.query.is_empty()
+        {
+            return false;
+        }
+        let Some(row) = self
+            .state
+            .sidebar_rows
+            .get(self.state.sidebar_cursor)
+            .cloned()
+        else {
+            return false;
+        };
+        let path = match row {
+            SidebarRow::Folder { path, .. } => path,
+            SidebarRow::Entry { index, .. } => self.state.entries[index].folder().to_owned(),
+        };
+        if path.is_empty() {
+            return true;
+        }
+        if delta < 0 {
+            self.state.expanded_folders.remove(&path);
+        } else {
+            self.state.expanded_folders.insert(path.clone());
+        }
+        self.rebuild_sidebar_rows();
+        self.state.sidebar_cursor = self
+            .state
+            .sidebar_rows
+            .iter()
+            .position(|row| match row {
+                SidebarRow::Folder { path: row_path, .. } => row_path == &path,
+                SidebarRow::Entry { index, .. } => self.state.entries[*index].folder() == path,
+            })
+            .unwrap_or(self.state.sidebar_cursor);
+        cx.notify();
+        true
     }
 
     pub(super) fn choose(&mut self, index: usize, cx: &mut Context<Self>) {
@@ -480,23 +662,31 @@ impl PassApp {
         self.state.reveal = None;
         self.state.copy_pending = None;
         self.clear_message();
+        if let Some(position) = self.state.sidebar_rows.iter().position(
+            |row| matches!(row, SidebarRow::Entry { index: row_index, .. } if *row_index == index),
+        ) {
+            self.state.sidebar_cursor = position;
+        }
         cx.notify();
     }
 
     pub(super) fn navigate(&mut self, delta: isize, cx: &mut Context<Self>) {
         self.state.sidebar_scroll.cancel();
-        if self.state.filtered.is_empty() {
+        if self.state.sidebar_rows.is_empty() {
             return;
         }
         let position = self
             .state
-            .filtered
-            .iter()
-            .position(|index| self.state.session.selected() == self.state.entries.get(*index))
-            .unwrap_or(0);
-        let next =
-            (position as isize + delta).clamp(0, self.state.filtered.len() as isize - 1) as usize;
-        self.choose(self.state.filtered[next], cx);
+            .sidebar_cursor
+            .min(self.state.sidebar_rows.len().saturating_sub(1));
+        let next = (position as isize + delta).clamp(0, self.state.sidebar_rows.len() as isize - 1)
+            as usize;
+        self.state.sidebar_cursor = next;
+        if let SidebarRow::Entry { index, .. } = self.state.sidebar_rows[next] {
+            self.choose(index, cx);
+        } else {
+            cx.notify();
+        }
         self.state
             .list_scroll
             .scroll_to_item(next, ScrollStrategy::Center);

@@ -1,7 +1,12 @@
 use super::*;
 
 impl PassApp {
-    pub(super) fn entry_row(&self, index: usize, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn entry_row(
+        &self,
+        index: usize,
+        depth: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
         let entry = &self.state.entries[index];
         let active = self.state.session.selected() == Some(entry);
         div()
@@ -11,6 +16,7 @@ impl PassApp {
             .flex_col()
             .gap(px(5.))
             .px(px(22.))
+            .pl(px(22. + depth as f32 * 16.))
             .py(px(16.))
             .h(px(76.))
             .overflow_hidden()
@@ -65,6 +71,82 @@ impl PassApp {
             .into_any_element()
     }
 
+    pub(super) fn folder_row(
+        &self,
+        path: &str,
+        depth: usize,
+        count: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let expanded = self.state.expanded_folders.contains(path);
+        let focused = self
+            .state
+            .sidebar_rows
+            .get(self.state.sidebar_cursor)
+            .is_some_and(
+                |row| matches!(row, SidebarRow::Folder { path: row_path, .. } if row_path == path),
+            );
+        let folder_path = path.to_owned();
+        let folder_id = folder_path
+            .bytes()
+            .fold(14_695_981_039_346_656_037_u64, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(1_099_511_628_211_u64)
+            });
+        let label = path.rsplit('/').next().unwrap_or(path).to_owned();
+        div()
+            .id(("folder", folder_id))
+            .w_full()
+            .h(px(76.))
+            .px(px(22.))
+            .pl(px(22. + depth as f32 * 16.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .border_b_1()
+            .border_color(rgb(self.state.theme.colors.border))
+            .bg(rgb(if focused {
+                self.state.theme.colors.nav_highlight
+            } else {
+                self.state.theme.colors.background
+            }))
+            .cursor_pointer()
+            .hover(|style| style.bg(rgb(self.state.theme.colors.hover)))
+            .on_click(cx.listener(move |app, _, window, cx| {
+                app.state.focus.focus(window);
+                app.toggle_folder(&folder_path, cx);
+            }))
+            .child(
+                div()
+                    .w(px(16.))
+                    .text_color(rgb(self.state.theme.colors.muted))
+                    .child(if expanded { "⌄" } else { "›" }),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_size(px(13.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .font_family(self.state.theme.mono_font)
+                    .text_size(px(11.))
+                    .text_color(rgb(self.state.theme.colors.muted))
+                    .child(format!("{count:02}")),
+            )
+            .into_any_element()
+    }
+
+    pub(super) fn sidebar_row(&self, row: &SidebarRow, cx: &mut Context<Self>) -> gpui::AnyElement {
+        match row {
+            SidebarRow::Folder { path, depth, count } => self.folder_row(path, *depth, *count, cx),
+            SidebarRow::Entry { index, depth } => self.entry_row(*index, *depth, cx),
+        }
+    }
+
     pub(super) fn sidebar(&self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
         div()
             .w(px(302.))
@@ -105,15 +187,16 @@ impl PassApp {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .when(!self.state.filtered.is_empty(), |view| {
+                    .when(!self.state.sidebar_rows.is_empty(), |view| {
                         view.child(
                             uniform_list(
                                 "entries",
-                                self.state.filtered.len(),
+                                self.state.sidebar_rows.len(),
                                 cx.processor(|app, range: Range<usize>, _, cx| {
                                     range
                                         .map(|position| {
-                                            app.entry_row(app.state.filtered[position], cx)
+                                            let row = app.state.sidebar_rows[position].clone();
+                                            app.sidebar_row(&row, cx)
                                         })
                                         .collect::<Vec<_>>()
                                 }),

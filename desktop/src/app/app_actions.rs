@@ -111,8 +111,16 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         }))
         .on_action(cx.listener(|app, _: &Backspace, window, cx| app.backspace(window, cx)))
         .on_action(cx.listener(|app, _: &Delete, window, cx| app.delete(window, cx)))
-        .on_action(cx.listener(|app, _: &Left, window, cx| app.move_cursor(-1, window, cx)))
-        .on_action(cx.listener(|app, _: &Right, window, cx| app.move_cursor(1, window, cx)))
+        .on_action(cx.listener(|app, _: &Left, window, cx| {
+            if !app.move_sidebar_horizontally(-1, window, cx) {
+                app.move_cursor(-1, window, cx);
+            }
+        }))
+        .on_action(cx.listener(|app, _: &Right, window, cx| {
+            if !app.move_sidebar_horizontally(1, window, cx) {
+                app.move_cursor(1, window, cx);
+            }
+        }))
         .on_action(cx.listener(|app, _: &SelectLeft, window, cx| {
             if app.state.custom_entry_name_focus.is_focused(window) {
                 app.select_custom_entry_name(-1, cx);

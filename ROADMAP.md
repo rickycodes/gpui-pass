@@ -16,7 +16,9 @@ Git integration, remote sync, cross-platform support, key management, and additi
 
 Implemented:
 
-- Browse nested entries, search names without decrypting, reveal multiline entries, and hide secrets on timeout, selection changes, Escape, and window deactivation.
+- Group entries by their existing store folders in an expandable sidebar. Search
+  remains global and expands matching folder paths; keyboard navigation follows
+  visible folders and entries.
 - Copy the complete entry without displaying it. `PASSWORD_STORE_CLIP_TIME` controls the timeout (45 seconds by default); the app restores the previous clipboard contents when it still owns the clipboard and shows a countdown.
 - Create entries in one composer with explicit New (manual), Pass default
   (pass-compatible random password generated on save), and Memorable phrase

@@ -63,7 +63,7 @@ mod window_control_glyph;
 #[path = "security/yubikey_detection.rs"]
 mod yubikey_detection;
 
-use app_state::AppState;
+use app_state::{AppState, SidebarRow};
 use fluent_bundle::FluentArgs;
 use generator_view::{GeneratorMode, OverwriteConfirmation};
 use gpui::{
@@ -80,7 +80,7 @@ use gpui_pass_core::{
 use loading_spinner::loading_spinner;
 use std::{
     borrow::Cow,
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     io::{BufRead, BufReader},
     ops::Range,
     path::PathBuf,

@@ -1,11 +1,26 @@
 use super::*;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum SidebarRow {
+    Folder {
+        path: String,
+        depth: usize,
+        count: usize,
+    },
+    Entry {
+        index: usize,
+        depth: usize,
+    },
+}
 pub(crate) struct AppState {
     // Store and entry browsing.
     pub(super) theme: Theme,
     pub(super) session: Session,
     pub(super) entries: Vec<Entry>,
     pub(super) filtered: Vec<usize>,
+    pub(super) sidebar_rows: Vec<SidebarRow>,
+    pub(super) sidebar_cursor: usize,
+    pub(super) expanded_folders: HashSet<String>,
     pub(super) list_scroll: UniformListScrollHandle,
     pub(super) sidebar_scroll: sidebar_scroll::SidebarScroll,
     pub(super) query: String,
@@ -105,6 +120,9 @@ impl AppState {
             session: Session::default(),
             entries: Vec::new(),
             filtered: Vec::new(),
+            sidebar_rows: Vec::new(),
+            sidebar_cursor: 0,
+            expanded_folders: HashSet::new(),
             list_scroll: UniformListScrollHandle::new(),
             sidebar_scroll: sidebar_scroll::SidebarScroll::default(),
             query: String::new(),
