@@ -31,7 +31,7 @@ clipboard-restores-in = Clipboard restores in { $seconds ->
 }
 editor-limit = Editor limit: 16 KiB and 512 lines. Your text was not changed.
 overwrite-entry-title = Replace existing entry?
-pass-default-help = pass will generate a random password using its configured defaults and add it to the store.
+pass-default-help = Pass generates a random password with its configured defaults, encrypts it, and writes the new entry directly to the store.
 overwrite-entry-help = This name already exists. Replacing it will encrypt the new content over the current entry.
 overwrite-entry-confirm = Replace entry
 overwrite-entry-conflict = The entry changed while you were confirming. Review it and try again.

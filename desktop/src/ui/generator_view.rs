@@ -554,24 +554,24 @@ impl PassApp {
                         self.state
                             .theme
                             .button(
-                                "mode-pass-default",
-                                i18n::text("pass-default"),
-                                self.state.generator_mode == GeneratorMode::PassDefault,
-                            )
-                            .on_click(cx.listener(|app, _, _, cx| {
-                                app.select_generator_mode(GeneratorMode::PassDefault, cx);
-                            })),
-                    )
-                    .child(
-                        self.state
-                            .theme
-                            .button(
                                 "mode-memorable",
                                 i18n::text("memorable-phrase"),
                                 self.state.generator_mode == GeneratorMode::Memorable,
                             )
                             .on_click(cx.listener(|app, _, _, cx| {
                                 app.select_generator_mode(GeneratorMode::Memorable, cx);
+                            })),
+                    )
+                    .child(
+                        self.state
+                            .theme
+                            .button(
+                                "mode-pass-default",
+                                i18n::text("pass-default"),
+                                self.state.generator_mode == GeneratorMode::PassDefault,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.select_generator_mode(GeneratorMode::PassDefault, cx);
                             })),
                     ),
             )
