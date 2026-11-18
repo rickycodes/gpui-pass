@@ -61,6 +61,21 @@ hardware.
 
 These are worthwhile follow-ups but are not release blockers:
 
+### GnuPG smart-card coexistence
+
+The app currently keeps a GnuPG smart-card watcher alive and performs
+background `--card-status all` probes. These can contend with an external
+GnuPG operation, such as Git commit signing, and may leave `gpg-agent` or
+`scdaemon` needing a card replug before the operation succeeds. This is an
+after-v1 reliability follow-up, not a v1 feature requirement.
+
+- On Linux, prefer the existing udev/USB watcher for card insertion and
+  removal instead of maintaining a persistent GnuPG smart-card connection.
+- Keep GnuPG status probes one-shot and only run them when card details are
+  needed; avoid unnecessary probes during app crypto operations.
+- Verify coexistence with Git signing, including repeated insert/remove and
+  concurrent app/external GnuPG workflows.
+
 ### Manual store backup and restore
 
 This is an after-v1, non-blocking feature. It will provide an explicit
