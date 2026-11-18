@@ -11,7 +11,6 @@ impl PassApp {
             if !app.state.active {
                 app.state.sidebar_scroll.cancel();
                 app.state.session.deactivate();
-                app.state.pending_generation = None;
             }
             cx.notify();
         });

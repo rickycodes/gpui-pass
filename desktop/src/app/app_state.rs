@@ -33,7 +33,6 @@ pub(crate) struct AppState {
     // Revealing, copying, and composing secrets.
     pub(super) reveal: Option<(RevealRequest, Receiver<VersionedSecretResult>)>,
     pub(super) copy_pending: Option<PendingCopy>,
-    pub(super) pending_generation: Option<Secret>,
     pub(super) content_generated: bool,
     pub(super) clipboard: ClipboardState,
     pub(super) clipboard_seconds: Option<u64>,
@@ -131,7 +130,6 @@ impl AppState {
             load: None,
             reveal: None,
             copy_pending: None,
-            pending_generation: None,
             content_generated: false,
             clipboard: ClipboardState::default(),
             clipboard_seconds: None,

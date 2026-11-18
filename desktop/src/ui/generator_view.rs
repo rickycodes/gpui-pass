@@ -23,7 +23,6 @@ impl PassApp {
     }
 
     pub(super) fn clear_create_entry(&mut self) {
-        self.state.pending_generation = None;
         self.state.custom_entry_name.zeroize();
         self.state.custom_entry_name_selection = 0..0;
         self.state.custom_entry_name_cursor = 0;
@@ -66,7 +65,6 @@ impl PassApp {
     }
     pub(super) fn select_generator_mode(&mut self, mode: GeneratorMode, cx: &mut Context<Self>) {
         self.state.generator_mode = mode;
-        self.state.pending_generation = None;
         self.state.content_generated = false;
         cx.notify();
     }
@@ -94,14 +92,10 @@ impl PassApp {
             GeneratorMode::PassDefault => return,
         };
         match result {
-            Ok(secret) if self.state.generator_name.is_empty() => {
+            Ok(secret) => {
                 self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
                 self.state.content_generated = true;
                 self.reset_generator_cursor();
-                cx.notify();
-            }
-            Ok(secret) => {
-                self.state.pending_generation = Some(secret);
                 cx.notify();
             }
             Err(error) => {
@@ -109,20 +103,6 @@ impl PassApp {
                 cx.notify();
             }
         }
-    }
-
-    pub(super) fn replace_contents_with_generated(&mut self, cx: &mut Context<Self>) {
-        let Some(secret) = self.state.pending_generation.take() else {
-            return;
-        };
-        self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
-        self.state.content_generated = true;
-        self.reset_generator_cursor();
-        cx.notify();
-    }
-    pub(super) fn cancel_pending_generation(&mut self, cx: &mut Context<Self>) {
-        self.state.pending_generation = None;
-        cx.notify();
     }
 
     pub(super) fn close_generator(&mut self, cx: &mut Context<Self>) {
@@ -687,43 +667,6 @@ impl PassApp {
                 },
             );
 
-        if self.state.pending_generation.is_some() {
-            panel = panel.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_between()
-                    .gap(px(12.))
-                    .child(
-                        div()
-                            .flex_1()
-                            .text_size(px(11.))
-                            .text_color(rgb(self.state.theme.colors.muted))
-                            .child("Replace the current contents with the generated value?"),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .gap(px(8.))
-                            .child(
-                                self.state
-                                    .theme
-                                    .button("cancel-generated-content", "Cancel", false)
-                                    .on_click(cx.listener(|app, _, _, cx| {
-                                        app.cancel_pending_generation(cx)
-                                    })),
-                            )
-                            .child(
-                                self.state
-                                    .theme
-                                    .button("replace-generated-content", "Replace", true)
-                                    .on_click(cx.listener(|app, _, _, cx| {
-                                        app.replace_contents_with_generated(cx)
-                                    })),
-                            ),
-                    ),
-            );
-        }
         let mut footer = div().flex().items_center().justify_end().gap(px(8.));
         if self.state.generator_mode == GeneratorMode::Memorable {
             footer = footer.child(
