@@ -136,7 +136,7 @@ impl AppState {
             clipboard: ClipboardState::default(),
             clipboard_seconds: None,
             generation_words: 6,
-            generator_mode: GeneratorMode::PassDefault,
+            generator_mode: GeneratorMode::New,
             generation_digits: true,
             generation_separators: true,
             generator_slider_bounds: None,

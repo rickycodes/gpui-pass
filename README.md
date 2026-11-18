@@ -29,9 +29,10 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Restore the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), unless another app has changed the clipboard first.
 - Hide after 30 seconds, on selection/search changes, refresh, Escape, and window deactivation.
 - Cancel pending reveals and reject obsolete or background reveal/copy results.
-- Create entries in one composer: start with blank single-line or multiline
-  content, generate memorable phrases or pass-default passwords into the
-  editor, customize the content, and encrypt it exactly as entered.
+- Create entries in one composer with explicit New (manual), Pass default
+  (pass-compatible random password generated on save), and Memorable phrase
+  (editable generated content); manual and memorable text is encrypted exactly
+  as entered.
 - Existing entry names warn before replacement and verify the stored revision
   has not changed before saving.
 - Remove an individual encrypted entry after a confirmation prompt; folder deletion is not implemented.

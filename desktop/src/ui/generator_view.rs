@@ -2,6 +2,7 @@ use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum GeneratorMode {
+    New,
     Memorable,
     PassDefault,
 }
@@ -31,7 +32,7 @@ impl PassApp {
         self.state.custom_entry_name_bounds = None;
         self.state.generator_name.zeroize();
         self.state.content_generated = false;
-        self.state.generator_mode = GeneratorMode::PassDefault;
+        self.state.generator_mode = GeneratorMode::New;
         self.reset_generator_cursor();
     }
 
@@ -63,6 +64,12 @@ impl PassApp {
             add_separators: self.state.generation_separators,
         }
     }
+    pub(super) fn select_generator_mode(&mut self, mode: GeneratorMode, cx: &mut Context<Self>) {
+        self.state.generator_mode = mode;
+        self.state.pending_generation = None;
+        self.state.content_generated = false;
+        cx.notify();
+    }
 
     pub(super) fn set_generator_strength_from_x(
         &mut self,
@@ -82,8 +89,9 @@ impl PassApp {
 
     pub(super) fn generate_into_contents(&mut self, cx: &mut Context<Self>) {
         let result = match self.state.generator_mode {
+            GeneratorMode::New => return,
             GeneratorMode::Memorable => generate_memorable_password(self.generator_options()),
-            GeneratorMode::PassDefault => generate_pass_default_password(),
+            GeneratorMode::PassDefault => return,
         };
         match result {
             Ok(secret) if self.state.generator_name.is_empty() => {
@@ -181,15 +189,22 @@ impl PassApp {
         if self.state.saving.is_some() {
             return;
         }
-        let secret = match Secret::from_bytes(Zeroizing::new(
-            self.state.generator_name.as_bytes().to_vec(),
-        )) {
-            Ok(secret) => secret,
-            Err(error) => {
-                self.set_message(error.to_string());
-                cx.notify();
-                return;
-            }
+        let pass_default = self.state.generator_mode == GeneratorMode::PassDefault;
+        let secret = if pass_default {
+            None
+        } else {
+            Some(
+                match Secret::from_bytes(Zeroizing::new(
+                    self.state.generator_name.as_bytes().to_vec(),
+                )) {
+                    Ok(secret) => secret,
+                    Err(error) => {
+                        self.set_message(error.to_string());
+                        cx.notify();
+                        return;
+                    }
+                },
+            )
         };
         let gpg = match Gpg::new(&self.state.gpg) {
             Ok(gpg) => gpg,
@@ -206,29 +221,64 @@ impl PassApp {
         };
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(
-            "Encrypting new entry",
-            "Your text stays in memory until GnuPG encrypts it.",
+            if pass_default {
+                "Generating and encrypting entry"
+            } else {
+                "Encrypting new entry"
+            },
+            if pass_default {
+                "pass will generate the password before GnuPG encrypts it."
+            } else {
+                "Your text stays in memory until GnuPG encrypts it."
+            },
         ));
         let worker_cancel = cancellation.clone();
         let worker_progress = progress.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         std::thread::spawn(move || {
-            let result = if let Some(revision) = revision {
-                gpg.update_entry_if_unchanged(
-                    &store,
-                    &entry,
-                    &secret,
-                    &revision,
-                    &worker_cancel,
-                    &worker_progress,
-                )
-            } else {
-                gpg.create_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
-            }
-            .map(|()| (entry, secret));
+            let result = (|| {
+                if pass_default && revision.is_none() {
+                    let secret = gpg.generate_pass_default_entry(
+                        &store,
+                        &entry,
+                        &worker_cancel,
+                        &worker_progress,
+                    )?;
+                    return Ok((entry, secret));
+                }
+                let secret = match secret {
+                    Some(secret) => secret,
+                    None => generate_pass_default_password()?,
+                };
+                let result = if let Some(revision) = revision {
+                    if pass_default {
+                        gpg.update_generated_entry_if_unchanged(
+                            &store,
+                            &entry,
+                            &secret,
+                            &revision,
+                            &worker_cancel,
+                            &worker_progress,
+                        )
+                    } else {
+                        gpg.update_entry_if_unchanged(
+                            &store,
+                            &entry,
+                            &secret,
+                            &revision,
+                            &worker_cancel,
+                            &worker_progress,
+                        )
+                    }
+                } else {
+                    gpg.create_entry(&store, &entry, &secret, &worker_cancel, &worker_progress)
+                };
+                result.map(|()| (entry, secret))
+            })();
             let _ = sender.send(result);
         });
         self.clear_message();
+        self.state.content_generated = pass_default;
         self.state.saving_edit = false;
         self.state.saving_new_entry = true;
         self.state.saving = Some((cancellation, progress, receiver));
@@ -280,17 +330,23 @@ impl PassApp {
                     .flex()
                     .flex_col()
                     .gap(px(20.))
-                    .child(self.state.theme.label(i18n::text("overwrite-entry-title")))
                     .child(
                         div()
-                            .text_size(px(22.))
+                            .text_size(px(18.))
+                            .line_height(px(24.))
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(i18n::text("overwrite-entry-title")),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(24.))
                             .font_weight(FontWeight::MEDIUM)
                             .child(pending.entry.name().to_owned()),
                     )
                     .child(
                         div()
                             .text_size(px(13.))
-                            .line_height(px(21.))
+                            .line_height(px(18.))
                             .text_color(rgb(self.state.theme.colors.muted))
                             .child(i18n::text("overwrite-entry-help")),
                     )
@@ -420,7 +476,7 @@ impl PassApp {
             .flex()
             .flex_shrink_0()
             .flex_col()
-            .gap(px(24.))
+            .gap(px(16.))
             .child(
                 div()
                     .flex()
@@ -440,28 +496,35 @@ impl PassApp {
             )
             .child(self.state.theme.label(i18n::text("entry-name")))
             .child(self.custom_entry_name_field(window, cx))
-            .child(
-                div()
-                    .max_w(px(500.))
-                    .text_size(px(13.))
-                    .line_height(px(21.))
-                    .text_color(rgb(self.state.theme.colors.muted))
-                    .child(i18n::text("custom-entry-name-help")),
-            )
             .child(self.state.theme.label(i18n::text("custom-entry-contents")))
-            .child(
-                div()
-                    .w_full()
-                    .min_h(px(180.))
-                    .child(self.generator_name_field(window, cx)),
+            .when(
+                self.state.generator_mode == GeneratorMode::PassDefault,
+                |panel| {
+                    panel.child(
+                        div()
+                            .w_full()
+                            .min_h(px(180.))
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .px(px(24.))
+                            .text_size(px(13.))
+                            .line_height(px(21.))
+                            .text_color(rgb(self.state.theme.colors.muted))
+                            .child(i18n::text("pass-default-help")),
+                    )
+                },
             )
-            .child(
-                div()
-                    .max_w(px(520.))
-                    .text_size(px(12.))
-                    .line_height(px(19.))
-                    .text_color(rgb(self.state.theme.colors.muted))
-                    .child(i18n::text("custom-entry-help")),
+            .when(
+                self.state.generator_mode != GeneratorMode::PassDefault,
+                |panel| {
+                    panel.child(
+                        div()
+                            .w_full()
+                            .min_h(px(180.))
+                            .child(self.generator_name_field(window, cx)),
+                    )
+                },
             )
             .child(
                 div()
@@ -472,13 +535,24 @@ impl PassApp {
                         self.state
                             .theme
                             .button(
+                                "mode-new",
+                                i18n::text("new-entry"),
+                                self.state.generator_mode == GeneratorMode::New,
+                            )
+                            .on_click(cx.listener(|app, _, _, cx| {
+                                app.select_generator_mode(GeneratorMode::New, cx);
+                            })),
+                    )
+                    .child(
+                        self.state
+                            .theme
+                            .button(
                                 "mode-pass-default",
-                                "Pass default",
+                                i18n::text("pass-default"),
                                 self.state.generator_mode == GeneratorMode::PassDefault,
                             )
                             .on_click(cx.listener(|app, _, _, cx| {
-                                app.state.generator_mode = GeneratorMode::PassDefault;
-                                cx.notify();
+                                app.select_generator_mode(GeneratorMode::PassDefault, cx);
                             })),
                     )
                     .child(
@@ -486,12 +560,11 @@ impl PassApp {
                             .theme
                             .button(
                                 "mode-memorable",
-                                "Memorable phrase",
+                                i18n::text("memorable-phrase"),
                                 self.state.generator_mode == GeneratorMode::Memorable,
                             )
                             .on_click(cx.listener(|app, _, _, cx| {
-                                app.state.generator_mode = GeneratorMode::Memorable;
-                                cx.notify();
+                                app.select_generator_mode(GeneratorMode::Memorable, cx);
                             })),
                     ),
             )
@@ -500,34 +573,11 @@ impl PassApp {
                 |panel| {
                     panel
                         .child(
-                            div().flex().items_start().justify_between().child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .gap(px(8.))
-                                    .child(self.state.theme.label("PASSWORD GENERATOR"))
-                                    .child(
-                                        div()
-                                            .text_size(px(28.))
-                                            .font_weight(FontWeight::MEDIUM)
-                                            .child(i18n::text("phrase-description")),
-                                    ),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .max_w(px(500.))
-                                .text_size(px(13.))
-                                .line_height(px(21.))
-                                .text_color(rgb(self.state.theme.colors.muted))
-                                .child(i18n::text("random-phrase-help")),
-                        )
-                        .child(
                             div()
                                 .flex()
                                 .items_center()
                                 .justify_between()
-                                .gap(px(24.))
+                                .gap(px(16.))
                                 .child(slider)
                                 .child(
                                     div()
@@ -546,7 +596,7 @@ impl PassApp {
                             div()
                                 .flex()
                                 .items_center()
-                                .gap(px(24.))
+                                .gap(px(16.))
                                 .child(
                                     div()
                                         .id("toggle-generator-digits")
@@ -561,11 +611,33 @@ impl PassApp {
                                                 !app.state.generation_digits;
                                             cx.notify();
                                         }))
-                                        .child(if self.state.generation_digits {
-                                            "☑"
-                                        } else {
-                                            "☐"
-                                        })
+                                        .child(
+                                            div()
+                                                .size(px(22.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .border_2()
+                                                .border_color(rgb(
+                                                    if self.state.generation_digits {
+                                                        self.state.theme.colors.accent
+                                                    } else {
+                                                        self.state.theme.colors.border
+                                                    },
+                                                ))
+                                                .bg(rgb(if self.state.generation_digits {
+                                                    self.state.theme.colors.accent_surface
+                                                } else {
+                                                    self.state.theme.colors.background
+                                                }))
+                                                .text_size(px(16.))
+                                                .text_color(rgb(self.state.theme.colors.accent))
+                                                .child(if self.state.generation_digits {
+                                                    "✓"
+                                                } else {
+                                                    ""
+                                                }),
+                                        )
                                         .child(i18n::text("append-digit")),
                                 )
                                 .child(
@@ -582,30 +654,38 @@ impl PassApp {
                                                 !app.state.generation_separators;
                                             cx.notify();
                                         }))
-                                        .child(if self.state.generation_separators {
-                                            "☑"
-                                        } else {
-                                            "☐"
-                                        })
+                                        .child(
+                                            div()
+                                                .size(px(22.))
+                                                .flex()
+                                                .items_center()
+                                                .justify_center()
+                                                .border_2()
+                                                .border_color(rgb(
+                                                    if self.state.generation_separators {
+                                                        self.state.theme.colors.accent
+                                                    } else {
+                                                        self.state.theme.colors.border
+                                                    },
+                                                ))
+                                                .bg(rgb(if self.state.generation_separators {
+                                                    self.state.theme.colors.accent_surface
+                                                } else {
+                                                    self.state.theme.colors.background
+                                                }))
+                                                .text_size(px(16.))
+                                                .text_color(rgb(self.state.theme.colors.accent))
+                                                .child(if self.state.generation_separators {
+                                                    "✓"
+                                                } else {
+                                                    ""
+                                                }),
+                                        )
                                         .child(i18n::text("separate-words")),
                                 ),
                         )
                 },
             );
-
-        panel = panel.when(
-            self.state.generator_mode == GeneratorMode::PassDefault,
-            |panel| {
-                panel.child(
-                    div()
-                        .max_w(px(500.))
-                        .text_size(px(13.))
-                        .line_height(px(21.))
-                        .text_color(rgb(self.state.theme.colors.muted))
-                        .child(i18n::text("random-password-help")),
-                )
-            },
-        );
 
         if self.state.pending_generation.is_some() {
             panel = panel.child(
@@ -644,48 +724,33 @@ impl PassApp {
                     ),
             );
         }
-        panel = panel.child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(16.))
-                .child(
-                    div()
-                        .max_w(px(340.))
-                        .text_size(px(11.))
-                        .line_height(px(17.))
-                        .text_color(rgb(self.state.theme.colors.muted))
-                        .child(i18n::text("no-overwrite")),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap(px(8.))
-                        .child(
-                            self.state
-                                .theme
-                                .button("generate-into-contents", "Generate", false)
-                                .on_click(
-                                    cx.listener(|app, _, _, cx| app.generate_into_contents(cx)),
-                                ),
-                        )
-                        .child(
-                            self.state
-                                .theme
-                                .button(
-                                    "save-entry",
-                                    if self.state.saving.is_some() {
-                                        i18n::text("custom-entry-saving")
-                                    } else {
-                                        i18n::text("custom-entry-save")
-                                    },
-                                    true,
-                                )
-                                .on_click(cx.listener(|app, _, _, cx| app.save_entry(cx))),
-                        ),
-                ),
+        let mut footer = div().flex().items_center().justify_end().gap(px(8.));
+        if self.state.generator_mode == GeneratorMode::Memorable {
+            footer = footer.child(
+                self.state
+                    .theme
+                    .button("generate-into-contents", i18n::text("generate"), false)
+                    .on_click(cx.listener(|app, _, _, cx| app.generate_into_contents(cx))),
+            );
+        }
+        let save_label = if self.state.saving.is_some() {
+            if self.state.generator_mode == GeneratorMode::PassDefault {
+                i18n::text("custom-entry-generating")
+            } else {
+                i18n::text("custom-entry-saving")
+            }
+        } else if self.state.generator_mode == GeneratorMode::PassDefault {
+            i18n::text("custom-entry-generate-save")
+        } else {
+            i18n::text("custom-entry-save")
+        };
+        footer = footer.child(
+            self.state
+                .theme
+                .button("save-entry", save_label, true)
+                .on_click(cx.listener(|app, _, _, cx| app.save_entry(cx))),
         );
+        panel = panel.child(footer);
 
         div()
             .id("generator-window")

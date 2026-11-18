@@ -305,7 +305,16 @@ impl PassApp {
                         cx.notify();
                         return;
                     }
-                    self.state.entries.push(entry);
+                    if let Some(index) = self
+                        .state
+                        .entries
+                        .iter()
+                        .position(|existing| existing.name() == name)
+                    {
+                        self.state.entries[index] = entry;
+                    } else {
+                        self.state.entries.push(entry);
+                    }
                     self.state.entries.sort_by_cached_key(|entry| {
                         (entry.name().to_lowercase(), entry.name().to_owned())
                     });
@@ -324,7 +333,7 @@ impl PassApp {
                         if was_generated {
                             self.copy_to_clipboard(secret.expose().to_owned(), name.clone(), cx);
                         }
-                        self.close_generator(cx);
+                        self.clear_create_entry();
                         self.set_message(i18n::text("custom-entry-saved"));
                     } else {
                         self.clear_message();

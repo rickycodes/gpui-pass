@@ -18,9 +18,10 @@ Implemented:
 
 - Browse nested entries, search names without decrypting, reveal multiline entries, and hide secrets on timeout, selection changes, Escape, and window deactivation.
 - Copy the complete entry without displaying it. `PASSWORD_STORE_CLIP_TIME` controls the timeout (45 seconds by default); the app restores the previous clipboard contents when it still owns the clipboard and shows a countdown.
-- Create entries in one composer: start with blank single-line or multiline
-  content, generate pass-default passwords or memorable phrases into the
-  editor, customize the content, and save with explicit replacement checks.
+- Create entries in one composer with explicit New (manual), Pass default
+  (pass-compatible random password generated on save), and Memorable phrase
+  (editable generated content) modes; preserve exact manual/memorable text and
+  use explicit replacement checks.
 - Edit and delete individual entries. The editor is bounded and preserves supported text exactly. Revision checks, explicit conflict choices, and a per-entry lock protect app writes; other store writers do not participate in that lock and may still race the final check and rename.
 - Use the existing GnuPG agent and card flow, show operation feedback in a shared notification bar, and report card status. YubiKey model and verification support are available where dependencies and hardware permit.
 - Load optional TOML theme settings, with square corners in the default theme. User-facing text is being moved into an embedded `en-US` Fluent catalog.

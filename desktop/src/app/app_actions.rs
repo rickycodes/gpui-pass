@@ -6,6 +6,7 @@ actions!(
     [
         Hide,
         OpenCreateEntry,
+        InsertNewline,
         Reveal,
         Refresh,
         FocusSearch,
@@ -36,7 +37,7 @@ pub(super) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Hide, Some("Pass")),
         KeyBinding::new("ctrl-n", OpenCreateEntry, Some("Pass")),
-        KeyBinding::new("enter", Reveal, Some("Pass")),
+        KeyBinding::new("shift-enter", InsertNewline, Some("Pass")),
         KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
         KeyBinding::new("ctrl-f", FocusSearch, Some("Pass")),
         KeyBinding::new("down", NextEntry, Some("Pass")),
@@ -68,6 +69,11 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         .on_action(
             cx.listener(|app, _: &OpenCreateEntry, window, cx| app.open_create_entry(window, cx)),
         )
+        .on_action(cx.listener(|app, _: &InsertNewline, window, cx| {
+            if app.text_editor_active() && app.state.generator_name_focus.is_focused(window) {
+                app.replace_generator_name(None, "\n", cx);
+            }
+        }))
         .on_action(cx.listener(|app, _: &Reveal, window, cx| {
             if !app.state.navigation.generator_open()
                 && app.state.confirming_delete.is_none()
