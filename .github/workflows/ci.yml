@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: main
   pull_request:
   workflow_dispatch:
 
@@ -14,8 +14,49 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect affected checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      python: ${{ steps.filter.outputs.python }}
+      pass: ${{ steps.filter.outputs.pass }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - '.cargo/**'
+              - 'assets/**'
+              - 'locales/**'
+              - 'vendor/**'
+              - 'rust-toolchain*'
+              - 'scripts/check-rust-warnings.sh'
+              - '.github/workflows/ci.yml'
+            python:
+              - 'desktop/**/*.py'
+              - 'desktop/requirements-test.txt'
+              - '.github/workflows/ci.yml'
+            pass:
+              - 'src/**'
+              - 'tests/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'vendor/**'
+              - 'scripts/test-pass-compat.sh'
+              - '.github/workflows/ci.yml'
+
   checks:
-    name: Unit tests and checks
+    name: Rust tests and checks
+    needs: changes
+    if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -33,10 +74,6 @@ jobs:
         run: |
           cargo fmt --all --check
           cargo fmt --manifest-path desktop/Cargo.toml --all --check
-      - name: Run Python helper tests
-        run: |
-          python3 -m pip install -r desktop/requirements-test.txt
-          python3 -m unittest discover -s desktop/tests -v
       - name: Lint core
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Reject compiler and dependency warnings
@@ -52,8 +89,22 @@ jobs:
           cargo test --manifest-path desktop/Cargo.toml --locked
           cargo test --manifest-path desktop/Cargo.toml -p blade-graphics --lib prime_presentation_tests --locked
 
+  python-tests:
+    name: Python helper tests
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python test dependencies
+        run: python3 -m pip install -r desktop/requirements-test.txt
+      - name: Test Python helpers
+        run: python3 -m unittest discover -s desktop/tests -v
+
   pass-integration:
     name: pass and GnuPG integration
+    needs: changes
+    if: needs.changes.outputs.pass == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

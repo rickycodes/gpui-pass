@@ -105,7 +105,7 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 ## Verification
 
-GitHub Actions runs core and desktop Rust checks, Python helper tests, and the disposable real `pass`/GnuPG integration fixture. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
+GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
 ```sh
 cargo test --locked
