@@ -165,11 +165,20 @@ display helper.
 The initial version deliberately excludes arbitrary line selection, whole-entry
 QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
 
-- Optional OS reauthentication before replacing an existing entry.
+### Additional after-v1 follow-ups
+
 - Move and duplicate entries, with recipient-policy-aware re-encryption.
 - Recipient and missing-key diagnostics.
 - Complete the Fluent migration and add maintained translations.
 - Awareness of external store changes.
+- Folder navigation refinements such as expand/collapse all and
+  breadcrumbs for deeply nested paths.
+- Search refinements such as fuzzy matching, full-path matching, and
+  inline match highlighting while preserving global search across collapsed
+  folders.
+- Store health diagnostics for malformed entry paths, unreadable ciphertext,
+  missing recipient/key policy, and orphaned policy files without exposing
+  plaintext.
 - Generator profiles by folder and named store profiles.
 - Credential rotation sessions, hand-typing view, quick-copy fields, and local TOTP.
 - Export a single entry to another recipient and local links that open a selected entry.
