@@ -78,7 +78,7 @@ impl PassApp {
             return;
         };
         let fraction = ((x - bounds.origin.x) / bounds.size.width).clamp(0., 1.);
-        let words = 4 + (fraction * 4.).round() as usize;
+        let words = 2 + (fraction * 2.).round() as usize;
         if words != self.state.generation_words {
             self.state.generation_words = words;
             cx.notify();
@@ -370,7 +370,7 @@ impl PassApp {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let options = self.generator_options();
-        let slider_left = ((self.state.generation_words - 4) as f32 / 4.) * 360.;
+        let slider_left = ((self.state.generation_words - 2) as f32 / 2.) * 360.;
         let entity = cx.entity().clone();
         let slider_track = div()
             .id("generator-strength-slider")
@@ -442,8 +442,8 @@ impl PassApp {
                     .font_family(self.state.theme.mono_font)
                     .text_size(px(9.))
                     .text_color(rgb(self.state.theme.colors.muted))
-                    .child("4 WORDS")
-                    .child("8 WORDS"),
+                    .child("2 WORDS")
+                    .child("4 WORDS"),
             );
 
         let mut panel = self

@@ -3,11 +3,13 @@ use std::sync::OnceLock;
 use zeroize::Zeroizing;
 
 const WORDS: &str = include_str!("../assets/eff-short-wordlist-2-0.txt");
-const SEPARATORS: &[u8] = b";_-";
-const ALPHANUMERIC: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 const SYMBOLS: &[u8] = b"!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
-const MIN_WORDS: usize = 4;
-const MAX_WORDS: usize = 8;
+const SEPARATORS: &[u8] = SYMBOLS;
+const ALPHANUMERIC: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const MIN_WORDS: usize = 2;
+const MAX_WORDS: usize = 4;
+const MIN_WORD_LENGTH: usize = 2;
+const MAX_MEMORABLE_LENGTH: usize = 25;
 static WORD_LIST: OnceLock<Vec<&str>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -44,13 +46,34 @@ pub fn generate_memorable_password(options: GeneratorOptions) -> Result<Secret, 
         return Err(Error::InvalidWordList);
     }
 
-    let mut password = Zeroizing::new(Vec::with_capacity(options.words * 12));
+    let mut password = Zeroizing::new(Vec::with_capacity(MAX_MEMORABLE_LENGTH));
     for index in 0..options.words {
         if index > 0 && options.add_separators {
             let separator = SEPARATORS[random_below(SEPARATORS.len())?];
             password.push(separator);
         }
-        password.extend_from_slice(words[random_below(words.len())?].as_bytes());
+        let remaining_words = options.words - index - 1;
+        let adornments_per_word =
+            (if options.add_digits { 1 } else { 0 }) + (if options.add_separators { 1 } else { 0 });
+        let required_suffix = remaining_words * (MIN_WORD_LENGTH + adornments_per_word)
+            + if options.add_digits { 1 } else { 0 };
+        let max_word_length = MAX_MEMORABLE_LENGTH
+            .saturating_sub(password.len())
+            .saturating_sub(required_suffix);
+        let eligible_words = words
+            .iter()
+            .filter(|word| word.len() <= max_word_length)
+            .count();
+        if eligible_words == 0 {
+            return Err(Error::InvalidGenerationLength);
+        }
+        let selected = random_below(eligible_words)?;
+        let word = words
+            .iter()
+            .filter(|word| word.len() <= max_word_length)
+            .nth(selected)
+            .ok_or(Error::InvalidWordList)?;
+        password.extend_from_slice(word.as_bytes());
         if options.add_digits {
             password.push(b'0' + random_below(10)? as u8);
         }
@@ -138,5 +161,52 @@ fn random_below(bound: usize) -> Result<usize, Error> {
         if value >= threshold {
             return Ok((value % bound) as usize);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn memorable_passwords_fit_the_twenty_five_character_limit() {
+        for words in MIN_WORDS..=MAX_WORDS {
+            for _ in 0..8 {
+                let secret = generate_memorable_password(GeneratorOptions {
+                    words,
+                    add_digits: true,
+                    add_separators: true,
+                })
+                .unwrap();
+                assert!(secret.expose().len() <= MAX_MEMORABLE_LENGTH);
+                assert_eq!(
+                    secret
+                        .expose()
+                        .split(|character: char| !character.is_ascii_alphanumeric())
+                        .count(),
+                    words
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn memorable_passwords_require_two_to_four_words() {
+        assert!(
+            generate_memorable_password(GeneratorOptions {
+                words: MIN_WORDS - 1,
+                add_digits: false,
+                add_separators: false,
+            })
+            .is_err()
+        );
+        assert!(
+            generate_memorable_password(GeneratorOptions {
+                words: MAX_WORDS + 1,
+                add_digits: false,
+                add_separators: false,
+            })
+            .is_err()
+        );
     }
 }

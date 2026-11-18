@@ -133,7 +133,7 @@ impl AppState {
             content_generated: false,
             clipboard: ClipboardState::default(),
             clipboard_seconds: None,
-            generation_words: 6,
+            generation_words: 3,
             generator_mode: GeneratorMode::New,
             generation_digits: true,
             generation_separators: true,
