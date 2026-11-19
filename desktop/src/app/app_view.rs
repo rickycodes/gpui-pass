@@ -1,5 +1,8 @@
 use super::*;
 
+const RESIZE_EDGE_SIZE: f32 = 8.;
+const RESIZE_CORNER_SIZE: f32 = 14.;
+
 impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _render_sample = diagnostics::measure_render();
@@ -48,9 +51,9 @@ impl Render for PassApp {
             CursorStyle::ResizeUpDown,
             ResizeHandleBounds {
                 top: Some(0.),
-                left: Some(8.),
-                right: Some(8.),
-                height: Some(8.),
+                left: Some(RESIZE_EDGE_SIZE),
+                right: Some(RESIZE_EDGE_SIZE),
+                height: Some(RESIZE_EDGE_SIZE),
                 ..Default::default()
             },
         ))
@@ -59,10 +62,10 @@ impl Render for PassApp {
             ResizeEdge::Bottom,
             CursorStyle::ResizeUpDown,
             ResizeHandleBounds {
-                left: Some(8.),
-                right: Some(8.),
+                left: Some(RESIZE_EDGE_SIZE),
+                right: Some(RESIZE_EDGE_SIZE),
                 bottom: Some(0.),
-                height: Some(8.),
+                height: Some(RESIZE_EDGE_SIZE),
                 ..Default::default()
             },
         ))
@@ -71,10 +74,10 @@ impl Render for PassApp {
             ResizeEdge::Left,
             CursorStyle::ResizeLeftRight,
             ResizeHandleBounds {
-                top: Some(8.),
+                top: Some(RESIZE_EDGE_SIZE),
                 left: Some(0.),
-                bottom: Some(8.),
-                width: Some(8.),
+                bottom: Some(RESIZE_EDGE_SIZE),
+                width: Some(RESIZE_EDGE_SIZE),
                 ..Default::default()
             },
         ))
@@ -83,10 +86,10 @@ impl Render for PassApp {
             ResizeEdge::Right,
             CursorStyle::ResizeLeftRight,
             ResizeHandleBounds {
-                top: Some(8.),
+                top: Some(RESIZE_EDGE_SIZE),
                 right: Some(0.),
-                bottom: Some(8.),
-                width: Some(8.),
+                bottom: Some(RESIZE_EDGE_SIZE),
+                width: Some(RESIZE_EDGE_SIZE),
                 ..Default::default()
             },
         ))
@@ -97,8 +100,8 @@ impl Render for PassApp {
             ResizeHandleBounds {
                 top: Some(0.),
                 left: Some(0.),
-                width: Some(14.),
-                height: Some(14.),
+                width: Some(RESIZE_CORNER_SIZE),
+                height: Some(RESIZE_CORNER_SIZE),
                 ..Default::default()
             },
         ))
@@ -109,8 +112,8 @@ impl Render for PassApp {
             ResizeHandleBounds {
                 top: Some(0.),
                 right: Some(0.),
-                width: Some(14.),
-                height: Some(14.),
+                width: Some(RESIZE_CORNER_SIZE),
+                height: Some(RESIZE_CORNER_SIZE),
                 ..Default::default()
             },
         ))
@@ -121,8 +124,8 @@ impl Render for PassApp {
             ResizeHandleBounds {
                 left: Some(0.),
                 bottom: Some(0.),
-                width: Some(14.),
-                height: Some(14.),
+                width: Some(RESIZE_CORNER_SIZE),
+                height: Some(RESIZE_CORNER_SIZE),
                 ..Default::default()
             },
         ))
@@ -133,8 +136,8 @@ impl Render for PassApp {
             ResizeHandleBounds {
                 right: Some(0.),
                 bottom: Some(0.),
-                width: Some(14.),
-                height: Some(14.),
+                width: Some(RESIZE_CORNER_SIZE),
+                height: Some(RESIZE_CORNER_SIZE),
                 ..Default::default()
             },
         ))
