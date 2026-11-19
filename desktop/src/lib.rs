@@ -28,23 +28,23 @@ mod app_actions;
 mod app_lifecycle;
 #[path = "app/app_state.rs"]
 mod app_state;
-#[path = "app/app_view.rs"]
+#[path = "views/app_view.rs"]
 mod app_view;
 #[path = "ui/brand.rs"]
 mod brand;
-#[path = "ui/card_status_view.rs"]
+#[path = "views/card_status_view.rs"]
 mod card_status_view;
 #[path = "input/editor_input.rs"]
 mod editor_input;
-#[path = "ui/entries_view.rs"]
+#[path = "views/entries_view.rs"]
 mod entries_view;
 #[path = "input/entry_editor.rs"]
 mod entry_editor;
 #[path = "app/entry_operations.rs"]
 mod entry_operations;
-#[path = "app/footer_view.rs"]
+#[path = "views/footer_view.rs"]
 mod footer_view;
-#[path = "ui/generator_view.rs"]
+#[path = "views/generator_view.rs"]
 mod generator_view;
 #[path = "ui/i18n.rs"]
 mod i18n;
@@ -60,7 +60,7 @@ mod text_input_ime;
 mod text_input_views;
 #[path = "ui/theme.rs"]
 mod theme;
-#[path = "app/titlebar_view.rs"]
+#[path = "views/titlebar_view.rs"]
 mod titlebar_view;
 #[path = "ui/window_control_glyph.rs"]
 mod window_control_glyph;
