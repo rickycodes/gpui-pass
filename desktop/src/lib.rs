@@ -42,6 +42,8 @@ mod entries_view;
 mod entry_editor;
 #[path = "app/entry_operations.rs"]
 mod entry_operations;
+#[path = "app/footer_view.rs"]
+mod footer_view;
 #[path = "ui/generator_view.rs"]
 mod generator_view;
 #[path = "ui/i18n.rs"]
@@ -58,6 +60,8 @@ mod text_input_ime;
 mod text_input_views;
 #[path = "ui/theme.rs"]
 mod theme;
+#[path = "app/titlebar_view.rs"]
+mod titlebar_view;
 #[path = "ui/window_control_glyph.rs"]
 mod window_control_glyph;
 #[path = "security/yubikey_detection.rs"]
