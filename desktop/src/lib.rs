@@ -36,20 +36,30 @@ mod brand;
 mod card_status_view;
 #[path = "input/editor_input.rs"]
 mod editor_input;
-#[path = "views/entries_view.rs"]
-mod entries_view;
+#[path = "views/entry_list_view.rs"]
+mod entry_list_view;
+#[path = "views/entry_detail_view.rs"]
+mod entry_detail_view;
 #[path = "input/entry_editor.rs"]
 mod entry_editor;
 #[path = "app/entry_operations.rs"]
 mod entry_operations;
 #[path = "views/footer_view.rs"]
 mod footer_view;
+#[path = "views/generator_composer_view.rs"]
+mod generator_composer_view;
+#[path = "views/generator_controls_view.rs"]
+mod generator_controls_view;
+#[path = "app/generator_operations.rs"]
+mod generator_operations;
 #[path = "views/generator_view.rs"]
 mod generator_view;
 #[path = "ui/i18n.rs"]
 mod i18n;
 #[path = "ui/loading_spinner.rs"]
 mod loading_spinner;
+#[path = "views/overwrite_view.rs"]
+mod overwrite_view;
 #[path = "input/search.rs"]
 mod search;
 #[path = "ui/sidebar_scroll.rs"]

@@ -1,0 +1,91 @@
+use super::*;
+use crate::generator_view::{
+    CREATE_CONTENT_LABEL_HEIGHT, CREATE_OPTIONS_HEIGHT, CREATE_PANEL_MIN_HEIGHT,
+};
+
+impl PassApp {
+    pub(super) fn generator_titlebar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        self.titlebar("generator-titlebar", None, cx)
+    }
+
+    pub(super) fn generator_view(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let panel = self
+            .state
+            .theme
+            .panel()
+            .w(px(640.))
+            .max_w(px(640.))
+            .p(px(36.))
+            .min_h(px(CREATE_PANEL_MIN_HEIGHT))
+            .flex()
+            .flex_shrink_0()
+            .flex_col()
+            .gap(px(16.))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(
+                        self.state
+                            .theme
+                            .panel_title(i18n::text("custom-entry-title")),
+                    )
+                    .child(
+                        self.state
+                            .theme
+                            .button("close-generator", "← Back", false)
+                            .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
+                    ),
+            )
+            .child(self.state.theme.label(i18n::text("entry-name")))
+            .child(self.custom_entry_name_field(window, cx))
+            .when(
+                self.state.generator_mode != GeneratorMode::PassDefault,
+                |panel| panel.child(self.state.theme.label(i18n::text("custom-entry-contents"))),
+            )
+            .when(
+                self.state.generator_mode == GeneratorMode::PassDefault,
+                |panel| panel.child(div().h(px(CREATE_CONTENT_LABEL_HEIGHT))),
+            )
+            .child(self.generator_content_area(window, cx))
+            .child(self.generator_mode_buttons(cx))
+            .when(
+                self.state.generator_mode == GeneratorMode::Memorable,
+                |panel| panel.child(self.generator_memorable_options(cx)),
+            )
+            .when(
+                self.state.generator_mode != GeneratorMode::Memorable,
+                |panel| panel.child(div().h(px(CREATE_OPTIONS_HEIGHT))),
+            )
+            .child(self.generator_footer(cx));
+
+        div()
+            .id("generator-window")
+            .flex_1()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .bg(rgb(self.state.theme.colors.background))
+            .child(self.generator_titlebar(cx))
+            .child(
+                div()
+                    .id("generator-content-scroll")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .flex()
+                    .items_start()
+                    .justify_center()
+                    .px(px(32.))
+                    .pt(px(48.))
+                    .pb(px(48.))
+                    .child(panel),
+            )
+            .into_any_element()
+    }
+}
