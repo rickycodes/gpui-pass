@@ -28,8 +28,6 @@ mod app_actions;
 mod app_lifecycle;
 #[path = "app/app_state.rs"]
 mod app_state;
-#[path = "app/onboarding_operations.rs"]
-mod onboarding_operations;
 #[path = "views/app_view.rs"]
 mod app_view;
 #[path = "ui/brand.rs"]
@@ -38,12 +36,12 @@ mod brand;
 mod card_status_view;
 #[path = "input/editor_input.rs"]
 mod editor_input;
-#[path = "views/entry_list_view.rs"]
-mod entry_list_view;
 #[path = "views/entry_detail_view.rs"]
 mod entry_detail_view;
 #[path = "input/entry_editor.rs"]
 mod entry_editor;
+#[path = "views/entry_list_view.rs"]
+mod entry_list_view;
 #[path = "app/entry_operations.rs"]
 mod entry_operations;
 #[path = "views/footer_view.rs"]
@@ -60,6 +58,8 @@ mod generator_view;
 mod i18n;
 #[path = "ui/loading_spinner.rs"]
 mod loading_spinner;
+#[path = "app/onboarding_operations.rs"]
+mod onboarding_operations;
 #[path = "views/onboarding_view.rs"]
 mod onboarding_view;
 #[path = "views/overwrite_view.rs"]

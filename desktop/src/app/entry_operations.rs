@@ -372,12 +372,7 @@ impl PassApp {
         cx.notify();
     }
 
-    fn apply_open_store_selection(
-        &mut self,
-        path: PathBuf,
-        preview: bool,
-        cx: &mut Context<Self>,
-    ) {
+    fn apply_open_store_selection(&mut self, path: PathBuf, preview: bool, cx: &mut Context<Self>) {
         if self.state.saving.is_some() {
             return;
         }
@@ -419,7 +414,8 @@ impl PassApp {
                 Ok(Err(_)) | Err(_) => {
                     #[cfg(target_os = "linux")]
                     {
-                        cx.background_spawn(async { pick_folder_with_zenity() }).await
+                        cx.background_spawn(async { pick_folder_with_zenity() })
+                            .await
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
