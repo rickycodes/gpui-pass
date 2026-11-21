@@ -91,6 +91,8 @@ Manual GUI verification completed so far:
   state intact, and left the temporary target empty.
 - Real initialization with an invalid recipient displayed the expected unsafe
   recipient notification and left the temporary target empty.
+- Real initialization refused a non-empty target and preserved its existing
+  `KEEP.txt` file; no store policy or signature files were created.
 
 ### 2. Close the v1 reliability gaps
 
