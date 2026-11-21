@@ -117,6 +117,11 @@ branch or commit to release. The workflow builds that selected revision,
 creates the tag and GitHub Release only after verification passes, then
 downloads and verifies the published assets again. It refuses an existing tag.
 
+Pushed releases require a GitHub-verified signed annotated tag. Create one
+with `git tag -s vX.Y.Z -m "Release vX.Y.Z"` using the configured YubiKey-backed
+GPG key, inspect it with `git show --show-signature`, then push it. Unsigned or
+lightweight tags are rejected before the build starts.
+
 ```sh
 cargo test --locked
 bash scripts/check-rust-warnings.sh

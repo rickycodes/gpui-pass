@@ -86,6 +86,8 @@ hardware.
   instructions, a temporary-prefix install, and a fresh install/run from a
   release download. The release workflow now gates publication on artifact
   verification and rechecks the published assets.
+- Enforce GitHub-verified signed annotated tags for the pushed-tag release path;
+  the Actions UI path creates a new tag after artifact verification.
 - Run CI checks and integration fixtures from a clean checkout. Keep release
   notes and README status aligned with what was actually tested.
 - Perform a final GUI pass at normal and compact window sizes, with both light and dark themes, using fictional data. Exercise keyboard navigation and accessibility-relevant focus states.
