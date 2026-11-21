@@ -75,6 +75,16 @@ hardware.
   selected store may be read and displayed; invalid or uninitialized targets
   remain in dry-run onboarding.
 
+Manual GUI verification completed so far:
+
+- `--onboarding-demo` with an empty temporary target showed the dry-run
+  onboarding surface; initializing transitioned to the empty-store demo without
+  writing files or invoking GnuPG.
+- The preview folder picker opened successfully. Selecting a store-shaped
+  directory containing `.gpg-id` and a `.gpg` entry left onboarding and
+  displayed the entry without writing to the selected directory.
+
+
 ### 2. Close the v1 reliability gaps
 
 - Keep the maintainer's real-store workflow validation current as features change; record any environment-specific gaps rather than treating one setup as universal coverage.
