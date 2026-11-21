@@ -81,21 +81,25 @@ hardware.
 
 ### 3. Define and verify the supported release
 
-- Specify the tested Linux baseline and runtime requirements, including GnuPG, graphical pinentry, graphics stack, and optional YubiKey packages.
-- Verify a clean optimized build, packaged artifact contents, checksum
-  instructions, a temporary-prefix install, and a fresh install/run from a
-  release download. The release workflow now gates publication on artifact
-  verification and rechecks the published assets.
-- Enforce GitHub-verified signed annotated tags for the pushed-tag release path;
-  the Actions UI path creates a new tag after artifact verification.
+- The completed release run verified a clean optimized build, packaged artifact
+  contents, checksum validation, temporary-prefix installation, and execution
+  from downloaded release assets. The headless launch check uses Mesa Lavapipe
+  under Xvfb, so it does not require runner GPU hardware.
+- Specify the tested Linux baseline and runtime requirements, including GnuPG,
+  graphical pinentry, graphics stack, and optional YubiKey packages.
 - Run CI checks and integration fixtures from a clean checkout. Keep release
   notes and README status aligned with what was actually tested.
-- Perform a final GUI pass at normal and compact window sizes, with both light and dark themes, using fictional data. Exercise keyboard navigation and accessibility-relevant focus states.
+- Perform a final GUI pass at normal and compact window sizes, with both light
+  and dark themes, using fictional data. Exercise keyboard navigation and
+  accessibility-relevant focus states.
 - Hardware behavior is verified on the maintainer's YubiKey: insertion,
   removal, PIN/touch, reveal, hidden copy, and retry. The remaining
   `gpg-agent`/`scdaemon` coexistence issue with external Git signing is tracked
   after v1.
-- Review the security and privacy documentation against actual behavior, especially clipboard-manager history, crash cleanup limits, logs, filesystem permissions, GnuPG configuration, and the limits of local-user authentication.
+- Review the security and privacy documentation against actual behavior,
+  especially clipboard-manager history, crash cleanup limits, logs, filesystem
+  permissions, GnuPG configuration, and the limits of local-user
+  authentication.
 
 ## After v1
 
