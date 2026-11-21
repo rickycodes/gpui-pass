@@ -111,6 +111,12 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, verify its checksum, install it in a temporary runner prefix, smoke-test CLI and GUI startup, publish the assets, then download and verify the published assets again. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
+To run a release from GitHub's Actions UI, choose **Release → Run workflow**,
+enter a new `vMAJOR.MINOR.PATCH` tag in `release_tag`, and start it from the
+branch or commit to release. The workflow builds that selected revision,
+creates the tag and GitHub Release only after verification passes, then
+downloads and verifies the published assets again. It refuses an existing tag.
+
 ```sh
 cargo test --locked
 bash scripts/check-rust-warnings.sh
