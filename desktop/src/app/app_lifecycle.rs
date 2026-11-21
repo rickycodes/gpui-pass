@@ -63,10 +63,12 @@ impl PassApp {
         })
         .detach();
         app.refresh(cx);
-        app.start_card_watcher();
-        app.start_usb_card_watcher(cx);
-        if app.state.yubikey_check.is_none() {
-            app.start_yubikey_check();
+        if !app.state.demo && !app.state.onboarding_demo {
+            app.start_card_watcher();
+            app.start_usb_card_watcher(cx);
+            if app.state.yubikey_check.is_none() {
+                app.start_yubikey_check();
+            }
         }
         cx.spawn(async move |entity, cx| {
             loop {
@@ -258,8 +260,10 @@ impl PassApp {
             self.state.verification_notification_until = None;
             cx.notify();
         }
-        self.capture_yubikey_status(cx);
-        self.poll_yubikey_connection(cx);
+        if !self.state.demo && !self.state.onboarding_demo {
+            self.capture_yubikey_status(cx);
+            self.poll_yubikey_connection(cx);
+        }
         if let Some(result) = self
             .state
             .load
