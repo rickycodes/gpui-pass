@@ -85,7 +85,10 @@ hardware.
 - Verify a clean optimized build, packaged artifact contents, checksum instructions, and a fresh install/run from a release download.
 - Run CI checks and integration fixtures from a clean checkout. Keep release notes and README status aligned with what was actually tested.
 - Perform a final GUI pass at normal and compact window sizes, with both light and dark themes, using fictional data. Exercise keyboard navigation and accessibility-relevant focus states.
-- Perform and record a hardware check for card detection, PIN/touch prompts, reveal, hidden copy, removal/reconnection, and retry. Clearly separate tested behavior from unsupported cards or environments.
+- Hardware behavior is verified on the maintainer's YubiKey: insertion,
+  removal, PIN/touch, reveal, hidden copy, and retry. The remaining
+  `gpg-agent`/`scdaemon` coexistence issue with external Git signing is tracked
+  after v1.
 - Review the security and privacy documentation against actual behavior, especially clipboard-manager history, crash cleanup limits, logs, filesystem permissions, GnuPG configuration, and the limits of local-user authentication.
 
 ## After v1
