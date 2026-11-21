@@ -897,7 +897,10 @@ impl Store {
 
     #[cfg(unix)]
     fn open_relative(&self, path: &Path, directory: bool) -> Result<File, Error> {
-        use rustix::fs::{Mode, OFlags, openat};
+        use rustix::{
+            fs::{Mode, OFlags, openat},
+            io::Errno,
+        };
         let mut parent = self.directory.try_clone()?;
         let parts: Vec<_> = path.components().collect();
         if parts.is_empty() {
@@ -912,7 +915,13 @@ impl Store {
                 flags |= OFlags::DIRECTORY;
             }
             parent = File::from(
-                openat(&parent, *name, flags, Mode::empty()).map_err(|_| Error::InvalidEntry)?,
+                openat(&parent, *name, flags, Mode::empty()).map_err(|error| {
+                    if error == Errno::NOENT {
+                        Error::EntryNotFound
+                    } else {
+                        Error::InvalidEntry
+                    }
+                })?,
             );
         }
         Ok(parent)

@@ -80,6 +80,17 @@ fn lists_only_ciphertext_and_preserves_store_bytes() {
 
 #[cfg(unix)]
 #[test]
+fn missing_entry_revision_is_not_misclassified_as_invalid() {
+    let dir = tempdir().unwrap();
+    let store = Store::open(dir.path()).unwrap();
+    assert!(matches!(
+        store.entry_revision(&entry("new-entry.gpg")),
+        Err(Error::EntryNotFound)
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn initializes_a_pass_store_without_overwriting_existing_data() {
     let dir = tempdir().unwrap();
     let root = dir.path().join("new-store");
