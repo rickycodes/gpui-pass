@@ -12,6 +12,11 @@ on:
 
 permissions:
   contents: read
+env:
+  RELEASE_ARTIFACT_NAME: gpui-pass-linux-x86_64
+  RELEASE_ARCHIVE: gpui-pass-linux-x86_64.tar.gz
+  RELEASE_CHECKSUM: gpui-pass-linux-x86_64.tar.gz.sha256
+
 
 jobs:
   build-linux:
@@ -81,10 +86,10 @@ jobs:
       - name: Upload release artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gpui-pass-linux-x86_64
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
           path: |
-            dist/gpui-pass-linux-x86_64.tar.gz
-            dist/gpui-pass-linux-x86_64.tar.gz.sha256
+            dist/${{ env.RELEASE_ARCHIVE }}
+            dist/${{ env.RELEASE_CHECKSUM }}
           if-no-files-found: error
           retention-days: 30
 
@@ -98,23 +103,12 @@ jobs:
           ref: ${{ github.ref }}
       - uses: actions/download-artifact@v4
         with:
-          name: gpui-pass-linux-x86_64
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
           path: dist
-      - name: Install runtime and smoke-test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes xvfb \
-            build-essential clang cmake pkg-config libclang-dev \
-            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
-            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev \
-            mesa-vulkan-drivers
-      - name: Verify checksum, install, and launch
-        env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
-        run: |
-          bash scripts/verify-release.sh \
-            dist/gpui-pass-linux-x86_64.tar.gz \
-            dist/gpui-pass-linux-x86_64.tar.gz.sha256
+      - uses: ./.github/actions/verify-release
+        with:
+          archive: dist/${{ env.RELEASE_ARCHIVE }}
+          checksum: dist/${{ env.RELEASE_CHECKSUM }}
 
 
   publish-release:
@@ -132,7 +126,7 @@ jobs:
           ref: ${{ github.ref }}
       - uses: actions/download-artifact@v4
         with:
-          name: gpui-pass-linux-x86_64
+          name: ${{ env.RELEASE_ARTIFACT_NAME }}
           path: dist
       - name: Create release and upload binary
         env:
@@ -155,7 +149,10 @@ jobs:
             gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
               gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --generate-notes
           fi
-          gh release upload "$RELEASE_TAG" dist/gpui-pass-linux-x86_64.tar.gz dist/gpui-pass-linux-x86_64.tar.gz.sha256 --clobber
+          gh release upload "$RELEASE_TAG" \
+            "dist/$RELEASE_ARCHIVE" \
+            "dist/$RELEASE_CHECKSUM" \
+            --clobber
 
   verify-published-release:
     name: Verify published release assets
@@ -178,21 +175,10 @@ jobs:
           mkdir -p dist
           gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern 'gpui-pass-linux-x86_64.tar.gz' \
-            --pattern 'gpui-pass-linux-x86_64.tar.gz.sha256' \
+            --pattern "$RELEASE_ARCHIVE" \
+            --pattern "$RELEASE_CHECKSUM" \
             --dir dist
-      - name: Install runtime and smoke-test dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes xvfb \
-            build-essential clang cmake pkg-config libclang-dev \
-            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
-            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev \
-            mesa-vulkan-drivers
-      - name: Verify downloaded release
-        env:
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
-        run: |
-          bash scripts/verify-release.sh \
-            dist/gpui-pass-linux-x86_64.tar.gz \
-            dist/gpui-pass-linux-x86_64.tar.gz.sha256
+      - uses: ./.github/actions/verify-release
+        with:
+          archive: dist/${{ env.RELEASE_ARCHIVE }}
+          checksum: dist/${{ env.RELEASE_CHECKSUM }}
