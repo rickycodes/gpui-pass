@@ -89,7 +89,8 @@ Manual GUI verification completed so far:
   fix.
 - Cancelling the preview folder picker kept onboarding visible, left the dry-run
   state intact, and left the temporary target empty.
-
+- Real initialization with an invalid recipient displayed the expected unsafe
+  recipient notification and left the temporary target empty.
 
 ### 2. Close the v1 reliability gaps
 
