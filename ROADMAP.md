@@ -67,8 +67,10 @@ hardware.
   permissions, one recipient per `.gpg-id` line, and `.gpg-id.sig` when the
   configured signing policy requires it.
 - Existing `.gpg-id`, entries, and non-empty targets are never overwritten.
-- Preview mode traverses the complete flow and reports the final plan without
-  touching the filesystem, GnuPG, Git, clipboard, or network.
+- Preview mode traverses setup and existing-store selection without writing to
+  the filesystem or invoking GnuPG, Git, clipboard, or network. A valid
+  selected store may be read and displayed; invalid or uninitialized targets
+  remain in dry-run onboarding.
 
 ### 2. Close the v1 reliability gaps
 
