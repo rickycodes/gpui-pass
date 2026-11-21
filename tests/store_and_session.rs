@@ -80,6 +80,40 @@ fn lists_only_ciphertext_and_preserves_store_bytes() {
 
 #[cfg(unix)]
 #[test]
+fn initializes_a_pass_store_without_overwriting_existing_data() {
+    let dir = tempdir().unwrap();
+    let root = dir.path().join("new-store");
+    let store = Store::initialize(
+        &root,
+        &[
+            "alice@example.com".to_owned(),
+            "backup@example.com".to_owned(),
+        ],
+        Some(b"signature"),
+    )
+    .unwrap();
+    assert!(store.has_root_recipient_policy().unwrap());
+    assert_eq!(
+        fs::read(root.join(".gpg-id")).unwrap(),
+        b"alice@example.com\nbackup@example.com\n"
+    );
+    assert_eq!(fs::read(root.join(".gpg-id.sig")).unwrap(), b"signature");
+    assert!(matches!(
+        Store::initialize(&root, &["other@example.com".to_owned()], None),
+        Err(Error::StoreNotEmpty)
+    ));
+
+    let existing = dir.path().join("empty-store");
+    fs::create_dir(&existing).unwrap();
+    Store::initialize(&existing, &["alice@example.com".to_owned()], None).unwrap();
+    assert_eq!(
+        fs::read(existing.join(".gpg-id")).unwrap(),
+        b"alice@example.com\n"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn listing_does_not_follow_symlinks() {
     use std::os::unix::fs::symlink;
     let dir = tempdir().unwrap();

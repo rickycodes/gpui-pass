@@ -16,7 +16,7 @@ pub use generator::{
 pub use hardening::harden_process;
 pub use operation::{CardEvent, CardObservation, OperationProgress, OperationStatus, StatusKind};
 pub use session::{REVEAL_DURATION, RevealRequest, Session};
-pub use store::{Entry, EntryRevision, Store, default_store_path};
+pub use store::{Entry, EntryRevision, Store, configured_signing_keys, default_store_path};
 
 use std::{fmt, io};
 
@@ -48,6 +48,9 @@ pub enum Error {
     EntryNotFound,
     EntryConflict,
     EncryptionFailed,
+    SigningFailed,
+    StoreNotEmpty,
+    StoreAlreadyInitialized,
     MissingHome,
 }
 
@@ -87,6 +90,9 @@ impl fmt::Display for Error {
             Self::EntryConflict => "This entry changed on disk. Your edits were not saved.",
             Self::EntryNotFound => "This entry no longer exists. Refresh the store.",
             Self::EncryptionFailed => "GnuPG could not encrypt the entry.",
+            Self::SigningFailed => "GnuPG could not sign the store recipient policy.",
+            Self::StoreNotEmpty => "The selected directory is not empty. Choose an empty directory or open the existing store.",
+            Self::StoreAlreadyInitialized => "The selected directory already has a recipient policy.",
             Self::MissingHome => "Set PASSWORD_STORE_DIR or supply a store path with --store.",
         })
     }

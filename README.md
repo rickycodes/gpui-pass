@@ -3,7 +3,7 @@
 [![CI](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml)
 [![Release](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml)
 
-A Rust/GPUI desktop client for existing [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
+A Rust/GPUI desktop client for existing or newly initialized [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
 **Status: implementation in progress.** The latest review passed 28 core tests, 23 desktop tests, 9 Python helper tests, and the disposable real `pass` integration fixture. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware in earlier work. See the [2026-11-14 review](docs/application-review-2026-11-14.md) for outstanding findings and verification limits.
 
@@ -26,6 +26,7 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 ## Initial scope
 
 - Browse nested `.gpg` entries in an existing store.
+- Initialize a new local store from existing GPG recipient IDs through a one-screen onboarding flow; no key management or `pass` CLI is required.
 - Search entry and folder names without decrypting content.
 - Explicit reveal: first-line password plus arbitrary remaining entry content.
 - Copy the complete entry directly to the clipboard without displaying it.
@@ -41,7 +42,7 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 - Existing entry names warn before replacement and verify the stored revision
   has not changed before saving.
 - Remove an individual encrypted entry after a confirmation prompt; folder deletion is not implemented.
-- Folder picker, explicit `--store`, and an isolated `--demo` mode.
+- Folder picker, explicit `--store`, onboarding, and isolated `--demo`/`--onboarding-demo` modes.
 
 Generated entries are encrypted by GnuPG to the recipients resolved from the nearest `.gpg-id` (or `PASSWORD_STORE_KEY`) and created without overwriting an existing entry. When recipients come from `.gpg-id` and `PASSWORD_STORE_SIGNING_KEY` is set, writes require a valid detached signature from one of its configured full fingerprints. The explicit `PASSWORD_STORE_KEY` override bypasses `.gpg-id` lookup, matching `pass`. A detected policy change cancels the write. The editor supports up to 16 KiB and 512 lines and rejects oversized input without truncating it. Saves detect changes to the encrypted entry since reveal and leave conflicting edits unsaved; the editor offers explicit overwrite or discard-and-reveal choices. A bounded per-entry lock in the user runtime directory serializes saves across `gpui-pass` instances. Other writers such as `pass` do not participate and can still race the final revision check and rename. Individual entries can be removed after confirmation; this does not erase Git history or backups. The random mode follows `pass` defaults: 25 characters from punctuation and alphanumeric characters, with `PASSWORD_STORE_GENERATED_LENGTH` and `PASSWORD_STORE_CHARACTER_SET` overrides. The character-set parser supports common POSIX classes and safe literal ASCII characters. Automatic Git commits/sync, export, and key management are deferred. Saving a generated password copies it to the clipboard automatically; the displayed generated password hides after 30 seconds, while its clipboard copy follows `PASSWORD_STORE_CLIP_TIME` and restores the previous clipboard contents. The bundled EFF Short Word List #2 is attributed in [assets/EFF-WORDLIST-LICENSE.md](assets/EFF-WORDLIST-LICENSE.md).
 
@@ -55,7 +56,7 @@ Manual hardware check: the user reports that hidden copy, reveal/hide, edit, and
 
 The app loads an optional TOML theme at `$XDG_CONFIG_HOME/gpui-pass/theme.toml`, or `~/.config/gpui-pass/theme.toml` when `XDG_CONFIG_HOME` is unset. Missing values inherit the built-in theme. Invalid or unknown values cause the file to be ignored and the built-in theme to be used. Copy [config/theme.example.toml](config/theme.example.toml) as a starting point. Colors use `#RRGGBB`; the translucent `selection` color uses `#RRGGBBAA`. Spacing and radius values are in GPUI logical pixels and are range checked. Changes apply after restarting the app.
 
-Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan graphics support. Configure graphical pinentry through your normal `gpg-agent` setup. Running the client does not require the `pass` CLI.
+Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan graphics support. Configure graphical pinentry through your normal `gpg-agent` setup. Running the client does not require the `pass` CLI. If the configured store is missing, the app offers to create a pass-compatible store using existing GPG recipients.
 
 The desktop is a separate Cargo package so security tests do not depend on GPUI:
 
@@ -65,6 +66,9 @@ cargo run --manifest-path desktop/Cargo.toml -- --demo
 
 # PASSWORD_STORE_DIR, falling back to ~/.password-store
 cargo run --manifest-path desktop/Cargo.toml
+
+# Step through onboarding without writing files or invoking GnuPG
+cargo run --manifest-path desktop/Cargo.toml -- --onboarding-demo
 
 # Explicit store and optional GnuPG executable
 cargo run --manifest-path desktop/Cargo.toml -- \

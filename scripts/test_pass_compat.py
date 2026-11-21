@@ -20,13 +20,14 @@ def main():
             PASSWORD_STORE_ENABLE_EXTENSIONS="false",
         )
 
-        def run(command, data=None):
-            result = subprocess.run(command, input=data, env=environment,
+        def run(command, data=None, env=environment):
+            result = subprocess.run(command, input=data, env=env,
                                     capture_output=True, timeout=60)
             if result.returncode:
                 # Diagnostics here refer only to the disposable fixture.
                 sys.stderr.buffer.write(result.stderr)
                 raise RuntimeError(f"Fixture command failed: {command[0]}")
+            return result
 
         try:
             for name in ("Root <root@example.test>", "Work <work@example.test>"):
@@ -38,10 +39,20 @@ def main():
                 b"fixture-root-secret\nusername: person@example.test\n\nPreserve multiline notes.\n")
             run(["pass", "insert", "-m", "work/service"],
                 b"fixture-nested-secret\nusername: work@example.test\n")
-            return subprocess.run(
+            test_result = subprocess.run(
                 ["cargo", "test", "--locked", "--test", "pass_compat", "--", "--ignored"],
                 env=environment, timeout=60,
             ).returncode
+            if test_result:
+                return test_result
+            initialized_environment = environment.copy()
+            initialized_environment["PASSWORD_STORE_DIR"] = str(
+                Path(directory) / "app-initialized"
+            )
+            result = run(["pass", "show", "app/initialized"], env=initialized_environment)
+            if result.stdout != b"created-by-gpui-pass\n":
+                raise RuntimeError("pass could not read the app-initialized store")
+            return 0
         finally:
             subprocess.run(["gpgconf", "--homedir", str(home), "--kill", "gpg-agent"],
                            capture_output=True, timeout=10)

@@ -9,7 +9,7 @@ use zeroize::Zeroizing;
 #[ignore = "requires the disposable fixture created by scripts/test-pass-compat.sh"]
 fn roundtrips_a_real_pass_store_without_changing_existing_entries() {
     let path = env::var_os("GPUI_PASS_TEST_STORE").expect("run scripts/test-pass-compat.sh");
-    let store = Store::open(path).unwrap();
+    let store = Store::open(&path).unwrap();
     let before_root = fs::read(store.root().join("personal/email.gpg")).unwrap();
     let before_nested = fs::read(store.root().join("work/service.gpg")).unwrap();
     let entries = store.entries().unwrap();
@@ -78,4 +78,22 @@ fn roundtrips_a_real_pass_store_without_changing_existing_entries() {
         );
     }
     store.remove_entry(&generated).unwrap();
+
+    let initialized_root = std::path::Path::new(&path)
+        .parent()
+        .unwrap()
+        .join("app-initialized");
+    let initialized_store =
+        Store::initialize(&initialized_root, &["root@example.test".to_owned()], None).unwrap();
+    let initialized_entry = Entry::from_relative_file("app/initialized.gpg").unwrap();
+    let initialized_secret =
+        Secret::from_bytes(Zeroizing::new(b"created-by-gpui-pass\n".to_vec())).unwrap();
+    gpg.create_entry(
+        &initialized_store,
+        &initialized_entry,
+        &initialized_secret,
+        &Cancellation::default(),
+        &progress,
+    )
+    .unwrap();
 }

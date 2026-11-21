@@ -372,11 +372,40 @@ impl PassApp {
         cx.notify();
     }
 
+    fn apply_open_store_selection(
+        &mut self,
+        path: PathBuf,
+        preview: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.state.saving.is_some() {
+            return;
+        }
+        self.state.load = None;
+        self.state.onboarding = None;
+        self.state.onboarding_pending = None;
+        self.clear_create_entry();
+        self.state.onboarding_demo = false;
+        self.state.demo = false;
+        self.state.demo_empty_store = false;
+        self.state.preview_store_load = preview;
+        self.state.path = Some(path);
+        self.refresh(cx);
+    }
+
     pub(super) fn open_store(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.saving.is_some() {
             return;
         }
-        self.hide(cx);
+        let preview = self
+            .state
+            .onboarding
+            .as_ref()
+            .is_some_and(|onboarding| onboarding.preview);
+        if !preview {
+            self.hide(cx);
+        }
+        window.activate_window();
         let picker = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
             directories: true,
@@ -384,20 +413,50 @@ impl PassApp {
             prompt: Some("Open password store".into()),
         });
         cx.spawn_in(window, async move |entity, cx| {
-            if let Ok(Ok(Some(paths))) = picker.await {
-                if let Some(path) = paths.into_iter().next() {
-                    let _ = entity.update(cx, |app, cx| {
-                        if app.state.saving.is_some() {
-                            return;
-                        }
-                        app.state.load = None;
-                        app.state.demo = false;
-                        app.state.path = Some(path);
-                        app.refresh(cx);
-                    });
+            let path = match picker.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next(),
+                Ok(Ok(None)) => None,
+                Ok(Err(_)) | Err(_) => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        cx.background_spawn(async { pick_folder_with_zenity() }).await
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    {
+                        None
+                    }
                 }
+            };
+            if let Some(path) = path {
+                let _ = entity.update(cx, |app, cx| {
+                    app.apply_open_store_selection(path, preview, cx);
+                });
+            } else {
+                let _ = entity.update(cx, |app, cx| {
+                    app.set_message("Unable to open the folder picker.".into());
+                    cx.notify();
+                });
             }
         })
         .detach();
     }
+}
+
+#[cfg(target_os = "linux")]
+fn pick_folder_with_zenity() -> Option<PathBuf> {
+    let output = Command::new("zenity")
+        .args([
+            "--file-selection",
+            "--directory",
+            "--title",
+            "Open password store",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(output.stdout).ok()?;
+    let path = path.trim();
+    (!path.is_empty()).then(|| PathBuf::from(path))
 }

@@ -192,6 +192,7 @@ impl PassApp {
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let focus = self.state.custom_entry_name_focus.clone();
+        let onboarding = self.state.onboarding.is_some();
         let entity = cx.entity().clone();
         let focused = focus.is_focused(window);
         let start = self
@@ -223,7 +224,11 @@ impl PassApp {
                 .child(
                     div()
                         .text_color(rgb(self.state.theme.colors.muted))
-                        .child("e.g. Email/example.com"),
+                        .child(if onboarding {
+                            "e.g. 0xABCD... or user@example.com"
+                        } else {
+                            "e.g. Email/example.com"
+                        }),
                 );
         } else {
             text = text
@@ -246,7 +251,11 @@ impl PassApp {
                 .child(self.state.custom_entry_name[end..].to_owned());
         }
         div()
-            .id("custom-entry-name-field")
+            .id(if onboarding {
+                "onboarding-recipient-field"
+            } else {
+                "custom-entry-name-field"
+            })
             .track_focus(&focus)
             .rounded(px(self.state.theme.radii.field))
             .h(px(44.))

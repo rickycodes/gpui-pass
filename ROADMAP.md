@@ -1,12 +1,12 @@
 # Roadmap to v1
 
-The goal is a dependable Linux desktop client for an existing `pass` store. A v1 release should make the supported workflows clear, protect against ordinary data loss, and be straightforward to install and verify. There are no target dates.
+The goal is a dependable Linux desktop client for an existing or newly initialized `pass` store. A v1 release should make the supported workflows clear, protect against ordinary data loss, and be straightforward to install and verify. There are no target dates.
 
 ## v1 scope
 
 - Linux desktop, using the user's existing GnuPG keyring, `gpg-agent`, and optional OpenPGP smartcard/YubiKey.
 - Existing `pass` store format and commands remain usable alongside the app.
-- Local store operations: browse, search, reveal, copy, edit, delete, generate, and create entries.
+- Local store operations: initialize, browse, search, reveal, copy, edit, delete, generate, and create entries.
 - Current built-in visual design and theme configuration. English (`en-US`) is the supported v1 language; the Fluent setup can make later translation possible without making translation a release gate.
 - Optimized Linux x86_64 release artifact, checksum, installation instructions, and CI checks.
 
@@ -32,6 +32,9 @@ Implemented:
   views; input hit testing and IME cursor placement use measured GPUI text
   layout rather than a fixed character advance.
 - Build and publish a Linux x86_64 release artifact and checksum through GitHub Actions.
+- Initialize a new pass-compatible store from existing GPG recipient IDs through
+  one onboarding surface. Missing stores open onboarding; valid stores bypass it.
+  The same flow is available as a non-destructive `--onboarding-demo` preview.
 
 The maintainer reports having exercised the normal workflows against a real
 password store throughout development and confirms they work as expected so
@@ -44,13 +47,36 @@ hardware.
 
 ## Remaining work before v1
 
-### 1. Close the v1 reliability gaps
+### 1. Verify store onboarding compatibility
+
+- Run the real GnuPG/`pass` integration fixture against an app-initialized store,
+  including multiple recipients and the configured detached-signature policy.
+- Manually step through missing-store onboarding, empty-directory onboarding,
+  cancellation, invalid recipients, and the preview mode. Confirm failed or
+  cancelled setup leaves no partial directory, `.gpg-id`, signature, or entry.
+- Confirm a successful initialization loads an empty store and allows the first
+  entry without restarting; confirm upstream `pass` can open the result.
+- Keep the implementation constrained to existing GPG keys and one explicit,
+  failure-cleaned store-creation operation. Do not add key management, Git setup,
+  or a second mock UI for preview mode.
+
+#### Onboarding acceptance criteria
+
+- A missing store opens onboarding; a valid existing store opens normally.
+- Initialization matches `pass init` for a new store: restrictive directory
+  permissions, one recipient per `.gpg-id` line, and `.gpg-id.sig` when the
+  configured signing policy requires it.
+- Existing `.gpg-id`, entries, and non-empty targets are never overwritten.
+- Preview mode traverses the complete flow and reports the final plan without
+  touching the filesystem, GnuPG, Git, clipboard, or network.
+
+### 2. Close the v1 reliability gaps
 
 - Keep the maintainer's real-store workflow validation current as features change; record any environment-specific gaps rather than treating one setup as universal coverage.
 - Keep external-writer conflict behavior explicit: preserve edits and warn on changes observed before replacement. Document the remaining narrow race with non-cooperating tools such as `pass` unless a portable coordination mechanism is added.
 - Update or archive the 2026-11-14 source review and 2026-11-15 follow-up so their findings and validation counts are not mistaken for the current state.
 
-### 2. Define and verify the supported release
+### 3. Define and verify the supported release
 
 - Specify the tested Linux baseline and runtime requirements, including GnuPG, graphical pinentry, graphics stack, and optional YubiKey packages.
 - Verify a clean optimized build, packaged artifact contents, checksum instructions, and a fresh install/run from a release download.
@@ -203,4 +229,4 @@ These are exploratory and not current targets:
 
 ## Release completion checklist
 
-V1 is ready when all advertised local workflows pass the documented checks; detected edit conflicts preserve the user's work; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.
+V1 is ready when all advertised local workflows, including new-store onboarding and its non-destructive preview, pass the documented checks; detected edit conflicts preserve the user's work; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.

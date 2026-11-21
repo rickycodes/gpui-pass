@@ -84,6 +84,98 @@ impl Gpg {
         })
     }
 
+    pub fn validate_recipients(&self, recipients: &[String]) -> Result<(), Error> {
+        if recipients.is_empty() {
+            return Err(Error::MissingRecipients);
+        }
+        let mut command = Command::new(&self.executable);
+        command.args([
+            "--no-options",
+            "--batch",
+            "--no-tty",
+            "--no-auto-key-retrieve",
+            "--no-auto-key-import",
+            "--with-colons",
+            "--list-keys",
+        ]);
+        command.arg("--");
+        for recipient in recipients {
+            command.arg(recipient);
+        }
+        let output = command.output().map_err(|_| Error::InvalidRecipients)?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(Error::InvalidRecipients)
+        }
+    }
+
+    pub fn sign_detached(
+        &self,
+        contents: &[u8],
+        signing_keys: &[String],
+    ) -> Result<Vec<u8>, Error> {
+        if signing_keys.is_empty() {
+            return Err(Error::InvalidSigningKey);
+        }
+        let mut command = Command::new(&self.executable);
+        command.args([
+            "--no-options",
+            "--batch",
+            "--no-tty",
+            "--pinentry-mode",
+            "ask",
+            "--no-auto-key-retrieve",
+            "--no-auto-key-import",
+            "--quiet",
+            "--yes",
+            "--output",
+            "-",
+        ]);
+        for key in signing_keys {
+            command.arg("--default-key").arg(key);
+        }
+        let mut child = command
+            .arg("--detach-sign")
+            .arg("--")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| Error::SigningFailed)?;
+        child
+            .stdin
+            .take()
+            .ok_or(Error::SigningFailed)?
+            .write_all(contents)
+            .map_err(|_| Error::SigningFailed)?;
+        let started = Instant::now();
+        loop {
+            match child.try_wait() {
+                Ok(Some(_)) => break,
+                Ok(None) if started.elapsed() < self.timeout => {
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(Error::TimedOut);
+                }
+                Err(_) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(Error::SigningFailed);
+                }
+            }
+        }
+        let output = child.wait_with_output().map_err(|_| Error::SigningFailed)?;
+        if output.status.success() && !output.stdout.is_empty() {
+            Ok(output.stdout)
+        } else {
+            Err(Error::SigningFailed)
+        }
+    }
+
     pub fn decrypt(
         &self,
         store: &Store,

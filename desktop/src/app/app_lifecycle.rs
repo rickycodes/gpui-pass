@@ -119,6 +119,9 @@ impl PassApp {
         if self.state.saving.is_some() {
             return;
         }
+        if self.state.onboarding.is_some() {
+            return;
+        }
         self.cancel_edit(cx);
         self.state.confirming_delete = None;
         if self.state.load.is_some() {
@@ -138,7 +141,17 @@ impl PassApp {
             cx.notify();
             return;
         }
+        if self.state.onboarding_demo {
+            let path = self
+                .state
+                .path
+                .clone()
+                .unwrap_or_else(|| PathBuf::from("~/.password-store"));
+            self.open_onboarding(path, true, cx);
+            return;
+        }
         if self.state.demo {
+            if !self.state.demo_empty_store {
             self.state.entries = [
                 "Development/github.com.gpg",
                 "Development/linear.app.state.gpg",
@@ -194,8 +207,13 @@ impl PassApp {
             .into_iter()
             .map(|path| Entry::from_relative_file(path).expect("static demo path"))
             .collect();
+            }
             self.filter(cx);
         } else if let Some(path) = self.state.path.clone() {
+            if !path.exists() {
+                self.open_onboarding(path, false, cx);
+                return;
+            }
             let (sender, receiver) = mpsc::sync_channel(1);
             self.state.load = Some(receiver);
             std::thread::spawn(move || {
@@ -211,6 +229,7 @@ impl PassApp {
 
     pub(super) fn tick(&mut self, cx: &mut Context<Self>) {
         diagnostics::performance_tick(self.store_is_loading(), self.state.active);
+        self.poll_onboarding(cx);
         if self
             .state
             .device_verification
@@ -248,15 +267,40 @@ impl PassApp {
             .and_then(|receiver| receiver.try_recv().ok())
         {
             self.state.load = None;
+            let preview = self.state.preview_store_load;
+            self.state.preview_store_load = false;
             match result {
                 Ok((store, entries)) => {
+                    let initialized = store.has_root_recipient_policy().unwrap_or(true);
                     self.state.store = Some(store);
                     self.state.entries = entries;
-                    self.filter(cx);
+                    if !initialized && self.state.entries.is_empty() {
+                        if let Some(path) = self.state.path.clone() {
+                            self.open_onboarding(path, preview, cx);
+                        }
+                    } else {
+                        self.filter(cx);
+                    }
                 }
                 Err(error) => {
                     self.state.saving_edit = false;
-                    self.set_message(error.to_string());
+                    if preview {
+                        if let Some(path) = self.state.path.clone() {
+                            self.open_onboarding(path, true, cx);
+                            self.set_message(error.to_string());
+                        }
+                    } else if self
+                        .state
+                        .path
+                        .as_ref()
+                        .is_some_and(|path| !path.exists())
+                    {
+                        if let Some(path) = self.state.path.clone() {
+                            self.open_onboarding(path, false, cx);
+                        }
+                    } else {
+                        self.set_message(error.to_string());
+                    }
                 }
             }
             cx.notify();

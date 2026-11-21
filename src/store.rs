@@ -92,6 +92,29 @@ fn parse_recipients(text: &str) -> Result<Vec<String>, Error> {
     }
 }
 
+pub fn configured_signing_keys() -> Result<Vec<String>, Error> {
+    let Some(value) = env::var_os("PASSWORD_STORE_SIGNING_KEY").filter(|value| !value.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let keys: Vec<_> = value
+        .to_string_lossy()
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect();
+    if keys.is_empty()
+        || keys.iter().any(|key| {
+            key.len() != 40
+                || !key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte))
+        })
+    {
+        return Err(Error::InvalidSigningKey);
+    }
+    Ok(keys)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RecipientPolicy {
     pub recipients: Vec<String>,
@@ -237,6 +260,91 @@ impl Store {
         Err(Error::UnsupportedPlatform)
     }
 
+    #[cfg(unix)]
+    pub fn initialize(
+        root: impl AsRef<Path>,
+        recipients: &[String],
+        signature: Option<&[u8]>,
+    ) -> Result<Self, Error> {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
+        if recipients.is_empty()
+            || recipients.iter().any(|recipient| {
+                recipient.is_empty()
+                    || recipient.len() > 256
+                    || recipient.chars().any(char::is_control)
+            })
+        {
+            return Err(Error::InvalidRecipients);
+        }
+        let root = root.as_ref();
+        let created_root = match fs::symlink_metadata(root) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() || !metadata.is_dir() {
+                    return Err(Error::InvalidEntry);
+                }
+                if fs::read_dir(root)?.next().transpose()?.is_some() {
+                    return Err(Error::StoreNotEmpty);
+                }
+                false
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir_all(root)?;
+                true
+            }
+            Err(error) => return Err(Error::Io(error)),
+        };
+        fs::set_permissions(root, fs::Permissions::from_mode(0o700))?;
+
+        let id_path = root.join(".gpg-id");
+        let signature_path = root.join(".gpg-id.sig");
+        let result = (|| {
+            let mut id = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&id_path)?;
+            for recipient in recipients {
+                writeln!(id, "{recipient}")?;
+            }
+            id.sync_all()?;
+            if let Some(signature) = signature {
+                let mut file = fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&signature_path)?;
+                file.write_all(signature)?;
+                file.sync_all()?;
+            }
+            Self::open(root)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&signature_path);
+            let _ = fs::remove_file(&id_path);
+            if created_root {
+                let _ = fs::remove_dir(root);
+            }
+        }
+        result
+    }
+
+    #[cfg(not(unix))]
+    pub fn initialize(_: impl AsRef<Path>, _: &[String], _: Option<&[u8]>) -> Result<Self, Error> {
+        Err(Error::UnsupportedPlatform)
+    }
+
+    pub fn has_root_recipient_policy(&self) -> Result<bool, Error> {
+        match fs::symlink_metadata(self.root.join(".gpg-id")) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+                Err(Error::InvalidRecipients)
+            }
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(Error::Io(error)),
+        }
+    }
+
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -342,28 +450,7 @@ impl Store {
                 signing_keys: Vec::new(),
             });
         }
-        let signing_keys =
-            match env::var_os("PASSWORD_STORE_SIGNING_KEY").filter(|value| !value.is_empty()) {
-                Some(value) => {
-                    let keys: Vec<_> = value
-                        .to_string_lossy()
-                        .split_whitespace()
-                        .map(str::to_owned)
-                        .collect();
-                    if keys.is_empty()
-                        || keys.iter().any(|key| {
-                            key.len() != 40
-                                || !key.bytes().all(|byte| {
-                                    byte.is_ascii_digit() || (b'A'..=b'F').contains(&byte)
-                                })
-                        })
-                    {
-                        return Err(Error::InvalidSigningKey);
-                    }
-                    keys
-                }
-                None => Vec::new(),
-            };
+        let signing_keys = configured_signing_keys()?;
         #[cfg(unix)]
         {
             use rustix::{

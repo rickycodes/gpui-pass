@@ -28,6 +28,8 @@ mod app_actions;
 mod app_lifecycle;
 #[path = "app/app_state.rs"]
 mod app_state;
+#[path = "app/onboarding_operations.rs"]
+mod onboarding_operations;
 #[path = "views/app_view.rs"]
 mod app_view;
 #[path = "ui/brand.rs"]
@@ -58,6 +60,8 @@ mod generator_view;
 mod i18n;
 #[path = "ui/loading_spinner.rs"]
 mod loading_spinner;
+#[path = "views/onboarding_view.rs"]
+mod onboarding_view;
 #[path = "views/overwrite_view.rs"]
 mod overwrite_view;
 #[path = "input/search.rs"]
@@ -88,8 +92,9 @@ use gpui::{
 };
 use gpui_pass_core::{
     Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg,
-    OperationProgress, OperationStatus, RevealRequest, Secret, Session, Store, default_store_path,
-    generate_memorable_password, generate_pass_default_password, harden_process,
+    OperationProgress, OperationStatus, RevealRequest, Secret, Session, Store,
+    configured_signing_keys, default_store_path, generate_memorable_password,
+    generate_pass_default_password, harden_process,
 };
 use loading_spinner::loading_spinner;
 use std::{
@@ -123,6 +128,7 @@ struct Options {
     gpg: PathBuf,
     demo: bool,
     loading_demo: bool,
+    onboarding_demo: bool,
 }
 
 impl Options {
@@ -132,12 +138,14 @@ impl Options {
             gpg: PathBuf::from("/usr/bin/gpg"),
             demo: false,
             loading_demo: false,
+            onboarding_demo: false,
         };
         let mut args = std::env::args_os().skip(1);
         while let Some(arg) = args.next() {
             match arg.to_str() {
                 Some("--demo") => options.demo = true,
                 Some("--loading-demo") => options.loading_demo = true,
+                Some("--onboarding-demo") => options.onboarding_demo = true,
                 Some("--store") => {
                     options.store = Some(args.next().ok_or("--store requires a directory")?.into())
                 }
@@ -149,24 +157,27 @@ impl Options {
                 }
                 Some("--help" | "-h") => {
                     println!(
-                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo | --loading-demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store.\n--loading-demo holds the UI on its loading spinner without opening a password store."
+                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo | --loading-demo | --onboarding-demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store.\n--loading-demo holds the UI on its loading spinner without opening a password store.\n--onboarding-demo exercises new-store setup without writing files or invoking GnuPG."
                     );
                     return Ok(None);
                 }
                 _ => return Err("Unknown argument. Use --help for usage.".into()),
             }
         }
-        if options.demo && options.store.is_some() {
-            return Err("Use --demo or --store, separately.".into());
+        if options.demo && (options.store.is_some() || options.onboarding_demo) {
+            return Err("Use --demo, --store, or --onboarding-demo separately.".into());
         }
-        if options.loading_demo && (options.demo || options.store.is_some()) {
-            return Err("Use --loading-demo by itself.".into());
+        if options.loading_demo
+            && (options.demo || options.store.is_some() || options.onboarding_demo)
+        {
+            return Err("--loading-demo cannot be combined with another mode.".into());
         }
         Ok(Some(options))
     }
 }
 
 type LoadedStore = Result<(Store, Vec<Entry>), Error>;
+type OnboardingResult = Result<(), Error>;
 
 type VersionedSecretResult = Result<(Secret, Option<EntryRevision>), Error>;
 type SaveResult = Result<(Entry, Secret), Error>;

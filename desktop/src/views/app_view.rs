@@ -7,7 +7,10 @@ impl Render for PassApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let _render_sample = diagnostics::measure_render();
         self.advance_sidebar_scroll(window);
-        let main_content = if self.state.navigation.generator_open() {
+        let onboarding = self.state.onboarding.is_some();
+        let main_content = if onboarding {
+            self.onboarding_view(window, cx)
+        } else if self.state.navigation.generator_open() {
             self.generator_view(window, cx)
         } else if self.state.navigation.page() == Page::CardDetails {
             self.yubikey_view(cx)
@@ -34,9 +37,10 @@ impl Render for PassApp {
                 .track_focus(&self.state.focus),
             cx,
         )
-        .when(!self.state.navigation.generator_open(), |view| {
-            view.child(self.titlebar("titlebar", Some(self.navigation_links(cx)), cx))
-        })
+        .when(
+            !self.state.navigation.generator_open() && !onboarding,
+            |view| view.child(self.titlebar("titlebar", Some(self.navigation_links(cx)), cx)),
+        )
         .child(main_content)
         .child(footer)
         .when(self.state.confirming_delete.is_some(), |view| {

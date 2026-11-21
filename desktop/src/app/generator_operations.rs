@@ -28,7 +28,7 @@ impl PassApp {
         if self.state.saving.is_some() {
             return;
         }
-        if self.state.demo || self.state.store.is_none() {
+        if self.state.demo || self.state.store.is_none() || self.state.onboarding.is_some() {
             self.set_message(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;

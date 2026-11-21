@@ -12,6 +12,11 @@ pub(super) enum SidebarRow {
         depth: usize,
     },
 }
+pub(super) struct OnboardingState {
+    pub(super) path: PathBuf,
+    pub(super) preview: bool,
+}
+
 pub(crate) struct AppState {
     // Store and entry browsing.
     pub(super) theme: Theme,
@@ -43,9 +48,13 @@ pub(crate) struct AppState {
     pub(super) path: Option<PathBuf>,
     pub(super) gpg: PathBuf,
     pub(super) demo: bool,
+    pub(super) demo_empty_store: bool,
+    pub(super) onboarding_demo: bool,
+    pub(super) preview_store_load: bool,
     pub(super) loading_demo: bool,
     pub(super) load: Option<Receiver<LoadedStore>>,
-    // Revealing, copying, and composing secrets.
+    pub(super) onboarding: Option<OnboardingState>,
+    pub(super) onboarding_pending: Option<Receiver<OnboardingResult>>,
     pub(super) reveal: Option<(RevealRequest, Receiver<VersionedSecretResult>)>,
     pub(super) copy_pending: Option<PendingCopy>,
     pub(super) content_generated: bool,
@@ -144,8 +153,13 @@ impl AppState {
             path: options.store.or_else(|| default_store_path().ok()),
             gpg: options.gpg,
             demo: options.demo,
+            demo_empty_store: false,
+            onboarding_demo: options.onboarding_demo,
             loading_demo: options.loading_demo,
+            preview_store_load: false,
             load: None,
+            onboarding: None,
+            onboarding_pending: None,
             reveal: None,
             copy_pending: None,
             content_generated: false,
