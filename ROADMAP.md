@@ -83,7 +83,10 @@ Manual GUI verification completed so far:
 - The preview folder picker opened successfully. Selecting a store-shaped
   directory containing `.gpg-id` and a `.gpg` entry left onboarding and
   displayed the entry without writing to the selected directory.
-
+- Selecting a non-empty uninitialized target kept the preview in onboarding and
+  left its existing file unchanged. Post-fix diagnostics showed no GnuPG or
+  YubiKey probes; an earlier run exposed and led to the preview polling guard
+  fix.
 
 ### 2. Close the v1 reliability gaps
 
