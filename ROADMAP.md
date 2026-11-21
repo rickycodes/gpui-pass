@@ -49,8 +49,9 @@ hardware.
 
 ### 1. Verify store onboarding compatibility
 
-- Run the real GnuPG/`pass` integration fixture against an app-initialized store,
-  including multiple recipients and the configured detached-signature policy.
+- The disposable compatibility fixture verifies that `Store::initialize`
+  creates a store readable by `pass` and that existing pass entries round-trip
+  unchanged. It does not exercise GUI onboarding or detached-signature policy.
 - Manually step through missing-store onboarding, empty-directory onboarding,
   cancellation, invalid recipients, and the preview mode. Confirm failed or
   cancelled setup leaves no partial directory, `.gpg-id`, signature, or entry.
