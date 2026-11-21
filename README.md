@@ -58,6 +58,47 @@ The app loads an optional TOML theme at `$XDG_CONFIG_HOME/gpui-pass/theme.toml`,
 
 Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan graphics support. Configure graphical pinentry through your normal `gpg-agent` setup. Running the client does not require the `pass` CLI. If the configured store is missing, the app offers to create a pass-compatible store using existing GPG recipients.
 
+### Supported Linux baseline
+
+The v1 release artifact is built and tested on Ubuntu 24.04 LTS, x86_64. The
+desktop can run under either Wayland or X11; the release smoke test uses X11
+through Xvfb and Mesa's software Vulkan driver, so CI does not require a
+physical GPU. Other recent Linux distributions may work, but their package
+names and graphics/pinentry setup are not release-gated.
+
+For a published binary on Ubuntu 24.04, install the runtime libraries and a
+graphical GnuPG pinentry:
+
+```sh
+sudo apt install \
+  gnupg pinentry-gnome3 \
+  libasound2t64 libfontconfig1 libfreetype6 libssl3t64 \
+  libwayland-client0 libx11-xcb1 libxkbcommon-x11-0 libvulkan1
+```
+
+Use the pinentry package appropriate for the desktop environment instead of
+`pinentry-gnome3` when necessary (for example, `pinentry-qt` on KDE). A
+terminal-only pinentry is not sufficient for normal desktop use. GnuPG,
+`gpg-agent`, and `scdaemon` use the user's existing configuration; the app
+does not manage keys or start a separate agent.
+
+Optional OpenPGP smartcard/YubiKey support uses the same GnuPG setup:
+
+```sh
+sudo apt install scdaemon
+```
+
+The card status details and local **Verify Device** action additionally use
+the optional Python helpers:
+
+```sh
+sudo apt install python3-yubikey-manager python3-fido2 python3-cryptography
+```
+
+The app uses GnuPG's smartcard path and does not require `pcscd` for its
+YubiKey flow. Follow the distribution's USB permissions guidance if the
+current user cannot access the device.
+
 The desktop is a separate Cargo package so security tests do not depend on GPUI:
 
 ```sh

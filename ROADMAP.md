@@ -32,6 +32,8 @@ Implemented:
   views; input hit testing and IME cursor placement use measured GPUI text
   layout rather than a fixed character advance.
 - Build and publish a Linux x86_64 release artifact and checksum through GitHub Actions.
+- Document the Ubuntu 24.04 x86_64 release baseline, runtime libraries,
+  graphical pinentry, and optional YubiKey dependencies in the README.
 - Initialize a new pass-compatible store from existing GPG recipient IDs through
   one onboarding surface. Missing stores open onboarding; valid stores bypass it.
   The same flow is available as a non-destructive `--onboarding-demo` preview.
@@ -85,8 +87,6 @@ hardware.
   contents, checksum validation, temporary-prefix installation, and execution
   from downloaded release assets. The headless launch check uses Mesa Lavapipe
   under Xvfb, so it does not require runner GPU hardware.
-- Specify the tested Linux baseline and runtime requirements, including GnuPG,
-  graphical pinentry, graphics stack, and optional YubiKey packages.
 - Run CI checks and integration fixtures from a clean checkout. Keep release
   notes and README status aligned with what was actually tested.
 - Perform a final GUI pass at normal and compact window sizes, with both light
@@ -227,6 +227,23 @@ QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
 - Investigate macOS support; evaluate Windows only after reviewing safe file and subprocess handling.
 - Favorites and recent entries, storing only entry paths in local app state and
   never caching decrypted contents.
+
+### Broader Linux distribution support
+
+Support beyond the Ubuntu 24.04 x86_64 release baseline after v1:
+
+- Define supported distro families, minimum glibc, CPU architectures, desktop
+  sessions, and host graphics requirements.
+- Build against the oldest supported glibc baseline so newer symbol versions do
+  not make the binary unusable on older distributions.
+- Decide between distro-native packages, an AppImage, or Flatpak; do not bundle
+  the host GnuPG, pinentry, smartcard services, or GPU drivers.
+- Test installation and normal workflows across representative Debian/Ubuntu,
+  Fedora, and Arch environments under both X11 and Wayland where supported.
+- Keep GnuPG, graphical pinentry, YubiKey permissions, Vulkan drivers, and
+  desktop portals explicit as host requirements rather than hiding them behind
+  unsupported bundling.
+
 
 ## Ideas to revisit
 
