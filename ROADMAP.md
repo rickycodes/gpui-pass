@@ -87,6 +87,9 @@ Manual GUI verification completed so far:
   left its existing file unchanged. Post-fix diagnostics showed no GnuPG or
   YubiKey probes; an earlier run exposed and led to the preview polling guard
   fix.
+- Cancelling the preview folder picker kept onboarding visible, left the dry-run
+  state intact, and left the temporary target empty.
+
 
 ### 2. Close the v1 reliability gaps
 
