@@ -54,10 +54,33 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  verify-artifact:
+    name: Verify release artifact
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: gpui-pass-linux-x86_64
+          path: dist
+      - name: Install runtime and smoke-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb \
+            build-essential clang cmake pkg-config libclang-dev \
+            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+      - name: Verify checksum, install, and launch
+        run: bash scripts/verify-release.sh \
+          dist/gpui-pass-linux-x86_64.tar.gz \
+          dist/gpui-pass-linux-x86_64.tar.gz.sha256
+
+
   publish-release:
     name: Attach assets to GitHub Release
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-    needs: build-linux
+    needs: [build-linux, verify-artifact]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -74,3 +97,35 @@ jobs:
         run: |
           gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --generate-notes
           gh release upload "$RELEASE_TAG" dist/gpui-pass-linux-x86_64.tar.gz dist/gpui-pass-linux-x86_64.tar.gz.sha256 --clobber
+
+  verify-published-release:
+    name: Verify published release assets
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: publish-release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern 'gpui-pass-linux-x86_64.tar.gz' \
+            --pattern 'gpui-pass-linux-x86_64.tar.gz.sha256' \
+            --dir dist
+      - name: Install runtime and smoke-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xvfb \
+            build-essential clang cmake pkg-config libclang-dev \
+            libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
+            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+      - name: Verify downloaded release
+        run: bash scripts/verify-release.sh \
+          dist/gpui-pass-linux-x86_64.tar.gz \
+          dist/gpui-pass-linux-x86_64.tar.gz.sha256

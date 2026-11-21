@@ -109,7 +109,7 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 ## Verification
 
-GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, attach the installable tarball and SHA-256 checksum to a GitHub Release, and retain the artifact on the workflow run for 30 days. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
+GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, verify its checksum, install it in a temporary runner prefix, smoke-test CLI and GUI startup, publish the assets, then download and verify the published assets again. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
 ```sh
 cargo test --locked
@@ -128,6 +128,14 @@ cargo clippy --manifest-path desktop/Cargo.toml --all-targets -- -D warnings
 ```
 
 The integration fixture sets its own `GNUPGHOME` and `PASSWORD_STORE_DIR`, creates root and nested multi-recipient entries through `pass`, checks exact multiline plaintext in Rust, and checks unchanged ciphertext. It stops its own agent and removes its own temporary directory.
+
+The release smoke verifier expects `xvfb-run` and validates a downloaded tarball with:
+
+```sh
+bash scripts/verify-release.sh \
+  gpui-pass-linux-x86_64.tar.gz \
+  gpui-pass-linux-x86_64.tar.gz.sha256
+```
 
 For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture passed outside the sandbox during the latest review. The user has manually confirmed that both generated and custom entries warn before replacement and save the confirmed replacement. Visual verification must use fictional data.
 

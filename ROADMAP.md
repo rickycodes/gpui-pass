@@ -82,8 +82,12 @@ hardware.
 ### 3. Define and verify the supported release
 
 - Specify the tested Linux baseline and runtime requirements, including GnuPG, graphical pinentry, graphics stack, and optional YubiKey packages.
-- Verify a clean optimized build, packaged artifact contents, checksum instructions, and a fresh install/run from a release download.
-- Run CI checks and integration fixtures from a clean checkout. Keep release notes and README status aligned with what was actually tested.
+- Verify a clean optimized build, packaged artifact contents, checksum
+  instructions, a temporary-prefix install, and a fresh install/run from a
+  release download. The release workflow now gates publication on artifact
+  verification and rechecks the published assets.
+- Run CI checks and integration fixtures from a clean checkout. Keep release
+  notes and README status aligned with what was actually tested.
 - Perform a final GUI pass at normal and compact window sizes, with both light and dark themes, using fictional data. Exercise keyboard navigation and accessibility-relevant focus states.
 - Hardware behavior is verified on the maintainer's YubiKey: insertion,
   removal, PIN/touch, reveal, hidden copy, and retry. The remaining
