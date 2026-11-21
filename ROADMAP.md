@@ -93,6 +93,13 @@ Manual GUI verification completed so far:
   recipient notification and left the temporary target empty.
 - Real initialization refused a non-empty target and preserved its existing
   `KEEP.txt` file; no store policy or signature files were created.
+- First successful initialization created `.gpg-id`, but the first-entry save
+  exposed a missing-entry lookup being misreported as an unsupported path. The
+  lookup now distinguishes `EntryNotFound`; the new-entry save must be
+  rechecked manually.
+- After the lookup fix, initialization loaded without restart, the first entry
+  encrypted and saved with restrictive permissions, and upstream `pass show`
+  returned the exact plaintext. The app exited cleanly.
 
 ### 2. Close the v1 reliability gaps
 
