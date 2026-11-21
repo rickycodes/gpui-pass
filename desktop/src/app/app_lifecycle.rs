@@ -63,7 +63,7 @@ impl PassApp {
         })
         .detach();
         app.refresh(cx);
-        if !app.state.demo && !app.state.onboarding_demo {
+        if !app.skips_external_services() {
             app.start_card_watcher();
             app.start_usb_card_watcher(cx);
             if app.state.yubikey_check.is_none() {
@@ -82,7 +82,18 @@ impl PassApp {
             }
         })
         .detach();
+
         app
+    }
+    fn skips_external_services(&self) -> bool {
+        self.state.demo
+            || self.state.onboarding_demo
+            || self.state.preview_store_load
+            || self
+                .state
+                .onboarding
+                .as_ref()
+                .is_some_and(|onboarding| onboarding.preview)
     }
 
     pub(super) fn tick_interval(&self) -> Duration {
@@ -260,7 +271,7 @@ impl PassApp {
             self.state.verification_notification_until = None;
             cx.notify();
         }
-        if !self.state.demo && !self.state.onboarding_demo {
+        if !self.skips_external_services() {
             self.capture_yubikey_status(cx);
             self.poll_yubikey_connection(cx);
         }
