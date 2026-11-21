@@ -108,9 +108,10 @@ jobs:
             libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
             libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
       - name: Verify checksum, install, and launch
-        run: bash scripts/verify-release.sh \
-          dist/gpui-pass-linux-x86_64.tar.gz \
-          dist/gpui-pass-linux-x86_64.tar.gz.sha256
+        run: |
+          bash scripts/verify-release.sh \
+            dist/gpui-pass-linux-x86_64.tar.gz \
+            dist/gpui-pass-linux-x86_64.tar.gz.sha256
 
 
   publish-release:
@@ -185,6 +186,7 @@ jobs:
             libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
             libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
       - name: Verify downloaded release
-        run: bash scripts/verify-release.sh \
-          dist/gpui-pass-linux-x86_64.tar.gz \
-          dist/gpui-pass-linux-x86_64.tar.gz.sha256
+        run: |
+          bash scripts/verify-release.sh \
+            dist/gpui-pass-linux-x86_64.tar.gz \
+            dist/gpui-pass-linux-x86_64.tar.gz.sha256
