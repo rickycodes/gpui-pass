@@ -19,11 +19,16 @@ impl PassApp {
                     .map(|(_, progress, _)| progress.snapshot())
             });
         if let Some(message) = &self.state.message {
-            notification_bar(&self.state.theme, message.clone())
+            notification_bar(
+                &self.state.theme,
+                message.clone(),
+                self.state.message_is_error,
+            )
         } else if let Some(status) = status {
             notification_bar(
                 &self.state.theme,
                 format!("{} · {}", status.title, status.detail),
+                false,
             )
         } else if self.state.device_verification.running()
             || self.state.verification_notification_until.is_some()
@@ -31,6 +36,7 @@ impl PassApp {
             notification_bar(
                 &self.state.theme,
                 self.state.device_verification.state().message(),
+                false,
             )
         } else if let Some(seconds) = self.state.clipboard.remaining_seconds(Instant::now()) {
             let entry_name = self.state.clipboard.source().unwrap_or("entry");
@@ -114,7 +120,26 @@ impl PassApp {
     }
 }
 
-pub(super) fn notification_bar(theme: &Theme, message: impl Into<SharedString>) -> Div {
+pub(super) fn notification_bar(
+    theme: &Theme,
+    message: impl Into<SharedString>,
+    is_error: bool,
+) -> Div {
+    let background = if is_error {
+        theme.colors.danger_surface
+    } else {
+        theme.colors.accent_surface
+    };
+    let border = if is_error {
+        theme.colors.danger_border
+    } else {
+        theme.colors.border
+    };
+    let text = if is_error {
+        theme.colors.danger
+    } else {
+        theme.colors.ink
+    };
     div()
         .h(px(48.))
         .flex_shrink_0()
@@ -122,15 +147,15 @@ pub(super) fn notification_bar(theme: &Theme, message: impl Into<SharedString>) 
         .flex()
         .items_center()
         .border_t_1()
-        .border_color(rgb(theme.colors.border))
-        .bg(rgb(theme.colors.accent_surface))
+        .border_color(rgb(border))
+        .bg(rgb(background))
         .child(
             div()
                 .flex_1()
                 .min_w_0()
                 .text_size(px(13.))
                 .line_height(px(18.))
-                .text_color(rgb(theme.colors.ink))
+                .text_color(rgb(text))
                 .child(message.into()),
         )
 }

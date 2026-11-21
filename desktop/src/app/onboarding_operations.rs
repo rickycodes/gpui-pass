@@ -41,7 +41,7 @@ impl PassApp {
             .map(str::to_owned)
             .collect();
         if recipients.is_empty() {
-            self.set_message("Enter at least one GPG recipient.".into());
+            self.set_error("Enter at least one GPG recipient.".into());
             cx.notify();
             return;
         }
@@ -96,7 +96,7 @@ impl PassApp {
                 self.state.path = path;
                 self.refresh(cx);
             }
-            Err(error) => self.set_message(error.to_string()),
+            Err(error) => self.set_error(error.to_string()),
         }
         cx.notify();
     }

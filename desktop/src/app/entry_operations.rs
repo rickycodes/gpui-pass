@@ -44,12 +44,12 @@ impl PassApp {
             return;
         }
         let Some(secret) = self.state.session.revealed(Instant::now()) else {
-            self.set_message("Reveal the entry before editing it.".into());
+            self.set_error("Reveal the entry before editing it.".into());
             cx.notify();
             return;
         };
         if !editor_input::supported(secret.expose()) {
-            self.set_message(i18n::text("editor-limit"));
+            self.set_error(i18n::text("editor-limit"));
             cx.notify();
             return;
         }
@@ -84,7 +84,7 @@ impl PassApp {
                 self.save_edit(cx);
             }
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
             }
         }
@@ -107,12 +107,12 @@ impl PassApp {
             return;
         };
         let Some(store) = self.state.store.clone() else {
-            self.set_message("Open a password store before editing entries.".into());
+            self.set_error("Open a password store before editing entries.".into());
             cx.notify();
             return;
         };
         let Some(revision) = self.state.edit_revision else {
-            self.set_message("Reopen and reveal the entry before saving.".into());
+            self.set_error("Reopen and reveal the entry before saving.".into());
             cx.notify();
             return;
         };
@@ -121,7 +121,7 @@ impl PassApp {
         )) {
             Ok(secret) => secret,
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
                 return;
             }
@@ -129,7 +129,7 @@ impl PassApp {
         let gpg = match Gpg::new(&self.state.gpg) {
             Ok(gpg) => gpg,
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
                 return;
             }
@@ -178,7 +178,7 @@ impl PassApp {
                 self.state.entries.retain(|existing| existing != &entry);
                 self.filter(cx);
             }
-            Err(error) => self.set_message(error.to_string()),
+            Err(error) => self.set_error(error.to_string()),
         }
         cx.notify();
     }
@@ -292,7 +292,7 @@ impl PassApp {
                 Ok(gpg) => gpg,
                 Err(error) => {
                     self.state.session.fail_reveal(&request);
-                    self.set_message(error.to_string());
+                    self.set_error(error.to_string());
                     cx.notify();
                     return;
                 }
@@ -360,7 +360,7 @@ impl PassApp {
             cx.notify();
             return;
         } else {
-            self.set_message("Open a password store before copying an entry.".into());
+            self.set_error("Open a password store before copying an entry.".into());
             return;
         }
         self.state.copy_pending = Some(PendingCopy {
@@ -429,7 +429,7 @@ impl PassApp {
                 });
             } else {
                 let _ = entity.update(cx, |app, cx| {
-                    app.set_message("Unable to open the folder picker.".into());
+                    app.set_error("Unable to open the folder picker.".into());
                     cx.notify();
                 });
             }

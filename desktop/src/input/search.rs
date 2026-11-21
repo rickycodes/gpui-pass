@@ -149,7 +149,7 @@ impl PassApp {
             let Some(next) =
                 crate::editor_input::replace(&self.state.generator_name, start..end, &text)
             else {
-                self.set_message(crate::i18n::text("editor-limit"));
+                self.set_error(crate::i18n::text("editor-limit"));
                 cx.notify();
                 return start..start;
             };

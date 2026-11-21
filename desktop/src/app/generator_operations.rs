@@ -29,7 +29,7 @@ impl PassApp {
             return;
         }
         if self.state.demo || self.state.store.is_none() || self.state.onboarding.is_some() {
-            self.set_message(i18n::text("custom-entry-store-required"));
+            self.set_error(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;
         }
@@ -88,7 +88,7 @@ impl PassApp {
                 cx.notify();
             }
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
             }
         }
@@ -112,27 +112,27 @@ impl PassApp {
             return;
         }
         if self.state.demo {
-            self.set_message(i18n::text("custom-entry-store-required"));
+            self.set_error(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;
         }
         let name = self.state.custom_entry_name.trim();
         let name = name.strip_suffix(".gpg").unwrap_or(name);
         if name.is_empty() {
-            self.set_message(i18n::text("custom-entry-name-required"));
+            self.set_error(i18n::text("custom-entry-name-required"));
             cx.notify();
             return;
         }
         let entry = match Entry::from_relative_file(format!("{name}.gpg")) {
             Ok(entry) => entry,
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
                 return;
             }
         };
         let Some(store) = self.state.store.clone() else {
-            self.set_message(i18n::text("custom-entry-store-required"));
+            self.set_error(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;
         };
@@ -143,7 +143,7 @@ impl PassApp {
             }
             Err(Error::EntryNotFound) => self.start_entry_save(entry, None, false, cx),
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
             }
         }
@@ -169,7 +169,7 @@ impl PassApp {
                 )) {
                     Ok(secret) => secret,
                     Err(error) => {
-                        self.set_message(error.to_string());
+                        self.set_error(error.to_string());
                         cx.notify();
                         return;
                     }
@@ -179,13 +179,13 @@ impl PassApp {
         let gpg = match Gpg::new(&self.state.gpg) {
             Ok(gpg) => gpg,
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
                 return;
             }
         };
         let Some(store) = self.state.store.clone() else {
-            self.set_message(i18n::text("custom-entry-store-required"));
+            self.set_error(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;
         };
@@ -263,14 +263,14 @@ impl PassApp {
             return;
         };
         let Some(store) = self.state.store.as_ref() else {
-            self.set_message(i18n::text("custom-entry-store-required"));
+            self.set_error(i18n::text("custom-entry-store-required"));
             cx.notify();
             return;
         };
         let revision = match store.entry_revision(&pending.entry) {
             Ok(revision) => revision,
             Err(error) => {
-                self.set_message(error.to_string());
+                self.set_error(error.to_string());
                 cx.notify();
                 return;
             }

@@ -235,7 +235,7 @@ impl PassApp {
                 let _ = sender.send(result);
             });
         } else {
-            self.set_message(Error::MissingHome.to_string());
+            self.set_error(Error::MissingHome.to_string());
         }
         cx.notify();
     }
@@ -302,14 +302,14 @@ impl PassApp {
                     if preview {
                         if let Some(path) = self.state.path.clone() {
                             self.open_onboarding(path, true, cx);
-                            self.set_message(error.to_string());
+                            self.set_error(error.to_string());
                         }
                     } else if self.state.path.as_ref().is_some_and(|path| !path.exists()) {
                         if let Some(path) = self.state.path.clone() {
                             self.open_onboarding(path, false, cx);
                         }
                     } else {
-                        self.set_message(error.to_string());
+                        self.set_error(error.to_string());
                     }
                 }
             }
@@ -330,7 +330,7 @@ impl PassApp {
                         self.state.active,
                         Instant::now(),
                     ) {
-                        self.set_message(
+                        self.set_error(
                             "Entry stayed hidden. Return to this window and reveal again.".into(),
                         );
                     } else {
@@ -339,7 +339,7 @@ impl PassApp {
                 }
                 Err(error) => {
                     if self.state.session.fail_reveal(&request) {
-                        self.set_message(error.to_string());
+                        self.set_error(error.to_string());
                     }
                 }
             }
@@ -366,7 +366,7 @@ impl PassApp {
                             cx,
                         );
                     }
-                    Err(error) => self.set_message(error.to_string()),
+                    Err(error) => self.set_error(error.to_string()),
                 }
             }
             cx.notify();
@@ -459,13 +459,13 @@ impl PassApp {
                     self.state.saving_new_entry = false;
                     if matches!(&error, Error::EntryConflict) && was_edit {
                         self.state.edit_conflict = true;
-                        self.set_message(i18n::text("edit-conflict-notice"));
+                        self.set_error(i18n::text("edit-conflict-notice"));
                     } else if matches!(&error, Error::EntryConflict) {
                         self.state.edit_conflict = false;
-                        self.set_message(i18n::text("overwrite-entry-conflict"));
+                        self.set_error(i18n::text("overwrite-entry-conflict"));
                     } else {
                         self.state.edit_conflict = false;
-                        self.set_message(error.to_string());
+                        self.set_error(error.to_string());
                     }
                 }
             }
@@ -500,11 +500,19 @@ impl PassApp {
 
     pub(super) fn set_message(&mut self, message: String) {
         self.state.message = Some(message);
+        self.state.message_is_error = false;
+        self.state.message_until = Some(Instant::now() + NOTIFICATION_TIMEOUT);
+    }
+
+    pub(super) fn set_error(&mut self, message: String) {
+        self.state.message = Some(message);
+        self.state.message_is_error = true;
         self.state.message_until = Some(Instant::now() + NOTIFICATION_TIMEOUT);
     }
 
     pub(super) fn clear_message(&mut self) {
         self.state.message = None;
+        self.state.message_is_error = false;
         self.state.message_until = None;
     }
 
