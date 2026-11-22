@@ -47,85 +47,57 @@ handling of GnuPG errors and failed writes. This is hands-on validation on the
 maintainer's setup, not a claim of coverage across all Linux environments or
 hardware.
 
+## Completed v1 verification
+
+- [x] The disposable compatibility fixture verifies that `Store::initialize`
+  creates a store readable by `pass`, preserves existing entries, and writes a
+  detached recipient signature when supplied.
+- [x] Missing-store onboarding, empty-directory onboarding, cancellation,
+  invalid recipients, preview mode, valid existing-store selection, and
+  non-empty-target protection were manually exercised.
+- [x] Preview mode traverses setup and existing-store selection without writing
+  files or invoking GnuPG, Git, clipboard, or network activity.
+- [x] Real initialization loaded without restarting; the first entry encrypted
+  and saved with restrictive permissions, and upstream `pass show` returned the
+  exact plaintext.
+- [x] Hardware workflows were exercised with a real YubiKey: insertion,
+  removal, PIN/touch, reveal, hidden copy, retry, and device verification.
+- [x] The optimized release artifact, checksum, temporary-prefix installation,
+  published assets, and headless Lavapipe launch were verified.
+- [x] Core tests pass serially in CI to avoid scheduler-sensitive failures from
+  subprocess-heavy cancellation tests; desktop tests remain parallel.
+
 ## Remaining work before v1
 
-### 1. Verify store onboarding compatibility
+### 1. Complete onboarding sign-off
 
-- The disposable compatibility fixture verifies that `Store::initialize`
-  creates a store readable by `pass` and that existing pass entries round-trip
-  unchanged. It does not exercise GUI onboarding or detached-signature policy.
-- Manually step through missing-store onboarding, empty-directory onboarding,
-  cancellation, invalid recipients, and the preview mode. Confirm failed or
-  cancelled setup leaves no partial directory, `.gpg-id`, signature, or entry.
-- Confirm a successful initialization loads an empty store and allows the first
-  entry without restarting; confirm upstream `pass` can open the result.
-- Keep the implementation constrained to existing GPG keys and one explicit,
-  failure-cleaned store-creation operation. Do not add key management, Git setup,
-  or a second mock UI for preview mode.
+- [ ] Exercise the GUI initialization path with the configured detached-signature
+  policy and verify `.gpg-id.sig` behavior end to end.
+- [ ] Keep the compatibility fixture and manual onboarding results aligned with
+  the current implementation and release notes.
 
-#### Onboarding acceptance criteria
+### 2. Close reliability and documentation gaps
 
-- A missing store opens onboarding; a valid existing store opens normally.
-- Initialization matches `pass init` for a new store: restrictive directory
-  permissions, one recipient per `.gpg-id` line, and `.gpg-id.sig` when the
-  configured signing policy requires it.
-- Existing `.gpg-id`, entries, and non-empty targets are never overwritten.
-- Preview mode traverses setup and existing-store selection without writing to
-  the filesystem or invoking GnuPG, Git, clipboard, or network. A valid
-  selected store may be read and displayed; invalid or uninitialized targets
-  remain in dry-run onboarding.
-
-Manual GUI verification completed so far:
-
-- `--onboarding-demo` with an empty temporary target showed the dry-run
-  onboarding surface; initializing transitioned to the empty-store demo without
-  writing files or invoking GnuPG.
-- The preview folder picker opened successfully. Selecting a store-shaped
-  directory containing `.gpg-id` and a `.gpg` entry left onboarding and
-  displayed the entry without writing to the selected directory.
-- Selecting a non-empty uninitialized target kept the preview in onboarding and
-  left its existing file unchanged. Post-fix diagnostics showed no GnuPG or
-  YubiKey probes; an earlier run exposed and led to the preview polling guard
-  fix.
-- Cancelling the preview folder picker kept onboarding visible, left the dry-run
-  state intact, and left the temporary target empty.
-- Real initialization with an invalid recipient displayed the expected unsafe
-  recipient notification and left the temporary target empty.
-- Real initialization refused a non-empty target and preserved its existing
-  `KEEP.txt` file; no store policy or signature files were created.
-- First successful initialization created `.gpg-id`, but the first-entry save
-  exposed a missing-entry lookup being misreported as an unsupported path. The
-  lookup now distinguishes `EntryNotFound`; the new-entry save must be
-  rechecked manually.
-- After the lookup fix, initialization loaded without restart, the first entry
-  encrypted and saved with restrictive permissions, and upstream `pass show`
-  returned the exact plaintext. The app exited cleanly.
-
-### 2. Close the v1 reliability gaps
-
-- Keep the maintainer's real-store workflow validation current as features change; record any environment-specific gaps rather than treating one setup as universal coverage.
-- Keep external-writer conflict behavior explicit: preserve edits and warn on changes observed before replacement. Document the remaining narrow race with non-cooperating tools such as `pass` unless a portable coordination mechanism is added.
-- Update or archive the 2026-11-14 source review and 2026-11-15 follow-up so their findings and validation counts are not mistaken for the current state.
-
-### 3. Define and verify the supported release
-
-- The completed release run verified a clean optimized build, packaged artifact
-  contents, checksum validation, temporary-prefix installation, and execution
-  from downloaded release assets. The headless launch check uses Mesa Lavapipe
-  under Xvfb, so it does not require runner GPU hardware.
-- Run CI checks and integration fixtures from a clean checkout. Keep release
-  notes and README status aligned with what was actually tested.
-- Perform a final GUI pass at normal and compact window sizes, with both light
-  and dark themes, using fictional data. Exercise keyboard navigation and
-  accessibility-relevant focus states.
-- Hardware behavior is verified on the maintainer's YubiKey: insertion,
-  removal, PIN/touch, reveal, hidden copy, and retry. The remaining
-  `gpg-agent`/`scdaemon` coexistence issue with external Git signing is tracked
-  after v1.
-- Review the security and privacy documentation against actual behavior,
+- [ ] Keep the maintainer's real-store workflow validation current as features
+  change; record environment-specific gaps rather than treating one setup as
+  universal coverage.
+- [ ] Update or archive the 2026-11-14 source review and 2026-11-15 follow-up
+  so their findings and validation counts are not mistaken for the current
+  state.
+- [ ] Document the remaining narrow race with non-cooperating external writers
+  such as `pass`.
+- [ ] Review security and privacy documentation against actual behavior,
   especially clipboard-manager history, crash cleanup limits, logs, filesystem
-  permissions, GnuPG configuration, and the limits of local-user
-  authentication.
+  permissions, GnuPG configuration, and local-user authentication limits.
+
+### 3. Final release verification
+
+- [ ] Run CI checks and integration fixtures from a clean checkout after the
+  serialized core-test change.
+- [ ] Perform a final GUI pass at normal and compact window sizes, with light
+  and dark themes, fictional data, keyboard navigation, and focus states.
+- [ ] Keep README, release notes, and the supported Ubuntu 24.04 x86_64
+  runtime requirements aligned with what was actually tested.
 
 ## After v1
 
