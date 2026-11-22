@@ -73,6 +73,9 @@ hardware.
 
 - [ ] Exercise the GUI initialization path with the configured detached-signature
   policy and verify `.gpg-id.sig` behavior end to end.
+- [x] Automated coverage exercises configured detached-signature setup,
+  signature failure cleanup, restrictive permissions, and non-empty-target
+  preservation without requiring a GUI or real GPG key.
 - [ ] Keep the compatibility fixture and manual onboarding results aligned with
   the current implementation and release notes.
 
