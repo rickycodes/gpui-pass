@@ -84,7 +84,9 @@ impl PassApp {
 
     pub(super) fn generator_memorable_options(&self, cx: &mut Context<Self>) -> Div {
         let options = self.generator_options();
-        let slider_left = ((self.state.generation_words - 2) as f32 / 2.) * 360.;
+        let slider_left = ((self.state.generation_words - MIN_MEMORABLE_WORDS) as f32
+            / (MAX_MEMORABLE_WORDS - MIN_MEMORABLE_WORDS) as f32)
+            * 360.;
         let entity = cx.entity().clone();
         let slider_track = div()
             .id("generator-strength-slider")
@@ -156,8 +158,8 @@ impl PassApp {
                     .font_family(self.state.theme.mono_font)
                     .text_size(px(9.))
                     .text_color(rgb(self.state.theme.colors.muted))
-                    .child("2 WORDS")
-                    .child("4 WORDS"),
+                    .child(format!("{MIN_MEMORABLE_WORDS} WORDS"))
+                    .child(format!("{MAX_MEMORABLE_WORDS} WORDS")),
             );
         div()
             .flex()

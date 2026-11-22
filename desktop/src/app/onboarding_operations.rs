@@ -6,7 +6,7 @@ impl PassApp {
         self.clear_create_entry();
         self.state.onboarding = Some(OnboardingState { path, preview });
         if preview {
-            self.state.custom_entry_name = "DEMO-RECIPIENT".into();
+            self.state.custom_entry_name = constants::DEMO_RECIPIENT.into();
             self.state.custom_entry_name_selection =
                 self.state.custom_entry_name.len()..self.state.custom_entry_name.len();
             self.state.custom_entry_name_cursor = self.state.custom_entry_name.len();

@@ -34,6 +34,8 @@ mod app_view;
 mod brand;
 #[path = "views/card_status_view.rs"]
 mod card_status_view;
+#[path = "constants.rs"]
+mod constants;
 #[path = "input/editor_input.rs"]
 mod editor_input;
 #[path = "views/entry_detail_view.rs"]
@@ -92,9 +94,9 @@ use gpui::{
 };
 use gpui_pass_core::{
     Cancellation, CardEvent, CardObservation, Entry, EntryRevision, Error, GeneratorOptions, Gpg,
-    OperationProgress, OperationStatus, RevealRequest, Secret, Session, Store,
-    configured_signing_keys, default_store_path, generate_memorable_password,
-    generate_pass_default_password, harden_process,
+    MAX_MEMORABLE_WORDS, MIN_MEMORABLE_WORDS, OperationProgress, OperationStatus, RevealRequest,
+    Secret, Session, Store, configured_signing_keys, default_store_path,
+    generate_memorable_password, generate_pass_default_password, harden_process,
 };
 use loading_spinner::loading_spinner;
 use std::{
@@ -117,11 +119,6 @@ use yubikey_detection::{
     YubiKeyInfo, YubiRecord,
 };
 use zeroize::{Zeroize, Zeroizing};
-
-const NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(6);
-const ACTIVE_POLL_INTERVAL: Duration = Duration::from_millis(100);
-const UI_TIMER_INTERVAL: Duration = Duration::from_millis(500);
-const IDLE_POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 struct Options {
     store: Option<PathBuf>,

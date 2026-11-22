@@ -6,8 +6,8 @@ const WORDS: &str = include_str!("../assets/eff-short-wordlist-2-0.txt");
 const SYMBOLS: &[u8] = b"!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~";
 const SEPARATORS: &[u8] = SYMBOLS;
 const ALPHANUMERIC: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const MIN_WORDS: usize = 2;
-const MAX_WORDS: usize = 4;
+pub const MIN_MEMORABLE_WORDS: usize = 2;
+pub const MAX_MEMORABLE_WORDS: usize = 4;
 const MIN_WORD_LENGTH: usize = 2;
 const MAX_MEMORABLE_LENGTH: usize = 25;
 static WORD_LIST: OnceLock<Vec<&str>> = OnceLock::new();
@@ -38,7 +38,7 @@ impl GeneratorOptions {
 
 /// Generate a memorable phrase from uniformly selected EFF words and optional adornments.
 pub fn generate_memorable_password(options: GeneratorOptions) -> Result<Secret, Error> {
-    if !(MIN_WORDS..=MAX_WORDS).contains(&options.words) {
+    if !(MIN_MEMORABLE_WORDS..=MAX_MEMORABLE_WORDS).contains(&options.words) {
         return Err(Error::InvalidGenerationLength);
     }
     let words = WORD_LIST.get_or_init(|| WORDS.lines().collect::<Vec<_>>());
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn memorable_passwords_fit_the_twenty_five_character_limit() {
-        for words in MIN_WORDS..=MAX_WORDS {
+        for words in MIN_MEMORABLE_WORDS..=MAX_MEMORABLE_WORDS {
             for _ in 0..8 {
                 let secret = generate_memorable_password(GeneratorOptions {
                     words,
@@ -194,7 +194,7 @@ mod tests {
     fn memorable_passwords_require_two_to_four_words() {
         assert!(
             generate_memorable_password(GeneratorOptions {
-                words: MIN_WORDS - 1,
+                words: MIN_MEMORABLE_WORDS - 1,
                 add_digits: false,
                 add_separators: false,
             })
@@ -202,7 +202,7 @@ mod tests {
         );
         assert!(
             generate_memorable_password(GeneratorOptions {
-                words: MAX_WORDS + 1,
+                words: MAX_MEMORABLE_WORDS + 1,
                 add_digits: false,
                 add_separators: false,
             })

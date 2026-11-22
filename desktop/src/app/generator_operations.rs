@@ -67,7 +67,8 @@ impl PassApp {
             return;
         };
         let fraction = ((x - bounds.origin.x) / bounds.size.width).clamp(0., 1.);
-        let words = 2 + (fraction * 2.).round() as usize;
+        let words = MIN_MEMORABLE_WORDS
+            + (fraction * (MAX_MEMORABLE_WORDS - MIN_MEMORABLE_WORDS) as f32).round() as usize;
         if words != self.state.generation_words {
             self.state.generation_words = words;
             cx.notify();

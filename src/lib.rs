@@ -11,7 +11,8 @@ mod store;
 
 pub use decrypt::{Cancellation, Gpg, Secret};
 pub use generator::{
-    GeneratorOptions, generate_memorable_password, generate_pass_default_password,
+    GeneratorOptions, MAX_MEMORABLE_WORDS, MIN_MEMORABLE_WORDS, generate_memorable_password,
+    generate_pass_default_password,
 };
 pub use hardening::harden_process;
 pub use operation::{CardEvent, CardObservation, OperationProgress, OperationStatus, StatusKind};
@@ -75,7 +76,7 @@ impl fmt::Display for Error {
             Self::TimedOut => "The operation timed out. Check the PIN prompt or YubiKey touch request, then try again.",
             Self::SecretTooLarge => "This entry exceeds the 1 MiB reveal limit.",
             Self::InvalidText => "This entry is not UTF-8 text and cannot be displayed safely.",
-            Self::InvalidGenerationLength => "Use 4 to 8 words, or a random length of 1 to 1024 with a supported character set.",
+            Self::InvalidGenerationLength => "Use 2 to 4 words, or a random length of 1 to 1024 with a supported character set.",
             Self::RandomUnavailable => "The operating system could not provide secure randomness.",
             Self::InvalidWordList => "The bundled password word list is invalid.",
             Self::MissingRecipients => "No GnuPG recipients are configured for this folder.",

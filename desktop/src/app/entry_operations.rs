@@ -283,7 +283,8 @@ impl PassApp {
         };
         self.clear_message();
         let result = if self.state.demo {
-            let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
+            let secret =
+                Secret::from_bytes(Zeroizing::new(constants::DEMO_SECRET.as_bytes().to_vec()));
             let (sender, receiver) = mpsc::sync_channel(1);
             let _ = sender.send(secret.map(|secret| (secret, None)));
             receiver
@@ -336,7 +337,8 @@ impl PassApp {
             "Follow the system prompt. If your YubiKey blinks, touch its gold contact.",
         ));
         if self.state.demo {
-            let secret = Secret::from_bytes(Zeroizing::new(b"demo-only-not-a-real-password\nusername: alex@example.test\n\nA fictional entry for exploring the interface.\n".to_vec()));
+            let secret =
+                Secret::from_bytes(Zeroizing::new(constants::DEMO_SECRET.as_bytes().to_vec()));
             let _ = sender.send(secret);
         } else if let (Ok(gpg), Some(store)) = (Gpg::new(&self.state.gpg), self.state.store.clone())
         {
