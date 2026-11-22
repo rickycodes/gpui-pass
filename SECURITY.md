@@ -1,6 +1,9 @@
 # Security boundary
 
-This prototype has not received an independent security review. Automated checks currently cover 28 core tests, 23 desktop tests, 9 Python helper tests, and a disposable real `pass`/GnuPG fixture. These do not replace graphical pinentry and physical-card verification. See the [review](docs/application-review-2026-11-14.md) and [cleanup follow-up](docs/application-cleanup-2026-11-15.md) for findings and their current status.
+This prototype has not received an independent security review. CI runs the core,
+desktop, Python helper, and disposable real `pass`/GnuPG checks; current
+completion status and test policy are tracked in [ROADMAP.md](ROADMAP.md). These
+checks do not replace graphical pinentry, GUI, or physical-card verification.
 
 ## Assumptions
 
@@ -37,7 +40,14 @@ GnuPG may cache key authorization independently. Hiding the UI does not purge or
 
 Card removal does not currently trigger immediate clearing of already visible content; focus, explicit hide, and timeout still apply. Fresh decryption follows GnuPG's card/PIN/touch policy. Requests are not silently retried, and the app never submits a PIN.
 
-PIN-launch and card-busy events are hints, not a reliable indication of PIN completion or a required touch. Older GnuPG paths may omit card progress entirely. The fallback after two seconds therefore says to touch only **if the YubiKey is blinking**, and to complete any open system prompt first. The app does not probe the card through a competing process, alter agent configuration, or monitor unrelated applications' operations.
+PIN-launch and card-busy events are hints, not a reliable indication of PIN
+completion or a required touch. Older GnuPG paths may omit card progress
+entirely. The fallback after two seconds therefore says to touch only **if the
+YubiKey is blinking**, and to complete any open system prompt first. The app
+also performs background `gpg --card-status all` probes for card details; these
+can contend with external GnuPG operations and are tracked as an after-v1
+coexistence issue. It does not alter agent configuration or monitor unrelated
+applications' operations.
 
 ## Compatibility boundary
 
@@ -67,6 +77,14 @@ backup as recovery when available.
 
 Automated tests exercise name/path rejection, Unicode search, symlink omission and replacement, hardlinks, pinned-root replacement, metacharacters, multiline output, failing exit status after plaintext output, binary/oversized output, timeout, cancellation, stale results, focus transitions, and expiry. Status tests cover partial/oversized lines, ignored diagnostics and metadata, live card-wait hints, fallback without status support, stderr floods, cancellation under flooding, and clearing/isolation of per-operation status.
 
-The disposable real `pass` fixture passed in the 2026-11-14 review outside the sandbox. Since then, the user reports manually confirming hidden copy, reveal/hide, edit, delete, and confirmed replacement for both generated and custom entries; the copy/reveal/edit/delete checks used a hardware-backed store and YubiKey. The review itself did not exercise GUI or physical hardware behavior. Still outstanding: broader GPUI interaction, IME, navigation, focus and rendering cleanup, explicit PIN cancellation and reconnect cases, and genuinely tampered OpenPGP ciphertext.
+The disposable real `pass` fixture is part of CI. The maintainer has manually
+confirmed hidden copy, reveal/hide, edit, delete, confirmed replacement, and
+signed onboarding with a hardware-backed store and YubiKey. Still outstanding
+for v1 are the final GUI matrix at normal/compact sizes and light/dark themes,
+keyboard/focus coverage, explicit PIN-cancellation and reconnect cases, and
+manual verification against genuinely tampered OpenPGP ciphertext.
 
-YubiKey hardware verification must cover insertion/removal, correct-PIN and cancelled-PIN flows, touch-required requests, pinentry focus transitions, stale completion, and retry after reconnect. Controlled subprocess tests do not replace these checks.
+YubiKey verification on the maintainer's setup covers insertion/removal,
+PIN/touch, reveal, hidden copy, retry, and device verification. This does not
+establish coverage across other Linux environments, pinentry implementations,
+hardware models, or concurrent external GnuPG operations.

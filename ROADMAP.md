@@ -82,9 +82,9 @@ hardware.
   validation counts are not mistaken for the current state.
 - [x] Documented the remaining narrow race with non-cooperating external
   writers in `SECURITY.md`.
-- [ ] Review security and privacy documentation against actual behavior,
-  especially clipboard-manager history, crash cleanup limits, logs, filesystem
-  permissions, GnuPG configuration, and local-user authentication limits.
+- [x] Reviewed `SECURITY.md` against current clipboard, crash cleanup, logging,
+  permissions, GnuPG/card-probe, signing-policy, and local-authentication
+  behavior; remaining GUI and tampered-ciphertext limits are explicit.
 
 ### 2. Final release verification
 
@@ -92,6 +92,8 @@ hardware.
   serialized core-test change.
 - [ ] Perform a final GUI pass at normal and compact window sizes, with light
   and dark themes, fictional data, keyboard navigation, and focus states.
+- [ ] Verify tampered ciphertext never displays plaintext and complete the
+  documented PIN-cancellation/reconnect cases.
 - [ ] Keep README, release notes, and the supported Ubuntu 24.04 x86_64
   runtime requirements aligned with what was actually tested.
 
