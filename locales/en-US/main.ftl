@@ -1,4 +1,8 @@
 # English source catalog. Keep message IDs stable; add translated catalogs by locale.
+empty-store-title = Your passwords, at home.
+empty-store-help = Open an existing pass store to browse your entries. Your keys stay with GnuPG.
+no-search-results = No results
+no-search-results-help = Try another search.
 search-entries = Search entries
 generate = Generate
 card-status = Card status

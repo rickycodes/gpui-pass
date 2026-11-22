@@ -305,13 +305,47 @@ impl PassApp {
                         .child(loading_spinner(self.state.theme.colors.accent)),
                 );
             } else {
-                detail = detail.child(div().flex_1().flex().flex_col().justify_center().px(px(60.)).gap(px(18.))
+                let has_query = !self.state.query.is_empty();
+                let empty_state = div()
+                    .flex_1()
+                    .flex()
+                    .flex_col()
+                    .justify_center()
+                    .px(px(60.))
+                    .gap(px(18.))
                     .child(self.brand_mark(56., self.state.theme.colors.accent))
-                    .child(div().text_size(px(30.)).child(if !self.state.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
-                    .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.state.theme.colors.muted))
-                        .child(if !self.state.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                    .child(self.state.theme.button("empty-open-store", i18n::text("open-password-store-link"), true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
-    );
+                    .child(div().text_size(px(30.)).child(if has_query {
+                        i18n::text("no-search-results")
+                    } else {
+                        i18n::text("empty-store-title")
+                    }))
+                    .child(
+                        div()
+                            .max_w(px(380.))
+                            .text_size(px(14.))
+                            .line_height(px(24.))
+                            .text_color(rgb(self.state.theme.colors.muted))
+                            .child(if has_query {
+                                i18n::text("no-search-results-help")
+                            } else {
+                                i18n::text("empty-store-help")
+                            }),
+                    )
+                    .when(
+                        !has_query && self.state.store.is_some() && !self.state.demo,
+                        |view| {
+                            view.child(
+                                self.state
+                                    .theme
+                                    .button("empty-new-entry", i18n::text("new-entry"), true)
+                                    .w(px(208.))
+                                    .on_click(cx.listener(|app, _, window, cx| {
+                                        app.open_create_entry(window, cx)
+                                    })),
+                            )
+                        },
+                    );
+                detail = detail.child(empty_state);
             }
         }
         detail.into_any_element()
