@@ -66,20 +66,13 @@ hardware.
   published assets, and headless Lavapipe launch were verified.
 - [x] Core tests pass serially in CI to avoid scheduler-sensitive failures from
   subprocess-heavy cancellation tests; desktop tests remain parallel.
+- [x] The GUI onboarding path was exercised with the configured signing
+  policy; `.gpg-id.sig` validated against the configured fingerprint and the
+  first signed entry was created successfully.
 
 ## Remaining work before v1
 
-### 1. Complete onboarding sign-off
-
-- [ ] Exercise the GUI initialization path with the configured detached-signature
-  policy and verify `.gpg-id.sig` behavior end to end.
-- [x] Automated coverage exercises configured detached-signature setup,
-  signature failure cleanup, restrictive permissions, and non-empty-target
-  preservation without requiring a GUI or real GPG key.
-- [ ] Keep the compatibility fixture and manual onboarding results aligned with
-  the current implementation and release notes.
-
-### 2. Close reliability and documentation gaps
+### 1. Close reliability and documentation gaps
 
 - [ ] Keep the maintainer's real-store workflow validation current as features
   change; record environment-specific gaps rather than treating one setup as
@@ -93,7 +86,7 @@ hardware.
   especially clipboard-manager history, crash cleanup limits, logs, filesystem
   permissions, GnuPG configuration, and local-user authentication limits.
 
-### 3. Final release verification
+### 2. Final release verification
 
 - [ ] Run CI checks and integration fixtures from a clean checkout after the
   serialized core-test change.
