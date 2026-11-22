@@ -84,7 +84,8 @@ jobs:
           bash scripts/check-rust-warnings.sh
           bash scripts/check-rust-warnings.sh --manifest-path desktop/Cargo.toml
       - name: Test core
-        run: cargo test --locked
+        # Keep subprocess-heavy cancellation tests deterministic under runner load.
+        run: cargo test --locked -- --test-threads=1
       - name: Lint desktop
         run: cargo clippy --manifest-path desktop/Cargo.toml --all-targets --locked -- -D warnings
       - name: Test desktop
