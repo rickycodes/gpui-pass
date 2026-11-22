@@ -31,6 +31,14 @@ selection = "#334c88a0"
 control_height = 42.0
 control_horizontal = 20.0
 panel_padding = 24.0
+field_padding = 12.0
+chrome_height = 48.0
+content_horizontal = 40.0
+content_vertical = 32.0
+composer_horizontal = 32.0
+composer_vertical = 48.0
+footer_horizontal = 24.0
+section_gap = 16.0
 
 [radii]
 control = 0.0

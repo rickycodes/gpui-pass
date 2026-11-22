@@ -17,7 +17,9 @@ pub use generator::{
 pub use hardening::harden_process;
 pub use operation::{CardEvent, CardObservation, OperationProgress, OperationStatus, StatusKind};
 pub use session::{REVEAL_DURATION, RevealRequest, Session};
-pub use store::{Entry, EntryRevision, Store, configured_signing_keys, default_store_path};
+pub use store::{
+    ENTRY_SUFFIX, Entry, EntryRevision, Store, configured_signing_keys, default_store_path,
+};
 
 use std::{fmt, io};
 

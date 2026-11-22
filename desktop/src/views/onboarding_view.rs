@@ -12,9 +12,9 @@ impl PassApp {
         let pending = self.state.onboarding_pending.is_some();
         let preview = onboarding.preview;
         let initialize_label = if pending {
-            "Initializing…"
+            i18n::text("initializing")
         } else {
-            "Initialize store"
+            i18n::text("initialize-store")
         };
         let recipient_hint = "Use one or more existing GPG key IDs, separated by spaces.";
         let panel = self
@@ -25,7 +25,7 @@ impl PassApp {
             .max_w(px(640.))
             .flex()
             .flex_col()
-            .gap(px(18.))
+            .gap(px(self.state.theme.spacing.section_gap))
             .child(
                 div()
                     .flex()
@@ -34,12 +34,12 @@ impl PassApp {
                     .child(
                         self.state
                             .theme
-                            .panel_title("Set up your password store"),
+                            .panel_title(i18n::text("setup-store-title")),
                     )
                     .child(self.state.theme.status_badge(if preview {
-                        "DRY RUN"
+                        i18n::text("dry-run")
                     } else {
-                        "LOCAL ONLY"
+                        i18n::text("local-only")
                     })),
             )
             .child(
@@ -49,11 +49,11 @@ impl PassApp {
                     .text_color(rgb(self.state.theme.colors.muted))
                     .child("This creates a standard pass store using existing GPG keys. No keys are generated, imported, or changed."),
             )
-            .child(self.state.theme.label("STORE LOCATION"))
+            .child(self.state.theme.label(i18n::text("store-location")))
             .child(
                 div()
                     .w_full()
-                    .p(px(12.))
+                    .p(px(self.state.theme.spacing.field_padding))
                     .rounded(px(self.state.theme.radii.field))
                     .border_1()
                     .border_color(rgb(self.state.theme.colors.border))
@@ -63,7 +63,7 @@ impl PassApp {
                     .text_color(rgb(self.state.theme.colors.ink))
                     .child(onboarding.path.display().to_string()),
             )
-            .child(self.state.theme.label("GPG RECIPIENTS"))
+            .child(self.state.theme.label(i18n::text("gpg-recipients")))
             .child(self.custom_entry_name_field(window, cx))
             .child(
                 div()
@@ -81,7 +81,7 @@ impl PassApp {
                     .child(
                         self.state
                             .theme
-                            .button("onboarding-open-store", "Open existing store", false)
+                            .button("onboarding-open-store", i18n::text("open-existing-store"), false)
                             .on_click(cx.listener(|app, _, window, cx| {
                                 app.open_store(window, cx)
                             })),
@@ -113,9 +113,9 @@ impl PassApp {
                     .flex()
                     .items_start()
                     .justify_center()
-                    .px(px(32.))
-                    .pt(px(48.))
-                    .pb(px(48.))
+                    .px(px(self.state.theme.spacing.composer_horizontal))
+                    .pt(px(self.state.theme.spacing.composer_vertical))
+                    .pb(px(self.state.theme.spacing.composer_vertical))
                     .child(panel),
             )
             .into_any_element()

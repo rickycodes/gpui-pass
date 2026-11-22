@@ -41,9 +41,9 @@ impl PassApp {
         } else if let Some(seconds) = self.state.clipboard.remaining_seconds(Instant::now()) {
             let entry_name = self.state.clipboard.source().unwrap_or("entry");
             div()
-                .h(px(48.))
+                .h(px(self.state.theme.spacing.chrome_height))
                 .flex_shrink_0()
-                .px(px(24.))
+                .px(px(self.state.theme.spacing.footer_horizontal))
                 .flex()
                 .items_center()
                 .justify_between()
@@ -71,15 +71,15 @@ impl PassApp {
                 .child(
                     self.state
                         .theme
-                        .button("restore-clipboard-now", "Restore now", false)
+                        .button("restore-clipboard-now", i18n::text("restore-now"), false)
                         .h(px(28.))
                         .on_click(cx.listener(|app, _, _, cx| app.restore_pass_clipboard(cx))),
                 )
         } else {
             div()
-                .h(px(48.))
+                .h(px(self.state.theme.spacing.chrome_height))
                 .flex_shrink_0()
-                .px(px(24.))
+                .px(px(self.state.theme.spacing.footer_horizontal))
                 .flex()
                 .items_center()
                 .border_t_1()
@@ -141,9 +141,9 @@ pub(super) fn notification_bar(
         theme.colors.ink
     };
     div()
-        .h(px(48.))
+        .h(px(theme.spacing.chrome_height))
         .flex_shrink_0()
-        .px(px(24.))
+        .px(px(theme.spacing.footer_horizontal))
         .flex()
         .items_center()
         .border_t_1()

@@ -1,4 +1,8 @@
 use crate::Error;
+
+pub const ENTRY_SUFFIX: &str = ".gpg";
+const GPG_ID_FILE: &str = ".gpg-id";
+const GPG_ID_SIGNATURE_FILE: &str = ".gpg-id.sig";
 use std::{
     env,
     fs::{self, File},
@@ -154,12 +158,17 @@ impl Entry {
             || path
                 .components()
                 .any(|c| !matches!(c, Component::Normal(_)))
-            || path.extension().is_none_or(|e| e != "gpg")
+            || path
+                .extension()
+                .is_none_or(|e| e != ENTRY_SUFFIX.trim_start_matches('.'))
             || path.file_stem().is_none_or(|s| s.is_empty())
         {
             return Err(Error::InvalidEntry);
         }
-        let name = text[..text.len() - 4].to_owned();
+        let name = text
+            .strip_suffix(ENTRY_SUFFIX)
+            .expect("validated entry suffix")
+            .to_owned();
         let search_name = name.to_lowercase();
         Ok(Self {
             relative_file: path.to_owned(),
@@ -296,8 +305,8 @@ impl Store {
         };
         fs::set_permissions(root, fs::Permissions::from_mode(0o700))?;
 
-        let id_path = root.join(".gpg-id");
-        let signature_path = root.join(".gpg-id.sig");
+        let id_path = root.join(GPG_ID_FILE);
+        let signature_path = root.join(GPG_ID_SIGNATURE_FILE);
         let result = (|| {
             let mut id = fs::OpenOptions::new()
                 .write(true)
@@ -335,7 +344,7 @@ impl Store {
     }
 
     pub fn has_root_recipient_policy(&self) -> Result<bool, Error> {
-        match fs::symlink_metadata(self.root.join(".gpg-id")) {
+        match fs::symlink_metadata(self.root.join(GPG_ID_FILE)) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
                 Err(Error::InvalidRecipients)
             }
@@ -479,7 +488,7 @@ impl Store {
             for directory in directories.iter().rev() {
                 let config = match openat(
                     directory,
-                    ".gpg-id",
+                    GPG_ID_FILE,
                     OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
                     Mode::empty(),
                 ) {
@@ -491,7 +500,7 @@ impl Store {
                 // when PASSWORD_STORE_SIGNING_KEY is absent in this process.
                 let signature = match openat(
                     directory,
-                    ".gpg-id.sig",
+                    GPG_ID_SIGNATURE_FILE,
                     OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
                     Mode::empty(),
                 ) {

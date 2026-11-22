@@ -24,7 +24,7 @@ impl PassApp {
             .flex()
             .flex_shrink_0()
             .flex_col()
-            .gap(px(16.))
+            .gap(px(self.state.theme.spacing.section_gap))
             .child(
                 div()
                     .flex()
@@ -38,7 +38,7 @@ impl PassApp {
                     .child(
                         self.state
                             .theme
-                            .button("close-generator", "← Back", false)
+                            .button("close-generator", i18n::text("back"), false)
                             .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
                     ),
             )
@@ -81,9 +81,9 @@ impl PassApp {
                     .flex()
                     .items_start()
                     .justify_center()
-                    .px(px(32.))
-                    .pt(px(48.))
-                    .pb(px(48.))
+                    .px(px(self.state.theme.spacing.composer_horizontal))
+                    .pt(px(self.state.theme.spacing.composer_vertical))
+                    .pb(px(self.state.theme.spacing.composer_vertical))
                     .child(panel),
             )
             .into_any_element()

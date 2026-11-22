@@ -206,7 +206,7 @@ impl PassApp {
                     .flex()
                     .flex_col()
                     .gap(px(20.))
-                    .child(self.state.theme.label("REMOVE PASSWORD ENTRY"))
+                    .child(self.state.theme.label(i18n::text("remove-password-entry")))
                     .child(
                         div()
                             .text_size(px(24.))
@@ -225,7 +225,7 @@ impl PassApp {
                             .flex()
                             .justify_end()
                             .gap(px(10.))
-                            .child(self.state.theme.button("cancel-delete", "Cancel", false).on_click(
+                            .child(self.state.theme.button("cancel-delete", i18n::text("cancel"), false).on_click(
                                 cx.listener(|app, _, _, cx| {
                                     app.state.confirming_delete = None;
                                     cx.notify();
@@ -233,7 +233,7 @@ impl PassApp {
                             ))
                             .child(
                                 self.state.theme
-                                    .destructive_button("confirm-delete", "Delete entry")
+                                    .destructive_button("confirm-delete", i18n::text("delete-entry"))
                                     .on_click(cx.listener(|app, _, _, cx| app.confirm_delete(cx))),
                             ),
                     ),
@@ -407,7 +407,7 @@ impl PassApp {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("Open password store".into()),
+            prompt: Some(i18n::text("open-password-store").into()),
         });
         cx.spawn_in(window, async move |entity, cx| {
             let path = match picker.await {
@@ -442,13 +442,9 @@ impl PassApp {
 
 #[cfg(target_os = "linux")]
 fn pick_folder_with_zenity() -> Option<PathBuf> {
+    let title = i18n::text("open-password-store");
     let output = Command::new("zenity")
-        .args([
-            "--file-selection",
-            "--directory",
-            "--title",
-            "Open password store",
-        ])
+        .args(["--file-selection", "--directory", "--title", title.as_str()])
         .output()
         .ok()?;
     if !output.status.success() {

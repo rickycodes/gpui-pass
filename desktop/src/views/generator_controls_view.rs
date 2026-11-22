@@ -21,7 +21,7 @@ impl PassApp {
                         .border_1()
                         .border_color(rgb(self.state.theme.colors.accent))
                         .bg(rgb(self.state.theme.colors.accent_surface))
-                        .p(px(12.))
+                        .p(px(self.state.theme.spacing.field_padding))
                         .text_size(px(13.))
                         .line_height(px(18.))
                         .text_color(rgb(self.state.theme.colors.ink))
@@ -164,13 +164,13 @@ impl PassApp {
         div()
             .flex()
             .flex_col()
-            .gap(px(16.))
+            .gap(px(self.state.theme.spacing.section_gap))
             .child(
                 div()
                     .flex()
                     .items_center()
                     .justify_between()
-                    .gap(px(16.))
+                    .gap(px(self.state.theme.spacing.section_gap))
                     .child(slider)
                     .child(
                         div()
@@ -189,7 +189,7 @@ impl PassApp {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(16.))
+                    .gap(px(self.state.theme.spacing.section_gap))
                     .child(self.generator_toggle(
                         "toggle-generator-digits",
                         self.state.generation_digits,
@@ -262,7 +262,7 @@ impl PassApp {
             .flex()
             .items_center()
             .justify_end()
-            .gap(px(8.));
+            .gap(px(self.state.theme.spacing.section_gap));
         if self.state.generator_mode == GeneratorMode::Memorable {
             footer = footer.child(
                 self.state

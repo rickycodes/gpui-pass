@@ -64,7 +64,15 @@ static YUBIKEY_5CI_IMAGE: LazyLock<Arc<Image>> = LazyLock::new(|| {
 #[derive(Clone, Copy)]
 pub(super) struct YubiRecord {
     pub(super) observation: CardObservation,
-    pub(super) operation: &'static str,
+    pub(super) operation: YubiOperation,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum YubiOperation {
+    Reveal,
+    Copy,
+    SaveEdited,
+    SaveGenerated,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1326,23 +1334,23 @@ impl PassApp {
                 request
                     .progress
                     .card_observation()
-                    .map(|observation| (observation, "Reveal entry"))
+                    .map(|observation| (observation, YubiOperation::Reveal))
             })
             .or_else(|| {
                 self.state.copy_pending.as_ref().and_then(|pending| {
                     pending
                         .progress
                         .card_observation()
-                        .map(|observation| (observation, "Copy entry"))
+                        .map(|observation| (observation, YubiOperation::Copy))
                 })
             })
             .or_else(|| {
                 self.state.saving.as_ref().and_then(|(_, progress, _)| {
                     progress.card_observation().map(|observation| {
                         let operation = if self.state.saving_edit {
-                            "Save edited entry"
+                            YubiOperation::SaveEdited
                         } else {
-                            "Save generated entry"
+                            YubiOperation::SaveGenerated
                         };
                         (observation, operation)
                     })

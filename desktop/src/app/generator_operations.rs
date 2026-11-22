@@ -118,13 +118,13 @@ impl PassApp {
             return;
         }
         let name = self.state.custom_entry_name.trim();
-        let name = name.strip_suffix(".gpg").unwrap_or(name);
+        let name = name.strip_suffix(ENTRY_SUFFIX).unwrap_or(name);
         if name.is_empty() {
             self.set_error(i18n::text("custom-entry-name-required"));
             cx.notify();
             return;
         }
-        let entry = match Entry::from_relative_file(format!("{name}.gpg")) {
+        let entry = match Entry::from_relative_file(format!("{name}{ENTRY_SUFFIX}")) {
             Ok(entry) => entry,
             Err(error) => {
                 self.set_error(error.to_string());

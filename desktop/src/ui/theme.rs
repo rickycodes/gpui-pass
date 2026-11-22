@@ -44,8 +44,15 @@ pub struct Spacing {
     pub control_height: f32,
     pub control_horizontal: f32,
     pub panel_padding: f32,
+    pub field_padding: f32,
+    pub chrome_height: f32,
+    pub content_horizontal: f32,
+    pub content_vertical: f32,
+    pub composer_horizontal: f32,
+    pub composer_vertical: f32,
+    pub footer_horizontal: f32,
+    pub section_gap: f32,
 }
-
 #[derive(Clone, Debug)]
 pub struct Radii {
     pub control: f32,
@@ -85,6 +92,14 @@ impl Default for Theme {
                 control_height: 40.,
                 control_horizontal: 18.,
                 panel_padding: 22.,
+                field_padding: 12.,
+                chrome_height: 48.,
+                content_horizontal: 40.,
+                content_vertical: 32.,
+                composer_horizontal: 32.,
+                composer_vertical: 48.,
+                footer_horizontal: 24.,
+                section_gap: 16.,
             },
             radii: Radii {
                 control: 0.,
@@ -138,8 +153,15 @@ struct SpacingOverrides {
     control_height: Option<f32>,
     control_horizontal: Option<f32>,
     panel_padding: Option<f32>,
+    field_padding: Option<f32>,
+    chrome_height: Option<f32>,
+    content_horizontal: Option<f32>,
+    content_vertical: Option<f32>,
+    composer_horizontal: Option<f32>,
+    composer_vertical: Option<f32>,
+    footer_horizontal: Option<f32>,
+    section_gap: Option<f32>,
 }
-
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct RadiusOverrides {
@@ -335,7 +357,11 @@ impl Theme {
             .child(text.into())
     }
 
-    pub fn destructive_button(&self, id: &'static str, text: &'static str) -> Stateful<Div> {
+    pub fn destructive_button(
+        &self,
+        id: &'static str,
+        text: impl Into<SharedString>,
+    ) -> Stateful<Div> {
         let colors = self.colors.clone();
         div()
             .id(id)
@@ -353,7 +379,7 @@ impl Theme {
             .font_weight(FontWeight::MEDIUM)
             .cursor_pointer()
             .hover(move |style| style.bg(rgb(colors.danger_hover)))
-            .child(text)
+            .child(text.into())
     }
 
     pub fn panel(&self) -> Div {
@@ -419,6 +445,62 @@ impl ThemeOverrides {
             "spacing.panel_padding",
             0.0,
             64.0,
+        )?;
+        metric(
+            &mut theme.spacing.field_padding,
+            self.spacing.field_padding,
+            "spacing.field_padding",
+            0.0,
+            32.0,
+        )?;
+        metric(
+            &mut theme.spacing.chrome_height,
+            self.spacing.chrome_height,
+            "spacing.chrome_height",
+            24.0,
+            120.0,
+        )?;
+        metric(
+            &mut theme.spacing.content_horizontal,
+            self.spacing.content_horizontal,
+            "spacing.content_horizontal",
+            0.0,
+            96.0,
+        )?;
+        metric(
+            &mut theme.spacing.content_vertical,
+            self.spacing.content_vertical,
+            "spacing.content_vertical",
+            0.0,
+            96.0,
+        )?;
+        metric(
+            &mut theme.spacing.composer_horizontal,
+            self.spacing.composer_horizontal,
+            "spacing.composer_horizontal",
+            0.0,
+            96.0,
+        )?;
+        metric(
+            &mut theme.spacing.composer_vertical,
+            self.spacing.composer_vertical,
+            "spacing.composer_vertical",
+            0.0,
+            96.0,
+        )?;
+        metric(
+            &mut theme.spacing.footer_horizontal,
+            self.spacing.footer_horizontal,
+            "spacing.footer_horizontal",
+            0.0,
+            96.0,
+        )?;
+        metric(
+            &mut theme.spacing.section_gap,
+            self.spacing.section_gap,
+            "spacing.section_gap",
+            0.0,
+            48.0,
         )?;
         metric(
             &mut theme.radii.control,

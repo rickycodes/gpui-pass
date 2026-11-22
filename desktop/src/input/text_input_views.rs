@@ -127,7 +127,7 @@ impl PassApp {
             .min_w_0()
             .flex()
             .items_center()
-            .px(px(12.))
+            .px(px(self.state.theme.spacing.field_padding))
             .border_1()
             .border_color(rgb(if focused {
                 self.state.theme.colors.accent
@@ -263,7 +263,7 @@ impl PassApp {
             .min_w_0()
             .flex()
             .items_center()
-            .px(px(12.))
+            .px(px(self.state.theme.spacing.field_padding))
             .border_1()
             .border_color(rgb(if focused {
                 self.state.theme.colors.accent
@@ -377,7 +377,7 @@ impl PassApp {
             .flex()
             .items_center()
             .gap(px(10.))
-            .px(px(12.))
+            .px(px(self.state.theme.spacing.field_padding))
             .border_1()
             .border_color(rgb(if focused {
                 self.state.theme.colors.accent

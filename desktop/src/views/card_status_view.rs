@@ -1,4 +1,4 @@
-use super::yubikey_detection::yubikey_product_image;
+use super::yubikey_detection::{YubiOperation, yubikey_product_image};
 use super::*;
 
 fn card_event_title(event: CardEvent) -> &'static str {
@@ -38,6 +38,15 @@ fn yubi_info_row(theme: &Theme, title: &'static str, detail: impl Into<SharedStr
                 .text_color(rgb(theme.colors.muted))
                 .child(detail),
         )
+}
+
+fn yubi_operation_label(operation: YubiOperation) -> String {
+    match operation {
+        YubiOperation::Reveal => i18n::text("reveal-entry"),
+        YubiOperation::Copy => i18n::text("copy-entry"),
+        YubiOperation::SaveEdited => i18n::text("save-edited-entry"),
+        YubiOperation::SaveGenerated => i18n::text("save-generated-entry"),
+    }
 }
 
 impl PassApp {
@@ -97,8 +106,8 @@ impl PassApp {
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .px(px(40.))
-            .py(px(32.))
+            .px(px(self.state.theme.spacing.content_horizontal))
+            .py(px(self.state.theme.spacing.content_vertical))
             .flex()
             .flex_col()
             .gap(px(26.))
@@ -127,9 +136,9 @@ impl PassApp {
                                         .button(
                                             "verify-device",
                                             if self.state.device_verification.running() {
-                                                "Verifying…"
+                                                i18n::text("verifying")
                                             } else {
-                                                "Verify"
+                                                i18n::text("verify")
                                             },
                                             true,
                                         )
@@ -142,7 +151,7 @@ impl PassApp {
                                 actions.child(
                                     self.state
                                         .theme
-                                        .button("cancel-verification", "Cancel", false)
+                                        .button("cancel-verification", i18n::text("cancel"), false)
                                         .on_click(cx.listener(|app, _, _, cx| {
                                             app.state.device_verification.cancel();
                                             cx.notify();
@@ -152,7 +161,7 @@ impl PassApp {
                             .child(
                                 self.state
                                     .theme
-                                    .button("yubikey-back", "← Back", false)
+                                    .button("yubikey-back", i18n::text("back"), false)
                                     .on_click(
                                         cx.listener(|app, _, _, cx| app.leave_card_status(cx)),
                                     ),
@@ -353,7 +362,7 @@ impl PassApp {
                     .child(format!(
                         "Recent activity: {} · {}",
                         card_event_title(record.observation.event),
-                        record.operation
+                        yubi_operation_label(record.operation)
                     )),
             );
         }

@@ -21,8 +21,8 @@ impl PassApp {
             };
             detail = detail.child(
                 div()
-                    .px(px(40.))
-                    .pt(px(32.))
+                    .px(px(self.state.theme.spacing.content_horizontal))
+                    .pt(px(self.state.theme.spacing.content_vertical))
                     .pb(px(28.))
                     .border_b_1()
                     .border_color(rgb(self.state.theme.colors.border))
@@ -35,7 +35,7 @@ impl PassApp {
                             .flex()
                             .items_center()
                             .justify_between()
-                            .gap(px(16.))
+                            .gap(px(self.state.theme.spacing.section_gap))
                             .child(
                                 self.state
                                     .theme
@@ -66,7 +66,7 @@ impl PassApp {
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .p(px(40.))
+                .p(px(self.state.theme.spacing.content_horizontal))
                 .flex()
                 .flex_col()
                 .gap(px(24.));
@@ -193,11 +193,11 @@ impl PassApp {
                         .button(
                             "reveal",
                             if pending {
-                                "Cancel reveal"
+                                i18n::text("cancel-reveal")
                             } else if revealed.is_some() {
-                                "Hide password"
+                                i18n::text("hide-password")
                             } else {
-                                "Reveal password"
+                                i18n::text("reveal-password")
                             },
                             false,
                         )
@@ -218,9 +218,9 @@ impl PassApp {
                                     .button(
                                         "save-entry-edit",
                                         if self.state.saving_edit {
-                                            "Saving…"
+                                            i18n::text("saving-changes")
                                         } else {
-                                            "Save changes"
+                                            i18n::text("save-changes")
                                         },
                                         true,
                                     )
@@ -230,7 +230,7 @@ impl PassApp {
                         .child(
                             self.state
                                 .theme
-                                .button("cancel-entry-edit", "Cancel", false)
+                                .button("cancel-entry-edit", i18n::text("cancel"), false)
                                 .on_click(cx.listener(|app, _, _, cx| app.cancel_edit(cx))),
                         )
                 })
@@ -239,7 +239,7 @@ impl PassApp {
                         .child(
                             self.state
                                 .theme
-                                .button("edit-entry", "Edit entry", false)
+                                .button("edit-entry", i18n::text("edit-entry"), false)
                                 .on_click(
                                     cx.listener(|app, _, window, cx| app.begin_edit(window, cx)),
                                 ),
@@ -250,9 +250,9 @@ impl PassApp {
                                 .button(
                                     "copy-password",
                                     if self.state.copy_pending.is_some() {
-                                        "Copying…"
+                                        i18n::text("copying-entry")
                                     } else {
-                                        "Copy entry"
+                                        i18n::text("copy-entry")
                                     },
                                     true,
                                 )
@@ -278,7 +278,7 @@ impl PassApp {
                         row.child(
                             self.state
                                 .theme
-                                .danger_button("delete-entry", "Delete")
+                                .danger_button("delete-entry", i18n::text("delete"))
                                 .on_click(cx.listener(|app, _, _, cx| app.request_delete(cx))),
                         )
                     }),
@@ -310,7 +310,7 @@ impl PassApp {
                     .child(div().text_size(px(30.)).child(if !self.state.query.is_empty() { "Nothing here. Yet." } else { "Your passwords, at home." }))
                     .child(div().max_w(px(380.)).text_size(px(14.)).line_height(px(24.)).text_color(rgb(self.state.theme.colors.muted))
                         .child(if !self.state.query.is_empty() { "Search by an entry name or folder." } else { "Open an existing pass store to browse your entries. Your keys stay with GnuPG." }))
-                    .child(self.state.theme.button("empty-open-store", "Open password store  ↗", true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
+                    .child(self.state.theme.button("empty-open-store", i18n::text("open-password-store-link"), true).w(px(208.)).on_click(cx.listener(|app, _, window, cx| app.open_store(window, cx))))
     );
             }
         }

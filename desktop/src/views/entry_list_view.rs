@@ -231,9 +231,9 @@ impl PassApp {
                     .flex_col()
                     .gap(px(8.))
                     .child(self.state.theme.label(if self.state.demo {
-                        "DEMO STORE"
+                        i18n::text("demo-store")
                     } else {
-                        "CURRENT STORE"
+                        i18n::text("current-store")
                     }))
                     .child(
                         div()

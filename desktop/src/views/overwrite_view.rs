@@ -54,7 +54,7 @@ impl PassApp {
                             .child(
                                 self.state
                                     .theme
-                                    .button("cancel-overwrite", "Cancel", false)
+                                    .button("cancel-overwrite", i18n::text("cancel"), false)
                                     .on_click(cx.listener(|app, _, _, cx| {
                                         app.state.confirming_overwrite = None;
                                         cx.notify();

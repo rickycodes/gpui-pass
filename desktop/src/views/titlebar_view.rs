@@ -21,7 +21,7 @@ impl PassApp {
         div()
             .id(id)
             .w_full()
-            .h(px(48.))
+            .h(px(self.state.theme.spacing.chrome_height))
             .flex_shrink_0()
             .px(px(9.))
             .flex()
@@ -71,7 +71,7 @@ impl PassApp {
                         .text_size(px(10.))
                         .font_family(self.state.theme.mono_font)
                         .text_color(rgb(self.state.theme.colors.nav_muted))
-                        .child("DEMO"),
+                        .child(i18n::text("demo")),
                 )
             })
             .when(!self.state.demo && self.state.store.is_some(), |header| {
