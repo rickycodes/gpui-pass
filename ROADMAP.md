@@ -69,6 +69,9 @@ hardware.
 - [x] The GUI onboarding path was exercised with the configured signing
   policy; `.gpg-id.sig` validated against the configured fingerprint and the
   first signed entry was created successfully.
+- [x] Current-worktree CI-equivalent verification passed: formatting, warning
+  checks, clippy, serial core tests, desktop tests, Blade presentation tests,
+  and the disposable real `pass` compatibility fixture.
 
 ## Remaining work before v1
 
@@ -88,8 +91,8 @@ hardware.
 
 ### 2. Final release verification
 
-- [ ] Run CI checks and integration fixtures from a clean checkout after the
-  serialized core-test change.
+- [ ] Confirm the same checks pass in GitHub Actions from a clean checkout after
+  the serialized core-test change.
 - [ ] Perform a final GUI pass at normal and compact window sizes, with light
   and dark themes, fictional data, keyboard navigation, and focus states.
 - [ ] Verify tampered ciphertext never displays plaintext and complete the
