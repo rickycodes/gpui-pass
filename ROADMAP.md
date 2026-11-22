@@ -77,9 +77,9 @@ hardware.
 - [ ] Keep the maintainer's real-store workflow validation current as features
   change; record environment-specific gaps rather than treating one setup as
   universal coverage.
-- [ ] Update or archive the 2026-11-14 source review and 2026-11-15 follow-up
-  so their findings and validation counts are not mistaken for the current
-  state.
+- [x] Updated the 2026-11-14 source review and 2026-11-15 follow-up with
+  historical-status notices and current roadmap links so their old findings and
+  validation counts are not mistaken for the current state.
 - [ ] Document the remaining narrow race with non-cooperating external writers
   such as `pass`.
 - [ ] Review security and privacy documentation against actual behavior,

@@ -5,7 +5,10 @@
 
 A Rust/GPUI desktop client for existing or newly initialized [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
-**Status: implementation in progress.** The latest review passed 28 core tests, 23 desktop tests, 9 Python helper tests, and the disposable real `pass` integration fixture. The GPUI desktop builds and runs on Linux, and GUI and YubiKey hardware behavior have been tested on hardware in earlier work. See the [2026-11-14 review](docs/application-review-2026-11-14.md) for outstanding findings and verification limits.
+**Status: v1 release verification in progress.** The supported Linux desktop
+workflows, onboarding, YubiKey handling, release artifact, and checksum flow
+are implemented. See the [roadmap](ROADMAP.md) for completed verification,
+remaining release checks, and explicit post-v1 scope.
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
@@ -48,7 +51,9 @@ Generated entries are encrypted by GnuPG to the recipients resolved from the nea
 
 Copying an existing entry decrypts it in the background and copies its complete contents, including all lines; the entry never enters the revealed-entry view. The app restores the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), matching `pass`'s default timeout. If the clipboard changes before timeout, the app leaves the newer contents alone. Generated-password and editor-selection copies use the same policy. Normal app exit restores a tracked copy if it still owns the clipboard; crashes or forced termination cannot guarantee cleanup. Set the variable in the desktop launch environment to change the delay. Invalid or clock-overflowing values fall back to 45 seconds.
 
-Manual hardware check: the user reports that hidden copy, reveal/hide, edit, and delete work with a hardware-backed store and YubiKey. See the [cleanup follow-up](docs/application-cleanup-2026-11-15.md) for the remaining GUI and hardware checks.
+Manual hardware and signed-onboarding checks have been exercised on the
+maintainer's setup. The remaining release verification work is tracked in the
+[roadmap](ROADMAP.md).
 
 ## Linux build and run
 
@@ -255,7 +260,7 @@ applies to development and release builds; see
 
 `src/` contains store traversal, GnuPG subprocess handling, zeroizing secret storage, and reveal lifecycle. `desktop/` contains GPUI, search input, actions, and styling.
 
-The shared status types live in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`); the desktop renders feedback in its bottom notification bar. Reveal, hidden copy, and save operations each receive a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Active prompts and app messages take priority over passive clipboard status. The generator shares the same footer. See the [cleanup follow-up](docs/application-cleanup-2026-11-15.md) for fixes and remaining review findings.
+The shared status types live in `src/operation.rs` (`OperationStatus`, `StatusKind`, `OperationProgress`); the desktop renders feedback in its bottom notification bar. Reveal, hidden copy, and save operations each receive a fresh, bounded latest-value reporter; workers publish application-owned static messages and the UI observes changes. Active prompts and app messages take priority over passive clipboard status. The generator shares the same footer. See the [roadmap](ROADMAP.md) for current validation status and remaining review work.
 
 Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
 

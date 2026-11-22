@@ -1,6 +1,8 @@
 # Review fixes — 2026-11-15
 
 Follow-up to the [2026-11-14 application review](application-review-2026-11-14.md).
+> Historical follow-up. Current v1 status and remaining work are tracked in
+> [ROADMAP.md](../ROADMAP.md).
 
 ## Implemented
 

@@ -1,13 +1,16 @@
 # Application review — 2026-11-14
 
 See the [2026-11-15 follow-up](application-cleanup-2026-11-15.md) for fixes and remaining limits.
+> Historical snapshot. Subsequent fixes and current v1 status are tracked in
+> [ROADMAP.md](../ROADMAP.md); do not use the test counts or line references
+> below as a description of the current implementation.
 
 Reviewed the store backend, recipient policies, GnuPG subprocesses, generation,
 secret lifetimes, desktop editing, clipboard behavior, notifications, navigation,
-card helpers, diagnostics, and theme loading. This is a source review with
+card helpers, diagnostics, and theme loading. This was a source review with
 automated checks, not an independent security certification or hardware/GUI test.
-Findings below describe the current implementation; they have not been fixed
-by this review.
+The findings below describe the implementation at review time; subsequent fixes
+and current release status are tracked in the follow-up and roadmap.
 
 ## Highest priority
 
