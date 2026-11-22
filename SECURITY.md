@@ -47,6 +47,22 @@ Decryption follows the ciphertext's recipients, so browsing does not need to int
 
 New-entry writes use nearest-ancestor recipients, multiple recipients, `PASSWORD_STORE_KEY`, restricted directory/file permissions, and atomic no-overwrite creation. Edited entries are encrypted before an atomic replacement within the pinned store directory. The GUI captures a file revision from the actual decrypted file and checks identity, size, and change timestamps before encryption and again before replacement. A bounded per-entry lock in the user runtime directory coordinates `gpui-pass` instances. On a detected conflict, the editor preserves the user's text and offers explicit overwrite or discard-and-reveal actions; it does not merge the two versions. This remains optimistic detection, not an atomic compare-and-swap: non-cooperating writers such as `pass` can still race between the final check and rename. Git staging/commit semantics remain unimplemented; generated entries are not automatically added to Git.
 
+### External writer race
+
+The revision check protects against changes observed before encryption and
+before the app's final replacement step. The per-entry runtime lock coordinates
+only `gpui-pass` processes; tools such as `pass`, editors, scripts, or other
+filesystem writers do not participate in it.
+
+An external writer can therefore modify the entry after the final check but
+before the atomic rename. In that narrow window, the app can replace the
+external writer's newer ciphertext. There is no portable filesystem
+compare-and-swap or merge operation here. Detected conflicts preserve the
+editor buffer and require an explicit overwrite or discard-and-reveal choice;
+undetected races cannot be recovered by the app. Avoid editing the same entry
+concurrently from the app and another tool, and use Git history or another
+backup as recovery when available.
+
 ## Outstanding verification
 
 Automated tests exercise name/path rejection, Unicode search, symlink omission and replacement, hardlinks, pinned-root replacement, metacharacters, multiline output, failing exit status after plaintext output, binary/oversized output, timeout, cancellation, stale results, focus transitions, and expiry. Status tests cover partial/oversized lines, ignored diagnostics and metadata, live card-wait hints, fallback without status support, stderr floods, cancellation under flooding, and clearing/isolation of per-operation status.

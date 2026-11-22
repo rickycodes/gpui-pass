@@ -80,8 +80,8 @@ hardware.
 - [x] Updated the 2026-11-14 source review and 2026-11-15 follow-up with
   historical-status notices and current roadmap links so their old findings and
   validation counts are not mistaken for the current state.
-- [ ] Document the remaining narrow race with non-cooperating external writers
-  such as `pass`.
+- [x] Documented the remaining narrow race with non-cooperating external
+  writers in `SECURITY.md`.
 - [ ] Review security and privacy documentation against actual behavior,
   especially clipboard-manager history, crash cleanup limits, logs, filesystem
   permissions, GnuPG configuration, and local-user authentication limits.
