@@ -78,11 +78,13 @@ backup as recovery when available.
 Automated tests exercise name/path rejection, Unicode search, symlink omission and replacement, hardlinks, pinned-root replacement, metacharacters, multiline output, failing exit status after plaintext output, binary/oversized output, timeout, cancellation, stale results, focus transitions, and expiry. Status tests cover partial/oversized lines, ignored diagnostics and metadata, live card-wait hints, fallback without status support, stderr floods, cancellation under flooding, and clearing/isolation of per-operation status.
 
 The disposable real `pass` fixture is part of CI. The maintainer has manually
-confirmed hidden copy, reveal/hide, edit, delete, confirmed replacement, and
-signed onboarding with a hardware-backed store and YubiKey. Still outstanding
-for v1 are the final GUI matrix at normal/compact sizes and light/dark themes,
-keyboard/focus coverage, explicit PIN-cancellation and reconnect cases, and
-manual verification against genuinely tampered OpenPGP ciphertext.
+confirmed hidden copy, reveal/hide, edit, delete, confirmed replacement, signed
+onboarding with a hardware-backed store and YubiKey, the final GUI matrix at
+normal/compact sizes and light/dark themes, keyboard/focus behavior, explicit
+PIN-cancellation and reconnect cases, and genuinely tampered OpenPGP
+ciphertext handling. Remaining v1 verification is the clean-checkout GitHub
+Actions run and keeping the maintainer's real-store workflow current as
+features change.
 
 YubiKey verification on the maintainer's setup covers insertion/removal,
 PIN/touch, reveal, hidden copy, retry, and device verification. This does not

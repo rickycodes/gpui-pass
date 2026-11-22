@@ -93,12 +93,14 @@ hardware.
 
 - [ ] Confirm the same checks pass in GitHub Actions from a clean checkout after
   the serialized core-test change.
-- [ ] Perform a final GUI pass at normal and compact window sizes, with light
-  and dark themes, fictional data, keyboard navigation, and focus states.
-- [ ] Verify tampered ciphertext never displays plaintext and complete the
-  documented PIN-cancellation/reconnect cases.
-- [ ] Keep README, release notes, and the supported Ubuntu 24.04 x86_64
-  runtime requirements aligned with what was actually tested.
+- [x] Final GUI pass completed at normal and compact sizes with light and dark
+  themes, fictional data, search/keyboard navigation, focus transitions, the
+  empty-store create-entry action, and no-results handling.
+- [x] Tampered ciphertext produced a styled GnuPG error without displaying
+  plaintext; PIN cancellation and YubiKey removal/reconnect were also verified.
+- [x] README and the supported Ubuntu 24.04 x86_64 runtime requirements match
+  the tested release artifact. There is no separate release-notes file in the
+  repository.
 
 ## After v1
 
