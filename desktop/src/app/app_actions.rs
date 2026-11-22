@@ -36,6 +36,7 @@ actions!(
 pub(super) fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("escape", Hide, Some("Pass")),
+        KeyBinding::new("enter", Reveal, Some("Pass")),
         KeyBinding::new("ctrl-n", OpenCreateEntry, Some("Pass")),
         KeyBinding::new("shift-enter", InsertNewline, Some("Pass")),
         KeyBinding::new("ctrl-r", Refresh, Some("Pass")),
