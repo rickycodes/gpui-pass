@@ -226,6 +226,17 @@ QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
 - Generator profiles by folder and named store profiles.
 - Credential rotation sessions, hand-typing view, quick-copy fields, and local TOTP.
 - Export a single entry to another recipient and local links that open a selected entry.
+- Application lock and re-authentication that hide rendered secrets and require
+  a fresh GnuPG operation, while documenting that the app cannot purge
+  authorization cached by the user's GnuPG agent.
+- Bulk selection and explicit multi-entry operations such as delete, move,
+  export, or recipient-policy-aware re-encryption.
+- Entry history and diff viewing when local history is available, without
+  making Git management part of the application.
+- Complete keyboard tab order for sidebar rows, titlebar actions, buttons, and
+  dialogs; add accessibility semantics and screen-reader state announcements.
+- Desktop integration beyond local links, such as launcher actions and optional
+  tray or quick-copy workflows.
 - Investigate macOS support; evaluate Windows only after reviewing safe file and subprocess handling.
 - Favorites and recent entries, storing only entry paths in local app state and
   never caching decrypted contents.
