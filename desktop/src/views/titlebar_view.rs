@@ -7,7 +7,7 @@ impl PassApp {
         center: Option<gpui::AnyElement>,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        let generator_open = self.state.navigation.generator_open();
+        let composer_open = self.state.navigation.composer_open();
         let right = match center {
             Some(center) => div()
                 .flex()
@@ -47,8 +47,8 @@ impl PassApp {
                     .on_click(cx.listener(move |app, _, window, cx| {
                         app.state.device_verification.cancel();
                         app.state.navigation.go_to(Page::Entries);
-                        if generator_open {
-                            app.close_generator(cx);
+                        if composer_open {
+                            app.close_composer(cx);
                         } else {
                             cx.notify();
                         }

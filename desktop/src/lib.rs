@@ -34,6 +34,14 @@ mod app_view;
 mod brand;
 #[path = "views/card_status_view.rs"]
 mod card_status_view;
+#[path = "views/composer_controls_view.rs"]
+mod composer_controls_view;
+#[path = "views/composer_mode.rs"]
+mod composer_mode;
+#[path = "app/composer_operations.rs"]
+mod composer_operations;
+#[path = "views/composer_view.rs"]
+mod composer_view;
 #[path = "constants.rs"]
 mod constants;
 #[path = "input/editor_input.rs"]
@@ -48,14 +56,6 @@ mod entry_list_view;
 mod entry_operations;
 #[path = "views/footer_view.rs"]
 mod footer_view;
-#[path = "views/generator_composer_view.rs"]
-mod generator_composer_view;
-#[path = "views/generator_controls_view.rs"]
-mod generator_controls_view;
-#[path = "app/generator_operations.rs"]
-mod generator_operations;
-#[path = "views/generator_view.rs"]
-mod generator_view;
 #[path = "ui/i18n.rs"]
 mod i18n;
 #[path = "ui/loading_spinner.rs"]
@@ -84,8 +84,8 @@ mod window_control_glyph;
 mod yubikey_detection;
 
 use app_state::{AppState, SidebarRow};
+use composer_mode::{ComposerMode, OverwriteConfirmation};
 use fluent_bundle::FluentArgs;
-use generator_view::{GeneratorMode, OverwriteConfirmation};
 use gpui::{
     App, Application, Bounds, Context, CursorStyle, Div, FocusHandle, FontWeight, Image,
     ImageFormat, KeyBinding, ResizeEdge, ScrollStrategy, SharedString, Subscription,
@@ -201,7 +201,7 @@ pub(crate) struct PassApp {
 
 impl PassApp {
     pub(crate) fn text_editor_active(&self) -> bool {
-        self.state.editing_entry || self.state.navigation.generator_open()
+        self.state.editing_entry || self.state.navigation.composer_open()
     }
 }
 

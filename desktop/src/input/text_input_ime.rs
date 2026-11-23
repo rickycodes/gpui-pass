@@ -22,14 +22,14 @@ impl EntityInputHandler for PassApp {
             );
             return Some(self.state.custom_entry_name[start..end].to_owned());
         }
-        if self.state.generator_name_focus.is_focused(window) {
-            let start = byte_at_utf16(self.state.generator_name.as_str(), range.start);
-            let end = byte_at_utf16(self.state.generator_name.as_str(), range.end).max(start);
+        if self.state.composer_content_focus.is_focused(window) {
+            let start = byte_at_utf16(self.state.composer_content.as_str(), range.start);
+            let end = byte_at_utf16(self.state.composer_content.as_str(), range.end).max(start);
             *adjusted = Some(
-                utf16_at_byte(self.state.generator_name.as_str(), start)
-                    ..utf16_at_byte(self.state.generator_name.as_str(), end),
+                utf16_at_byte(self.state.composer_content.as_str(), start)
+                    ..utf16_at_byte(self.state.composer_content.as_str(), end),
             );
-            return Some(self.state.generator_name[start..end].to_owned());
+            return Some(self.state.composer_content[start..end].to_owned());
         }
         let start = byte_at_utf16(self.state.query.as_str(), range.start);
         let end = byte_at_utf16(self.state.query.as_str(), range.end).max(start);
@@ -54,18 +54,18 @@ impl EntityInputHandler for PassApp {
                 reversed: false,
             });
         }
-        let (text, selection) = if self.state.generator_name_focus.is_focused(window) {
+        let (text, selection) = if self.state.composer_content_focus.is_focused(window) {
             (
-                self.state.generator_name.as_str(),
-                &self.state.generator_name_selection,
+                self.state.composer_content.as_str(),
+                &self.state.composer_content_selection,
             )
         } else {
             (self.state.query.as_str(), &self.state.selection)
         };
         Some(UTF16Selection {
             range: utf16_at_byte(text, selection.start)..utf16_at_byte(text, selection.end),
-            reversed: self.state.generator_name_focus.is_focused(window)
-                && self.state.generator_name_cursor < selection.start,
+            reversed: self.state.composer_content_focus.is_focused(window)
+                && self.state.composer_content_cursor < selection.start,
         })
     }
 
@@ -80,10 +80,10 @@ impl EntityInputHandler for PassApp {
                     ..utf16_at_byte(&self.state.custom_entry_name, range.end)
             });
         }
-        let (text, marked) = if self.state.generator_name_focus.is_focused(window) {
+        let (text, marked) = if self.state.composer_content_focus.is_focused(window) {
             (
-                self.state.generator_name.as_str(),
-                &self.state.generator_name_marked,
+                self.state.composer_content.as_str(),
+                &self.state.composer_content_marked,
             )
         } else {
             (self.state.query.as_str(), &self.state.marked)
@@ -96,8 +96,8 @@ impl EntityInputHandler for PassApp {
     fn unmark_text(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.custom_entry_name_focus.is_focused(window) {
             self.state.custom_entry_name_marked = None;
-        } else if self.state.generator_name_focus.is_focused(window) {
-            self.state.generator_name_marked = None;
+        } else if self.state.composer_content_focus.is_focused(window) {
+            self.state.composer_content_marked = None;
         } else {
             self.state.marked = None;
         }
@@ -113,8 +113,8 @@ impl EntityInputHandler for PassApp {
     ) {
         if self.state.custom_entry_name_focus.is_focused(window) {
             self.replace_custom_entry_name(range, text, cx);
-        } else if self.state.generator_name_focus.is_focused(window) {
-            self.replace_generator_name(range, text, cx);
+        } else if self.state.composer_content_focus.is_focused(window) {
+            self.replace_composer_content(range, text, cx);
         } else {
             self.replace_search(range, text, cx);
         }
@@ -149,16 +149,16 @@ impl EntityInputHandler for PassApp {
             }
             return;
         }
-        let name_focused = self.state.generator_name_focus.is_focused(window);
+        let name_focused = self.state.composer_content_focus.is_focused(window);
         let inserted = if name_focused {
-            self.replace_generator_name(range, text, cx)
+            self.replace_composer_content(range, text, cx)
         } else {
             self.replace_search(range, text, cx)
         };
         let (source, marked) = if name_focused {
             (
-                self.state.generator_name.as_str(),
-                &mut self.state.generator_name_marked,
+                self.state.composer_content.as_str(),
+                &mut self.state.composer_content_marked,
             )
         } else {
             (self.state.query.as_str(), &mut self.state.marked)
@@ -169,8 +169,8 @@ impl EntityInputHandler for PassApp {
             let selection = inserted.start + byte_at_utf16(text, selected.start)
                 ..inserted.start + byte_at_utf16(text, selected.end);
             if name_focused {
-                self.state.generator_name_cursor = selection.end;
-                self.state.generator_name_selection = selection;
+                self.state.composer_content_cursor = selection.end;
+                self.state.composer_content_selection = selection;
             } else {
                 self.state.selection = selection;
             }
@@ -201,9 +201,9 @@ impl EntityInputHandler for PassApp {
                 gpui::size(px(1.), bounds.size.height),
             ));
         }
-        let name_focused = self.state.generator_name_focus.is_focused(window);
+        let name_focused = self.state.composer_content_focus.is_focused(window);
         let text = if name_focused {
-            self.state.generator_name.as_str()
+            self.state.composer_content.as_str()
         } else {
             self.state.query.as_str()
         };
@@ -262,9 +262,9 @@ impl EntityInputHandler for PassApp {
             );
             return Some(utf16_at_byte(text, byte));
         }
-        let name_focused = self.state.generator_name_focus.is_focused(window);
+        let name_focused = self.state.composer_content_focus.is_focused(window);
         let text = if name_focused {
-            self.state.generator_name.as_str()
+            self.state.composer_content.as_str()
         } else {
             self.state.query.as_str()
         };
@@ -273,7 +273,7 @@ impl EntityInputHandler for PassApp {
             return Some(utf16_at_byte(text, byte));
         }
         let bounds = if name_focused {
-            self.state.generator_name_bounds?
+            self.state.composer_content_bounds?
         } else {
             self.state.input_bounds?
         };

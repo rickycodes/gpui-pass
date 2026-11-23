@@ -1,13 +1,13 @@
 use super::*;
 
 impl PassApp {
-    pub(super) fn reset_generator_cursor(&mut self) {
-        self.state.generator_name_selection =
-            self.state.generator_name.len()..self.state.generator_name.len();
-        self.state.generator_name_anchor = None;
-        self.state.generator_name_cursor = self.state.generator_name.len();
-        self.state.generator_name_marked = None;
-        self.state.generator_name_bounds = None;
+    pub(super) fn reset_composer_cursor(&mut self) {
+        self.state.composer_content_selection =
+            self.state.composer_content.len()..self.state.composer_content.len();
+        self.state.composer_content_anchor = None;
+        self.state.composer_content_cursor = self.state.composer_content.len();
+        self.state.composer_content_marked = None;
+        self.state.composer_content_bounds = None;
         self.state.editor_layout = None;
     }
 
@@ -18,10 +18,10 @@ impl PassApp {
         self.state.custom_entry_name_anchor = None;
         self.state.custom_entry_name_marked = None;
         self.state.custom_entry_name_bounds = None;
-        self.state.generator_name.zeroize();
+        self.state.composer_content.zeroize();
         self.state.content_generated = false;
-        self.state.generator_mode = GeneratorMode::New;
-        self.reset_generator_cursor();
+        self.state.composer_mode = ComposerMode::New;
+        self.reset_composer_cursor();
     }
 
     pub(super) fn open_create_entry(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -40,30 +40,26 @@ impl PassApp {
         self.state.reveal = None;
         self.clear_create_entry();
         self.state.custom_entry_name_focus.focus(window);
-        self.state.navigation.open_generator();
+        self.state.navigation.open_composer();
         self.clear_message();
         cx.notify();
     }
 
-    pub(super) fn generator_options(&self) -> GeneratorOptions {
+    pub(super) fn composer_options(&self) -> GeneratorOptions {
         GeneratorOptions {
             words: self.state.generation_words,
             add_digits: self.state.generation_digits,
             add_separators: self.state.generation_separators,
         }
     }
-    pub(super) fn select_generator_mode(&mut self, mode: GeneratorMode, cx: &mut Context<Self>) {
-        self.state.generator_mode = mode;
+    pub(super) fn select_composer_mode(&mut self, mode: ComposerMode, cx: &mut Context<Self>) {
+        self.state.composer_mode = mode;
         self.state.content_generated = false;
         cx.notify();
     }
 
-    pub(super) fn set_generator_strength_from_x(
-        &mut self,
-        x: gpui::Pixels,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(bounds) = self.state.generator_slider_bounds else {
+    pub(super) fn set_composer_strength_from_x(&mut self, x: gpui::Pixels, cx: &mut Context<Self>) {
+        let Some(bounds) = self.state.composer_slider_bounds else {
             return;
         };
         let fraction = ((x - bounds.origin.x) / bounds.size.width).clamp(0., 1.);
@@ -76,16 +72,16 @@ impl PassApp {
     }
 
     pub(super) fn generate_into_contents(&mut self, cx: &mut Context<Self>) {
-        let result = match self.state.generator_mode {
-            GeneratorMode::New => return,
-            GeneratorMode::Memorable => generate_memorable_password(self.generator_options()),
-            GeneratorMode::PassDefault => return,
+        let result = match self.state.composer_mode {
+            ComposerMode::New => return,
+            ComposerMode::Memorable => generate_memorable_password(self.composer_options()),
+            ComposerMode::PassDefault => return,
         };
         match result {
             Ok(secret) => {
-                self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
+                self.state.composer_content = Zeroizing::new(secret.expose().to_owned());
                 self.state.content_generated = true;
-                self.reset_generator_cursor();
+                self.reset_composer_cursor();
                 cx.notify();
             }
             Err(error) => {
@@ -95,7 +91,7 @@ impl PassApp {
         }
     }
 
-    pub(super) fn close_generator(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn close_composer(&mut self, cx: &mut Context<Self>) {
         if let Some((cancellation, _, _)) = &self.state.saving {
             cancellation.cancel();
             self.state.close_after_save = true;
@@ -103,7 +99,7 @@ impl PassApp {
             cx.notify();
             return;
         }
-        self.state.navigation.close_generator();
+        self.state.navigation.close_composer();
         self.clear_create_entry();
         cx.notify();
     }
@@ -160,13 +156,13 @@ impl PassApp {
         if self.state.saving.is_some() {
             return;
         }
-        let pass_default = self.state.generator_mode == GeneratorMode::PassDefault;
+        let pass_default = self.state.composer_mode == ComposerMode::PassDefault;
         let secret = if pass_default {
             None
         } else {
             Some(
                 match Secret::from_bytes(Zeroizing::new(
-                    self.state.generator_name.as_bytes().to_vec(),
+                    self.state.composer_content.as_bytes().to_vec(),
                 )) {
                     Ok(secret) => secret,
                     Err(error) => {

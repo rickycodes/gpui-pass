@@ -99,7 +99,7 @@ impl SidebarScroll {
 
 impl PassApp {
     pub(super) fn advance_sidebar_scroll(&mut self, window: &mut Window) {
-        if self.state.navigation.generator_open() || self.state.navigation.page() != Page::Entries {
+        if self.state.navigation.composer_open() || self.state.navigation.page() != Page::Entries {
             self.state.sidebar_scroll.cancel();
             return;
         }

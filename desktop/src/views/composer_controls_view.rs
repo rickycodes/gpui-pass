@@ -1,13 +1,13 @@
 use super::*;
-use crate::generator_view::CREATE_CONTENT_HEIGHT;
+use crate::composer_mode::CREATE_CONTENT_HEIGHT;
 
 impl PassApp {
-    pub(super) fn generator_content_area(
+    pub(super) fn composer_content_area(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
-        if self.state.generator_mode == GeneratorMode::PassDefault {
+        if self.state.composer_mode == ComposerMode::PassDefault {
             div()
                 .w_full()
                 .h(px(CREATE_CONTENT_HEIGHT))
@@ -34,12 +34,12 @@ impl PassApp {
                 .id("create-entry-content")
                 .h(px(CREATE_CONTENT_HEIGHT))
                 .overflow_y_scroll()
-                .child(self.generator_name_field(window, cx))
+                .child(self.composer_content_field(window, cx))
                 .into_any_element()
         }
     }
 
-    pub(super) fn generator_mode_buttons(&self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn composer_mode_buttons(&self, cx: &mut Context<Self>) -> Div {
         div()
             .flex()
             .items_center()
@@ -50,10 +50,10 @@ impl PassApp {
                     .button(
                         "mode-new",
                         i18n::text("new-entry"),
-                        self.state.generator_mode == GeneratorMode::New,
+                        self.state.composer_mode == ComposerMode::New,
                     )
                     .on_click(cx.listener(|app, _, _, cx| {
-                        app.select_generator_mode(GeneratorMode::New, cx);
+                        app.select_composer_mode(ComposerMode::New, cx);
                     })),
             )
             .child(
@@ -62,10 +62,10 @@ impl PassApp {
                     .button(
                         "mode-memorable",
                         i18n::text("memorable-phrase"),
-                        self.state.generator_mode == GeneratorMode::Memorable,
+                        self.state.composer_mode == ComposerMode::Memorable,
                     )
                     .on_click(cx.listener(|app, _, _, cx| {
-                        app.select_generator_mode(GeneratorMode::Memorable, cx);
+                        app.select_composer_mode(ComposerMode::Memorable, cx);
                     })),
             )
             .child(
@@ -74,22 +74,22 @@ impl PassApp {
                     .button(
                         "mode-pass-default",
                         i18n::text("pass-default"),
-                        self.state.generator_mode == GeneratorMode::PassDefault,
+                        self.state.composer_mode == ComposerMode::PassDefault,
                     )
                     .on_click(cx.listener(|app, _, _, cx| {
-                        app.select_generator_mode(GeneratorMode::PassDefault, cx);
+                        app.select_composer_mode(ComposerMode::PassDefault, cx);
                     })),
             )
     }
 
-    pub(super) fn generator_memorable_options(&self, cx: &mut Context<Self>) -> Div {
-        let options = self.generator_options();
+    pub(super) fn composer_memorable_options(&self, cx: &mut Context<Self>) -> Div {
+        let options = self.composer_options();
         let slider_left = ((self.state.generation_words - MIN_MEMORABLE_WORDS) as f32
             / (MAX_MEMORABLE_WORDS - MIN_MEMORABLE_WORDS) as f32)
             * 360.;
         let entity = cx.entity().clone();
         let slider_track = div()
-            .id("generator-strength-slider")
+            .id("composer-strength-slider")
             .relative()
             .w(px(360.))
             .h(px(26.))
@@ -97,12 +97,12 @@ impl PassApp {
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|app, event: &gpui::MouseDownEvent, _, cx| {
-                    app.set_generator_strength_from_x(event.position.x, cx);
+                    app.set_composer_strength_from_x(event.position.x, cx);
                 }),
             )
             .on_mouse_move(cx.listener(|app, event: &gpui::MouseMoveEvent, _, cx| {
                 if event.dragging() {
-                    app.set_generator_strength_from_x(event.position.x, cx);
+                    app.set_composer_strength_from_x(event.position.x, cx);
                 }
             }))
             .child(
@@ -137,9 +137,7 @@ impl PassApp {
                 canvas(
                     |_, _, _| (),
                     move |bounds, (), _, cx| {
-                        entity.update(cx, |app, _| {
-                            app.state.generator_slider_bounds = Some(bounds)
-                        });
+                        entity.update(cx, |app, _| app.state.composer_slider_bounds = Some(bounds));
                     },
                 )
                 .absolute()
@@ -190,15 +188,15 @@ impl PassApp {
                     .flex()
                     .items_center()
                     .gap(px(self.state.theme.spacing.section_gap))
-                    .child(self.generator_toggle(
-                        "toggle-generator-digits",
+                    .child(self.composer_toggle(
+                        "toggle-composer-digits",
                         self.state.generation_digits,
                         true,
                         "append-digit",
                         cx,
                     ))
-                    .child(self.generator_toggle(
-                        "toggle-generator-separators",
+                    .child(self.composer_toggle(
+                        "toggle-composer-separators",
                         self.state.generation_separators,
                         false,
                         "separate-words",
@@ -207,7 +205,7 @@ impl PassApp {
             )
     }
 
-    pub(super) fn generator_toggle(
+    pub(super) fn composer_toggle(
         &self,
         id: &'static str,
         checked: bool,
@@ -256,14 +254,14 @@ impl PassApp {
             .into_any_element()
     }
 
-    pub(super) fn generator_footer(&self, cx: &mut Context<Self>) -> Div {
+    pub(super) fn composer_footer(&self, cx: &mut Context<Self>) -> Div {
         let mut footer = div()
             .mt_auto()
             .flex()
             .items_center()
             .justify_end()
             .gap(px(self.state.theme.spacing.section_gap));
-        if self.state.generator_mode == GeneratorMode::Memorable {
+        if self.state.composer_mode == ComposerMode::Memorable {
             footer = footer.child(
                 self.state
                     .theme
@@ -272,12 +270,12 @@ impl PassApp {
             );
         }
         let save_label = if self.state.saving.is_some() {
-            if self.state.generator_mode == GeneratorMode::PassDefault {
+            if self.state.composer_mode == ComposerMode::PassDefault {
                 i18n::text("custom-entry-generating")
             } else {
                 i18n::text("custom-entry-saving")
             }
-        } else if self.state.generator_mode == GeneratorMode::PassDefault {
+        } else if self.state.composer_mode == ComposerMode::PassDefault {
             i18n::text("custom-entry-generate-save")
         } else {
             i18n::text("custom-entry-save")

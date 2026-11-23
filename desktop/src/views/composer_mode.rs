@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum GeneratorMode {
+pub(super) enum ComposerMode {
     New,
     Memorable,
     PassDefault,

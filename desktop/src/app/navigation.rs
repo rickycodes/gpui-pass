@@ -5,11 +5,11 @@ pub(crate) enum Page {
     CardDetails,
 }
 
-/// The generator is an overlay; opening it preserves the underlying page.
+/// The composer is an overlay; opening it preserves the underlying page.
 #[derive(Default)]
 pub(crate) struct Navigation {
     page: Page,
-    generator_open: bool,
+    composer_open: bool,
 }
 
 impl Navigation {
@@ -21,16 +21,16 @@ impl Navigation {
         self.page = page;
     }
 
-    pub fn generator_open(&self) -> bool {
-        self.generator_open
+    pub fn composer_open(&self) -> bool {
+        self.composer_open
     }
 
-    pub fn open_generator(&mut self) {
-        self.generator_open = true;
+    pub fn open_composer(&mut self) {
+        self.composer_open = true;
     }
 
-    pub fn close_generator(&mut self) {
-        self.generator_open = false;
+    pub fn close_composer(&mut self) {
+        self.composer_open = false;
     }
 
     pub fn card_unavailable(&mut self) {
@@ -45,15 +45,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn generator_returns_to_the_page_it_was_opened_from() {
+    fn composer_returns_to_the_page_it_was_opened_from() {
         for page in [Page::Entries, Page::CardDetails] {
             let mut navigation = Navigation::default();
             navigation.go_to(page);
-            navigation.open_generator();
-            navigation.open_generator();
-            assert!(navigation.generator_open());
-            navigation.close_generator();
-            assert!(!navigation.generator_open());
+            navigation.open_composer();
+            navigation.open_composer();
+            assert!(navigation.composer_open());
+            navigation.close_composer();
+            assert!(!navigation.composer_open());
             assert_eq!(navigation.page(), page);
         }
     }
@@ -62,10 +62,10 @@ mod tests {
     fn removal_while_generating_returns_to_entries_on_close() {
         let mut navigation = Navigation::default();
         navigation.go_to(Page::CardDetails);
-        navigation.open_generator();
+        navigation.open_composer();
         navigation.card_unavailable();
-        assert!(navigation.generator_open());
-        navigation.close_generator();
+        assert!(navigation.composer_open());
+        navigation.close_composer();
         assert_eq!(navigation.page(), Page::Entries);
     }
 

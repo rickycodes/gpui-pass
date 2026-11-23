@@ -103,7 +103,7 @@ impl PassApp {
                 .min_w_0()
                 .min_h(px(96.));
             if self.state.editing_entry {
-                password = password.child(self.generator_name_field(window, cx));
+                password = password.child(self.composer_content_field(window, cx));
             } else if let Some(secret) = revealed {
                 let text = secret.expose();
                 password = password.child(

@@ -115,9 +115,8 @@ hardware.
   `desktop/src/input/text_input_views.rs`, `desktop/src/views/card_status_view.rs`,
   `desktop/src/lib.rs`, `desktop/src/views/entry_detail_view.rs`, and
   `desktop/src/ui/sidebar_scroll.rs`.
-- [ ] Revisit the internal `generator_*` naming after the split. It still
-  describes the generation modes, but `generator_name` now represents entry
-  content in the merged composer and could become `composer_content`.
+- [x] Renamed the desktop's internal `generator_*` modules and state symbols
+  to `composer_*`; the core `src/generator.rs` API remains generation-specific.
 
 ## After v1
 

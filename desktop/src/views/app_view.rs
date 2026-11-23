@@ -10,8 +10,8 @@ impl Render for PassApp {
         let onboarding = self.state.onboarding.is_some();
         let main_content = if onboarding {
             self.onboarding_view(window, cx)
-        } else if self.state.navigation.generator_open() {
-            self.generator_view(window, cx)
+        } else if self.state.navigation.composer_open() {
+            self.composer_view(window, cx)
         } else if self.state.navigation.page() == Page::CardDetails {
             self.yubikey_view(cx)
         } else {
@@ -38,7 +38,7 @@ impl Render for PassApp {
             cx,
         )
         .when(
-            !self.state.navigation.generator_open() && !onboarding,
+            !self.state.navigation.composer_open() && !onboarding,
             |view| view.child(self.titlebar("titlebar", Some(self.navigation_links(cx)), cx)),
         )
         .child(main_content)

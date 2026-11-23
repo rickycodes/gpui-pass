@@ -113,30 +113,30 @@ impl PassApp {
         cx.notify();
     }
 
-    pub(super) fn replace_generator_name(
+    pub(super) fn replace_composer_content(
         &mut self,
         range: Option<Range<usize>>,
         text: &str,
         cx: &mut Context<Self>,
     ) -> Range<usize> {
-        if self.state.navigation.generator_open() {
+        if self.state.navigation.composer_open() {
             self.state.content_generated = false;
         }
         let range = range
             .map(|range| {
-                byte_at_utf16(self.state.generator_name.as_str(), range.start)
-                    ..byte_at_utf16(self.state.generator_name.as_str(), range.end)
+                byte_at_utf16(self.state.composer_content.as_str(), range.start)
+                    ..byte_at_utf16(self.state.composer_content.as_str(), range.end)
             })
-            .or_else(|| self.state.generator_name_marked.clone())
-            .unwrap_or_else(|| self.state.generator_name_selection.clone());
+            .or_else(|| self.state.composer_content_marked.clone())
+            .unwrap_or_else(|| self.state.composer_content_selection.clone());
         let start = range.start.min(range.end);
         let end = range.end.max(range.start);
         let text = if self.text_editor_active() {
             zeroize::Zeroizing::new(text.to_owned())
         } else {
             let room = 512_usize.saturating_sub(
-                self.state.generator_name[..start].chars().count()
-                    + self.state.generator_name[end..].chars().count(),
+                self.state.composer_content[..start].chars().count()
+                    + self.state.composer_content[end..].chars().count(),
             );
             zeroize::Zeroizing::new(
                 text.chars()
@@ -147,22 +147,22 @@ impl PassApp {
         };
         if self.text_editor_active() {
             let Some(next) =
-                crate::editor_input::replace(&self.state.generator_name, start..end, &text)
+                crate::editor_input::replace(&self.state.composer_content, start..end, &text)
             else {
                 self.set_error(crate::i18n::text("editor-limit"));
                 cx.notify();
                 return start..start;
             };
-            self.state.generator_name = next;
+            self.state.composer_content = next;
             self.state.editor_layout = None;
         } else {
-            self.state.generator_name.replace_range(start..end, &text);
+            self.state.composer_content.replace_range(start..end, &text);
         }
         let inserted = start..start + text.len();
-        self.state.generator_name_selection = inserted.end..inserted.end;
-        self.state.generator_name_cursor = inserted.end;
-        self.state.generator_name_anchor = None;
-        self.state.generator_name_marked = None;
+        self.state.composer_content_selection = inserted.end..inserted.end;
+        self.state.composer_content_cursor = inserted.end;
+        self.state.composer_content_anchor = None;
+        self.state.composer_content_marked = None;
         self.clear_message();
         cx.notify();
         inserted
@@ -212,15 +212,15 @@ impl PassApp {
             self.replace_custom_entry_name(None, "", cx);
             return;
         }
-        if self.state.generator_name_focus.is_focused(window) {
-            if self.state.generator_name_selection.is_empty() {
-                self.state.generator_name_selection.start = self.state.generator_name
-                    [..self.state.generator_name_selection.start]
+        if self.state.composer_content_focus.is_focused(window) {
+            if self.state.composer_content_selection.is_empty() {
+                self.state.composer_content_selection.start = self.state.composer_content
+                    [..self.state.composer_content_selection.start]
                     .char_indices()
                     .next_back()
                     .map_or(0, |(byte, _)| byte);
             }
-            self.replace_generator_name(None, "", cx);
+            self.replace_composer_content(None, "", cx);
             return;
         }
         if !self.state.search_focus.is_focused(window) {
@@ -248,15 +248,15 @@ impl PassApp {
             self.replace_custom_entry_name(None, "", cx);
             return;
         }
-        if self.state.generator_name_focus.is_focused(window) {
-            if self.state.generator_name_selection.is_empty() {
-                self.state.generator_name_selection.end += self.state.generator_name
-                    [self.state.generator_name_selection.end..]
+        if self.state.composer_content_focus.is_focused(window) {
+            if self.state.composer_content_selection.is_empty() {
+                self.state.composer_content_selection.end += self.state.composer_content
+                    [self.state.composer_content_selection.end..]
                     .chars()
                     .next()
                     .map_or(0, char::len_utf8);
             }
-            self.replace_generator_name(None, "", cx);
+            self.replace_composer_content(None, "", cx);
             return;
         }
         if !self.state.search_focus.is_focused(window) {
@@ -298,29 +298,29 @@ impl PassApp {
             cx.notify();
             return;
         }
-        if self.state.generator_name_focus.is_focused(window) {
-            let byte = if !self.state.generator_name_selection.is_empty() {
+        if self.state.composer_content_focus.is_focused(window) {
+            let byte = if !self.state.composer_content_selection.is_empty() {
                 if delta < 0 {
-                    self.state.generator_name_selection.start
+                    self.state.composer_content_selection.start
                 } else {
-                    self.state.generator_name_selection.end
+                    self.state.composer_content_selection.end
                 }
             } else if delta < 0 {
-                self.state.generator_name[..self.state.generator_name_selection.start]
+                self.state.composer_content[..self.state.composer_content_selection.start]
                     .char_indices()
                     .next_back()
                     .map_or(0, |(byte, _)| byte)
             } else {
-                self.state.generator_name_selection.end
-                    + self.state.generator_name[self.state.generator_name_selection.end..]
+                self.state.composer_content_selection.end
+                    + self.state.composer_content[self.state.composer_content_selection.end..]
                         .chars()
                         .next()
                         .map_or(0, char::len_utf8)
             };
-            self.state.generator_name_selection = byte..byte;
-            self.state.generator_name_cursor = byte;
-            self.state.generator_name_anchor = None;
-            self.state.generator_name_marked = None;
+            self.state.composer_content_selection = byte..byte;
+            self.state.composer_content_cursor = byte;
+            self.state.composer_content_anchor = None;
+            self.state.composer_content_marked = None;
             cx.notify();
             return;
         }
@@ -363,27 +363,27 @@ impl PassApp {
             cx.notify();
             return;
         }
-        if self.state.generator_name_focus.is_focused(window) {
+        if self.state.composer_content_focus.is_focused(window) {
             let byte = if self.text_editor_active() {
-                let cursor = self.state.generator_name_cursor;
+                let cursor = self.state.composer_content_cursor;
                 if end {
-                    self.state.generator_name[cursor..]
+                    self.state.composer_content[cursor..]
                         .find('\n')
-                        .map_or(self.state.generator_name.len(), |offset| cursor + offset)
+                        .map_or(self.state.composer_content.len(), |offset| cursor + offset)
                 } else {
-                    self.state.generator_name[..cursor]
+                    self.state.composer_content[..cursor]
                         .rfind('\n')
                         .map_or(0, |offset| offset + 1)
                 }
             } else if end {
-                self.state.generator_name.len()
+                self.state.composer_content.len()
             } else {
                 0
             };
-            self.state.generator_name_selection = byte..byte;
-            self.state.generator_name_cursor = byte;
-            self.state.generator_name_anchor = None;
-            self.state.generator_name_marked = None;
+            self.state.composer_content_selection = byte..byte;
+            self.state.composer_content_cursor = byte;
+            self.state.composer_content_anchor = None;
+            self.state.composer_content_marked = None;
             cx.notify();
             return;
         }
@@ -397,27 +397,27 @@ impl PassApp {
     }
 
     pub(crate) fn move_vertical(&mut self, delta: isize, window: &Window, cx: &mut Context<Self>) {
-        if !self.state.generator_name_focus.is_focused(window) || !self.text_editor_active() {
+        if !self.state.composer_content_focus.is_focused(window) || !self.text_editor_active() {
             return;
         }
-        let cursor = self.state.generator_name_cursor;
-        let line_start = self.state.generator_name[..cursor]
+        let cursor = self.state.composer_content_cursor;
+        let line_start = self.state.composer_content[..cursor]
             .rfind('\n')
             .map_or(0, |index| index + 1);
-        let column = self.state.generator_name[line_start..cursor]
+        let column = self.state.composer_content[line_start..cursor]
             .chars()
             .count();
-        let current_line = self.state.generator_name[..line_start]
+        let current_line = self.state.composer_content[..line_start]
             .matches('\n')
             .count();
         let target_line = (current_line as isize + delta).max(0) as usize;
-        let mut lines = self.state.generator_name.split('\n');
+        let mut lines = self.state.composer_content.split('\n');
         let Some(target) = lines.nth(target_line) else {
             return;
         };
         let target_start = self
             .state
-            .generator_name
+            .composer_content
             .split('\n')
             .take(target_line)
             .map(|line| line.len() + 1)
@@ -427,10 +427,10 @@ impl PassApp {
                 .char_indices()
                 .nth(column)
                 .map_or(target.len(), |(byte, _)| byte);
-        self.state.generator_name_selection = byte..byte;
-        self.state.generator_name_cursor = byte;
-        self.state.generator_name_anchor = None;
-        self.state.generator_name_marked = None;
+        self.state.composer_content_selection = byte..byte;
+        self.state.composer_content_cursor = byte;
+        self.state.composer_content_anchor = None;
+        self.state.composer_content_marked = None;
         cx.notify();
     }
 
@@ -440,49 +440,50 @@ impl PassApp {
         vertical: bool,
         cx: &mut Context<Self>,
     ) {
-        let cursor = self.state.generator_name_cursor;
-        let anchor = *self.state.generator_name_anchor.get_or_insert(cursor);
+        let cursor = self.state.composer_content_cursor;
+        let anchor = *self.state.composer_content_anchor.get_or_insert(cursor);
         let next = if vertical {
-            let line_start = self.state.generator_name[..cursor]
+            let line_start = self.state.composer_content[..cursor]
                 .rfind('\n')
                 .map_or(0, |i| i + 1);
-            let column = self.state.generator_name[line_start..cursor]
+            let column = self.state.composer_content[line_start..cursor]
                 .chars()
                 .count();
-            let line = self.state.generator_name[..line_start]
+            let line = self.state.composer_content[..line_start]
                 .matches('\n')
                 .count() as isize;
-            let target_line = (line + delta)
-                .clamp(0, self.state.generator_name.matches('\n').count() as isize)
-                as usize;
+            let target_line = (line + delta).clamp(
+                0,
+                self.state.composer_content.matches('\n').count() as isize,
+            ) as usize;
             let target_start = self
                 .state
-                .generator_name
+                .composer_content
                 .split('\n')
                 .take(target_line)
                 .map(|s| s.len() + 1)
                 .sum::<usize>();
             self.state
-                .generator_name
+                .composer_content
                 .split('\n')
                 .nth(target_line)
-                .map_or(self.state.generator_name.len(), |s| {
+                .map_or(self.state.composer_content.len(), |s| {
                     target_start + s.char_indices().nth(column).map_or(s.len(), |(i, _)| i)
                 })
         } else if delta < 0 {
-            self.state.generator_name[..cursor]
+            self.state.composer_content[..cursor]
                 .char_indices()
                 .next_back()
                 .map_or(0, |(i, _)| i)
         } else {
             cursor
-                + self.state.generator_name[cursor..]
+                + self.state.composer_content[cursor..]
                     .chars()
                     .next()
                     .map_or(0, char::len_utf8)
         };
-        self.state.generator_name_selection = anchor.min(next)..anchor.max(next);
-        self.state.generator_name_cursor = next;
+        self.state.composer_content_selection = anchor.min(next)..anchor.max(next);
+        self.state.composer_content_cursor = next;
         cx.notify();
     }
 
@@ -500,10 +501,10 @@ impl PassApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.state.generator_name_focus.focus(window);
+        self.state.composer_content_focus.focus(window);
         if let Some(byte) = self.edit_mouse_position(point) {
             if click_count >= 2 {
-                let chars: Vec<_> = self.state.generator_name.char_indices().collect();
+                let chars: Vec<_> = self.state.composer_content.char_indices().collect();
                 let index = chars
                     .iter()
                     .position(|(start, _)| *start >= byte)
@@ -522,18 +523,18 @@ impl PassApp {
                         let start = chars[first].0;
                         let end = chars
                             .get(last)
-                            .map_or(self.state.generator_name.len(), |(start, _)| *start);
-                        self.state.generator_name_anchor = Some(start);
-                        self.state.generator_name_cursor = end;
-                        self.state.generator_name_selection = start..end;
+                            .map_or(self.state.composer_content.len(), |(start, _)| *start);
+                        self.state.composer_content_anchor = Some(start);
+                        self.state.composer_content_cursor = end;
+                        self.state.composer_content_selection = start..end;
                         cx.notify();
                         return;
                     }
                 }
             }
-            self.state.generator_name_anchor = Some(byte);
-            self.state.generator_name_cursor = byte;
-            self.state.generator_name_selection = byte..byte;
+            self.state.composer_content_anchor = Some(byte);
+            self.state.composer_content_cursor = byte;
+            self.state.composer_content_selection = byte..byte;
             cx.notify();
         }
     }
@@ -544,26 +545,26 @@ impl PassApp {
         cx: &mut Context<Self>,
     ) {
         if let (Some(anchor), Some(byte)) = (
-            self.state.generator_name_anchor,
+            self.state.composer_content_anchor,
             self.edit_mouse_position(point),
         ) {
-            self.state.generator_name_selection = anchor.min(byte)..anchor.max(byte);
-            self.state.generator_name_cursor = byte;
+            self.state.composer_content_selection = anchor.min(byte)..anchor.max(byte);
+            self.state.composer_content_cursor = byte;
             cx.notify();
         }
     }
 
     pub(crate) fn end_edit_mouse_selection(&mut self) {
-        self.state.generator_name_anchor = None;
+        self.state.composer_content_anchor = None;
     }
 
     pub(crate) fn copy_edit_selection(&mut self, window: &Window, cx: &mut Context<Self>) {
         if self.text_editor_active()
-            && self.state.generator_name_focus.is_focused(window)
-            && !self.state.generator_name_selection.is_empty()
+            && self.state.composer_content_focus.is_focused(window)
+            && !self.state.composer_content_selection.is_empty()
         {
-            let text =
-                self.state.generator_name[self.state.generator_name_selection.clone()].to_owned();
+            let text = self.state.composer_content[self.state.composer_content_selection.clone()]
+                .to_owned();
             let source = self
                 .state
                 .session
@@ -576,11 +577,11 @@ impl PassApp {
 
     pub(crate) fn cut_edit_selection(&mut self, window: &Window, cx: &mut Context<Self>) {
         if self.text_editor_active()
-            && self.state.generator_name_focus.is_focused(window)
-            && !self.state.generator_name_selection.is_empty()
+            && self.state.composer_content_focus.is_focused(window)
+            && !self.state.composer_content_selection.is_empty()
         {
             self.copy_edit_selection(window, cx);
-            self.replace_generator_name(None, "", cx);
+            self.replace_composer_content(None, "", cx);
         }
     }
 
@@ -591,10 +592,10 @@ impl PassApp {
             }
             return;
         }
-        if self.text_editor_active() && self.state.generator_name_focus.is_focused(window) {
+        if self.text_editor_active() && self.state.composer_content_focus.is_focused(window) {
             if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
                 let text = zeroize::Zeroizing::new(text);
-                self.replace_generator_name(None, &text, cx);
+                self.replace_composer_content(None, &text, cx);
             }
         }
     }

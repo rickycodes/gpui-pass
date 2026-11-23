@@ -88,7 +88,14 @@ impl Element for EntryTextElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
-        let rows = self.app.read(cx).state.generator_name.matches('\n').count() + 1;
+        let rows = self
+            .app
+            .read(cx)
+            .state
+            .composer_content
+            .matches('\n')
+            .count()
+            + 1;
         let mut style = Style::default();
         style.size.width = relative(1.).into();
         style.size.height = (window.line_height() * rows as f32).into();
@@ -105,10 +112,10 @@ impl Element for EntryTextElement {
         cx: &mut App,
     ) -> Self::PrepaintState {
         let app = self.app.read(cx);
-        let content = app.state.generator_name.as_str();
-        let selected = app.state.generator_name_selection.clone();
-        let cursor_offset = app.state.generator_name_cursor;
-        let focused = app.state.generator_name_focus.is_focused(window);
+        let content = app.state.composer_content.as_str();
+        let selected = app.state.composer_content_selection.clone();
+        let cursor_offset = app.state.composer_content_cursor;
+        let focused = app.state.composer_content_focus.is_focused(window);
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let row_height = window.line_height();
@@ -200,7 +207,7 @@ impl Element for EntryTextElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let focus = self.app.read(cx).state.generator_name_focus.clone();
+        let focus = self.app.read(cx).state.composer_content_focus.clone();
         window.handle_input(
             &focus,
             ElementInputHandler::new(

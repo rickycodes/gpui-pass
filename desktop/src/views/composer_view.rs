@@ -1,14 +1,14 @@
 use super::*;
-use crate::generator_view::{
+use crate::composer_mode::{
     CREATE_CONTENT_LABEL_HEIGHT, CREATE_OPTIONS_HEIGHT, CREATE_PANEL_MIN_HEIGHT,
 };
 
 impl PassApp {
-    pub(super) fn generator_titlebar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        self.titlebar("generator-titlebar", None, cx)
+    pub(super) fn composer_titlebar(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        self.titlebar("composer-titlebar", None, cx)
     }
 
-    pub(super) fn generator_view(
+    pub(super) fn composer_view(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
@@ -38,43 +38,43 @@ impl PassApp {
                     .child(
                         self.state
                             .theme
-                            .button("close-generator", i18n::text("back"), false)
-                            .on_click(cx.listener(|app, _, _, cx| app.close_generator(cx))),
+                            .button("close-composer", i18n::text("back"), false)
+                            .on_click(cx.listener(|app, _, _, cx| app.close_composer(cx))),
                     ),
             )
             .child(self.state.theme.label(i18n::text("entry-name")))
             .child(self.custom_entry_name_field(window, cx))
             .when(
-                self.state.generator_mode != GeneratorMode::PassDefault,
+                self.state.composer_mode != ComposerMode::PassDefault,
                 |panel| panel.child(self.state.theme.label(i18n::text("custom-entry-contents"))),
             )
             .when(
-                self.state.generator_mode == GeneratorMode::PassDefault,
+                self.state.composer_mode == ComposerMode::PassDefault,
                 |panel| panel.child(div().h(px(CREATE_CONTENT_LABEL_HEIGHT))),
             )
-            .child(self.generator_content_area(window, cx))
-            .child(self.generator_mode_buttons(cx))
+            .child(self.composer_content_area(window, cx))
+            .child(self.composer_mode_buttons(cx))
             .when(
-                self.state.generator_mode == GeneratorMode::Memorable,
-                |panel| panel.child(self.generator_memorable_options(cx)),
+                self.state.composer_mode == ComposerMode::Memorable,
+                |panel| panel.child(self.composer_memorable_options(cx)),
             )
             .when(
-                self.state.generator_mode != GeneratorMode::Memorable,
+                self.state.composer_mode != ComposerMode::Memorable,
                 |panel| panel.child(div().h(px(CREATE_OPTIONS_HEIGHT))),
             )
-            .child(self.generator_footer(cx));
+            .child(self.composer_footer(cx));
 
         div()
-            .id("generator-window")
+            .id("composer-window")
             .flex_1()
             .min_h_0()
             .flex()
             .flex_col()
             .bg(rgb(self.state.theme.colors.background))
-            .child(self.generator_titlebar(cx))
+            .child(self.composer_titlebar(cx))
             .child(
                 div()
-                    .id("generator-content-scroll")
+                    .id("composer-content-scroll")
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()

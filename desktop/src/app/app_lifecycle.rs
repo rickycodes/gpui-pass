@@ -21,7 +21,7 @@ impl PassApp {
     pub(super) fn new(options: Options, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let focus = cx.focus_handle();
         let search_focus = cx.focus_handle();
-        let generator_name_focus = cx.focus_handle();
+        let composer_content_focus = cx.focus_handle();
         let custom_entry_name_focus = cx.focus_handle();
         let subscription = cx.observe_window_activation(window, |app, window, cx| {
             app.state.active = window.is_window_active();
@@ -38,7 +38,7 @@ impl PassApp {
                 window,
                 focus,
                 search_focus,
-                generator_name_focus,
+                composer_content_focus,
                 custom_entry_name_focus,
             ),
             _activation: subscription,
@@ -422,7 +422,7 @@ impl PassApp {
             let close = self.state.close_after_save;
             self.state.close_after_save = false;
             if close {
-                self.close_generator(cx);
+                self.close_composer(cx);
             }
             cx.notify();
         }
@@ -624,7 +624,7 @@ impl PassApp {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.state.custom_entry_name_focus.is_focused(window)
-            || self.state.generator_name_focus.is_focused(window)
+            || self.state.composer_content_focus.is_focused(window)
             || !self.state.query.is_empty()
         {
             return false;
@@ -713,8 +713,8 @@ impl PassApp {
             cx.notify();
             return;
         }
-        if self.state.navigation.generator_open() {
-            self.close_generator(cx);
+        if self.state.navigation.composer_open() {
+            self.close_composer(cx);
             return;
         }
         if self.state.editing_entry {

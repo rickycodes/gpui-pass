@@ -18,11 +18,11 @@ impl PassApp {
             self.state.session.hide();
             self.state.revealed_revision = None;
         }
-        self.state.generator_name.zeroize();
-        self.state.generator_name_selection = 0..0;
-        self.state.generator_name_anchor = None;
-        self.state.generator_name_cursor = 0;
-        self.state.generator_name_marked = None;
+        self.state.composer_content.zeroize();
+        self.state.composer_content_selection = 0..0;
+        self.state.composer_content_anchor = None;
+        self.state.composer_content_cursor = 0;
+        self.state.composer_content_marked = None;
         self.state.editor_layout = None;
         cx.notify();
     }
@@ -53,18 +53,18 @@ impl PassApp {
             cx.notify();
             return;
         }
-        self.state.generator_name = Zeroizing::new(secret.expose().to_owned());
-        self.state.generator_name_selection =
-            self.state.generator_name.len()..self.state.generator_name.len();
-        self.state.generator_name_anchor = None;
-        self.state.generator_name_cursor = self.state.generator_name.len();
-        self.state.generator_name_marked = None;
+        self.state.composer_content = Zeroizing::new(secret.expose().to_owned());
+        self.state.composer_content_selection =
+            self.state.composer_content.len()..self.state.composer_content.len();
+        self.state.composer_content_anchor = None;
+        self.state.composer_content_cursor = self.state.composer_content.len();
+        self.state.composer_content_marked = None;
         self.state.edit_revision = self.state.revealed_revision;
         self.state.editing_entry = true;
         self.state.edit_conflict = false;
-        self.state.generator_name_bounds = None;
+        self.state.composer_content_bounds = None;
         self.state.editor_layout = None;
-        self.state.generator_name_focus.focus(window);
+        self.state.composer_content_focus.focus(window);
         cx.notify();
     }
 
@@ -117,7 +117,7 @@ impl PassApp {
             return;
         };
         let secret = match Secret::from_bytes(Zeroizing::new(
-            self.state.generator_name.as_bytes().to_vec(),
+            self.state.composer_content.as_bytes().to_vec(),
         )) {
             Ok(secret) => secret,
             Err(error) => {

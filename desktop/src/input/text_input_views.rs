@@ -2,17 +2,17 @@ use crate::{PassApp, search::input_byte_at_x};
 use gpui::{Context, ElementInputHandler, Window, canvas, div, prelude::*, px, rgb};
 
 impl PassApp {
-    pub(crate) fn generator_name_field(
+    pub(crate) fn composer_content_field(
         &self,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         if self.text_editor_active() {
             let entity = cx.entity().clone();
-            let focused = self.state.generator_name_focus.is_focused(window);
+            let focused = self.state.composer_content_focus.is_focused(window);
             return div()
                 .id("entry-editor-field")
-                .track_focus(&self.state.generator_name_focus)
+                .track_focus(&self.state.composer_content_focus)
                 .rounded(px(self.state.theme.radii.field))
                 .w_full()
                 .min_w_0()
@@ -64,26 +64,26 @@ impl PassApp {
                 )
                 .into_any_element();
         }
-        let focus = self.state.generator_name_focus.clone();
+        let focus = self.state.composer_content_focus.clone();
         let entity = cx.entity().clone();
         let focused = focus.is_focused(window);
         let start = self
             .state
-            .generator_name_selection
+            .composer_content_selection
             .start
-            .min(self.state.generator_name.len());
+            .min(self.state.composer_content.len());
         let end = self
             .state
-            .generator_name_selection
+            .composer_content_selection
             .end
-            .min(self.state.generator_name.len());
+            .min(self.state.composer_content.len());
         let mut text = div()
             .flex()
             .items_center()
             .whitespace_nowrap()
             .font_family(self.state.theme.mono_font)
             .text_size(px(13.));
-        if self.state.generator_name.is_empty() {
+        if self.state.composer_content.is_empty() {
             text = text
                 .when(focused, |view| {
                     view.child(
@@ -100,12 +100,12 @@ impl PassApp {
                 );
         } else {
             text = text
-                .child(self.state.generator_name[..start].to_owned())
+                .child(self.state.composer_content[..start].to_owned())
                 .when(start != end, |view| {
                     view.child(
                         div()
                             .bg(rgb(self.state.theme.colors.accent_surface))
-                            .child(self.state.generator_name[start..end].to_owned()),
+                            .child(self.state.composer_content[start..end].to_owned()),
                     )
                 })
                 .when(focused && start == end, |view| {
@@ -116,11 +116,11 @@ impl PassApp {
                             .bg(rgb(self.state.theme.colors.accent)),
                     )
                 })
-                .child(self.state.generator_name[end..].to_owned());
+                .child(self.state.composer_content[end..].to_owned());
         }
         div()
-            .id("generator-entry-name")
-            .track_focus(&self.state.generator_name_focus)
+            .id("composer-entry-content")
+            .track_focus(&self.state.composer_content_focus)
             .rounded(px(self.state.theme.radii.field))
             .h(px(44.))
             .w_full()
@@ -139,24 +139,24 @@ impl PassApp {
             .on_mouse_down(
                 gpui::MouseButton::Left,
                 cx.listener(|app, event: &gpui::MouseDownEvent, window, cx| {
-                    app.state.generator_name_focus.focus(window);
-                    if let Some(bounds) = app.state.generator_name_bounds {
+                    app.state.composer_content_focus.focus(window);
+                    if let Some(bounds) = app.state.composer_content_bounds {
                         let byte = input_byte_at_x(
                             window,
-                            &app.state.generator_name,
+                            &app.state.composer_content,
                             event.position.x,
                             bounds.origin.x,
                             app.state.theme.mono_font,
                         );
-                        app.state.generator_name_selection = byte..byte;
-                        app.state.generator_name_cursor = byte;
+                        app.state.composer_content_selection = byte..byte;
+                        app.state.composer_content_cursor = byte;
                     }
                     cx.notify();
                 }),
             )
             .child(
                 div()
-                    .id("generator-entry-name-input")
+                    .id("composer-entry-content-input")
                     .relative()
                     .flex_1()
                     .min_w_0()
@@ -168,7 +168,7 @@ impl PassApp {
                             |_, _, _| (),
                             move |bounds, (), window, cx| {
                                 entity.update(cx, |app, _| {
-                                    app.state.generator_name_bounds = Some(bounds)
+                                    app.state.composer_content_bounds = Some(bounds)
                                 });
                                 if focus.is_focused(window) {
                                     window.handle_input(

@@ -71,15 +71,15 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
             cx.listener(|app, _: &OpenCreateEntry, window, cx| app.open_create_entry(window, cx)),
         )
         .on_action(cx.listener(|app, _: &InsertNewline, window, cx| {
-            if app.text_editor_active() && app.state.generator_name_focus.is_focused(window) {
-                app.replace_generator_name(None, "\n", cx);
+            if app.text_editor_active() && app.state.composer_content_focus.is_focused(window) {
+                app.replace_composer_content(None, "\n", cx);
             }
         }))
         .on_action(cx.listener(|app, _: &Reveal, window, cx| {
-            if !app.state.navigation.generator_open()
+            if !app.state.navigation.composer_open()
                 && app.state.confirming_delete.is_none()
                 && app.state.confirming_overwrite.is_none()
-                && !app.state.generator_name_focus.is_focused(window)
+                && !app.state.composer_content_focus.is_focused(window)
                 && !app.state.custom_entry_name_focus.is_focused(window)
             {
                 app.reveal(window, cx);
@@ -94,7 +94,8 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         }))
         .on_action(cx.listener(|app, _: &NextEntry, window, cx| {
             if app.state.custom_entry_name_focus.is_focused(window) {
-            } else if app.state.generator_name_focus.is_focused(window) && app.text_editor_active()
+            } else if app.state.composer_content_focus.is_focused(window)
+                && app.text_editor_active()
             {
                 app.move_vertical(1, window, cx);
             } else {
@@ -103,7 +104,8 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         }))
         .on_action(cx.listener(|app, _: &PreviousEntry, window, cx| {
             if app.state.custom_entry_name_focus.is_focused(window) {
-            } else if app.state.generator_name_focus.is_focused(window) && app.text_editor_active()
+            } else if app.state.composer_content_focus.is_focused(window)
+                && app.text_editor_active()
             {
                 app.move_vertical(-1, window, cx);
             } else {
@@ -125,7 +127,8 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         .on_action(cx.listener(|app, _: &SelectLeft, window, cx| {
             if app.state.custom_entry_name_focus.is_focused(window) {
                 app.select_custom_entry_name(-1, cx);
-            } else if app.text_editor_active() && app.state.generator_name_focus.is_focused(window)
+            } else if app.text_editor_active()
+                && app.state.composer_content_focus.is_focused(window)
             {
                 app.select_edit_text(-1, false, cx);
             }
@@ -133,26 +136,27 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
         .on_action(cx.listener(|app, _: &SelectRight, window, cx| {
             if app.state.custom_entry_name_focus.is_focused(window) {
                 app.select_custom_entry_name(1, cx);
-            } else if app.text_editor_active() && app.state.generator_name_focus.is_focused(window)
+            } else if app.text_editor_active()
+                && app.state.composer_content_focus.is_focused(window)
             {
                 app.select_edit_text(1, false, cx);
             }
         }))
         .on_action(cx.listener(|app, _: &SelectUp, window, cx| {
-            if app.text_editor_active() && app.state.generator_name_focus.is_focused(window) {
+            if app.text_editor_active() && app.state.composer_content_focus.is_focused(window) {
                 app.select_edit_text(-1, true, cx);
             }
         }))
         .on_action(cx.listener(|app, _: &SelectDown, window, cx| {
-            if app.text_editor_active() && app.state.generator_name_focus.is_focused(window) {
+            if app.text_editor_active() && app.state.composer_content_focus.is_focused(window) {
                 app.select_edit_text(1, true, cx);
             }
         }))
         .on_action(cx.listener(|app, _: &Copy, window, cx| app.copy_edit_selection(window, cx)))
         .on_action(cx.listener(|app, _: &CopyEntry, window, cx| {
-            if !app.state.navigation.generator_open()
+            if !app.state.navigation.composer_open()
                 && !app.state.editing_entry
-                && !app.state.generator_name_focus.is_focused(window)
+                && !app.state.composer_content_focus.is_focused(window)
                 && !app.state.custom_entry_name_focus.is_focused(window)
                 && app.state.confirming_delete.is_none()
                 && app.state.confirming_overwrite.is_none()
@@ -170,10 +174,10 @@ pub(super) fn bind_actions(view: Div, cx: &mut Context<PassApp>) -> Div {
                 app.state.custom_entry_name_anchor = Some(0);
                 app.state.custom_entry_name_cursor = app.state.custom_entry_name.len();
                 cx.notify();
-            } else if app.state.generator_name_focus.is_focused(window) {
-                app.state.generator_name_selection = 0..app.state.generator_name.len();
-                app.state.generator_name_anchor = Some(0);
-                app.state.generator_name_cursor = app.state.generator_name.len();
+            } else if app.state.composer_content_focus.is_focused(window) {
+                app.state.composer_content_selection = 0..app.state.composer_content.len();
+                app.state.composer_content_anchor = Some(0);
+                app.state.composer_content_cursor = app.state.composer_content.len();
                 cx.notify();
             } else if app.state.search_focus.is_focused(window) {
                 app.state.selection = 0..app.state.query.len();
