@@ -49,3 +49,32 @@ pub fn text_with_args(id: &str, args: &FluentArgs<'_>) -> String {
         .get_or_init(Localization::english)
         .format(id, Some(args))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clipboard_countdown_formats_the_number_and_plural() {
+        let localization = Localization::english();
+        fn plain(text: String) -> String {
+            text.chars()
+                .filter(|character| !matches!(character, '\u{2068}' | '\u{2069}'))
+                .collect()
+        }
+
+        let mut one = FluentArgs::new();
+        one.set("seconds", 1_i64);
+        assert_eq!(
+            plain(localization.format("clipboard-restores-in", Some(&one))),
+            "Clipboard restores in 1 second"
+        );
+
+        let mut several = FluentArgs::new();
+        several.set("seconds", 12_i64);
+        assert_eq!(
+            plain(localization.format("clipboard-restores-in", Some(&several))),
+            "Clipboard restores in 12 seconds"
+        );
+    }
+}

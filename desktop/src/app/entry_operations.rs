@@ -330,6 +330,14 @@ impl PassApp {
             return;
         };
         self.clear_message();
+        if let Some(secret) = self.state.session.revealed(Instant::now()) {
+            self.copy_to_clipboard(
+                secret.expose().to_owned(),
+                entry.name().to_owned(),
+                cx,
+            );
+            return;
+        }
         let (sender, receiver) = mpsc::sync_channel(1);
         let cancellation = Cancellation::default();
         let progress = OperationProgress::new(OperationStatus::working(

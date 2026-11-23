@@ -62,8 +62,8 @@ esc-to-cancel = Esc to cancel
 open-another-store = Open another store  ↗
 copied-entry = Copied { $entry }
 clipboard-restores-in = Clipboard restores in { $seconds ->
-    [one] # second
-   *[other] # seconds
+    [one] { $seconds } second
+   *[other] { $seconds } seconds
 }
 editor-limit = Editor limit: 16 KiB and 512 lines. Your text was not changed.
 overwrite-entry-title = Replace existing entry?
