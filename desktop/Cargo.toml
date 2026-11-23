@@ -14,7 +14,7 @@ gpui-pass-core = { path = ".." }
 lyon_tessellation = "=1.0.23"
 zeroize = "=1.8.2"
 serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+toml = "1.2"
 fluent-bundle = "0.15"
 unic-langid = "0.9"
 

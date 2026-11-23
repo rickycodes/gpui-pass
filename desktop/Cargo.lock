@@ -2207,7 +2207,7 @@ dependencies = [
  "lyon_tessellation",
  "rustix 1.1.6",
  "serde",
- "toml 0.8.23",
+ "toml 1.2.1+spec-1.1.0",
  "unic-langid",
  "zeroize",
 ]
