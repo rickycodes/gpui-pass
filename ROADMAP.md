@@ -103,6 +103,22 @@ hardware.
   the tested release artifact. There is no separate release-notes file in the
   repository.
 
+### 3. Code quality and maintainability
+
+- [x] CI checks formatting, Clippy, compiler/dependency warnings, RustSec
+  advisories, Cargo dependency policy, and unused Cargo dependencies.
+- [ ] Split the remaining oversized Rust modules into cohesive units and keep
+  application source files below 300 lines where practical. Candidates are
+  `desktop/src/security/yubikey_detection.rs`, `src/decrypt.rs`, `src/store.rs`,
+  `desktop/src/app/app_lifecycle.rs`, `desktop/src/input/search.rs`,
+  `desktop/src/ui/theme.rs`, `desktop/src/app/entry_operations.rs`,
+  `desktop/src/input/text_input_views.rs`, `desktop/src/views/card_status_view.rs`,
+  `desktop/src/lib.rs`, `desktop/src/views/entry_detail_view.rs`, and
+  `desktop/src/ui/sidebar_scroll.rs`.
+- [ ] Revisit the internal `generator_*` naming after the split. It still
+  describes the generation modes, but `generator_name` now represents entry
+  content in the merged composer and could become `composer_content`.
+
 ## After v1
 
 These are worthwhile follow-ups but are not release blockers:

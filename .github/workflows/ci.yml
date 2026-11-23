@@ -95,7 +95,7 @@ jobs:
 
 
   dependency-audit:
-    name: Rust dependency audit
+    name: Rust dependency and quality checks
     needs: changes
     if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -115,6 +115,13 @@ jobs:
       - name: Check desktop dependency policy
         working-directory: desktop
         run: cargo deny check all
+      - name: Install cargo-machete
+        run: cargo install cargo-machete --locked
+      - name: Check core dependency usage
+        run: cargo machete
+      - name: Check desktop dependency usage
+        working-directory: desktop
+        run: cargo machete
 
   dependency-review:
     name: Dependency review
