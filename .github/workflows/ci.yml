@@ -25,10 +25,10 @@ jobs:
       python: ${{ steps.filter.outputs.python }}
       pass: ${{ steps.filter.outputs.pass }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.3
         id: filter
         with:
           filters: |
@@ -62,11 +62,11 @@ jobs:
     if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
@@ -100,8 +100,8 @@ jobs:
     if: needs.changes.outputs.rust == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: Audit core lockfile
@@ -118,7 +118,7 @@ jobs:
       pull-requests: read
     steps:
       - name: Review dependency changes
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@05fe4576374b728f0c523d6a13d64c25081e0803 # v4.8.3
         with:
           fail-on-severity: high
   python-tests:
@@ -127,7 +127,7 @@ jobs:
     if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Install Python test dependencies
         run: python3 -m pip install -r desktop/requirements-test.txt
       - name: Test Python helpers
@@ -139,9 +139,9 @@ jobs:
     if: needs.changes.outputs.pass == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Install pass and GnuPG
         run: |
           sudo apt-get update
