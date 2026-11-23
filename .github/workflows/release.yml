@@ -30,6 +30,10 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ github.ref }}
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: bash scripts/check-release-version.sh "$RELEASE_TAG"
       - name: Verify signed release tag
         if: github.event_name == 'push'
         env:
