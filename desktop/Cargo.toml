@@ -19,7 +19,7 @@ fluent-bundle = "0.15"
 unic-langid = "0.9"
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "=1.1.4", features = ["fs"] }
+rustix = { version = "=1.1.6", features = ["fs"] }
 
 [patch.crates-io]
 # GPUI's zed-async-tar still requires xattr 0.2; adapt its Linux errno to current libc.
