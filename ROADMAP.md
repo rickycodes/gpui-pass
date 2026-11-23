@@ -122,6 +122,25 @@ after-v1 reliability follow-up, not a v1 feature requirement.
 - Verify coexistence with Git signing, including repeated insert/remove and
   concurrent app/external GnuPG workflows.
 
+### YubiKey setup and store migration
+
+This is a later after-v1 feature. V1 consumes an existing GnuPG/YubiKey setup
+and does not create, import, transfer, or provision private keys or PIN policy.
+Any future workflow must make the distinction between hardware verification,
+GnuPG readiness, and store migration explicit.
+
+- Start with a read-only readiness wizard covering card detection, reader
+  access, GnuPG support, key slots, PIN retry state, and agent configuration.
+- Add guided migration to an already-existing card-backed key: require a
+  recoverable backup, add the recipient to `.gpg-id`, re-encrypt entries,
+  verify decrypt/reveal, and retain an explicit rollback path before removing
+  the old recipient.
+- Consider optional key generation directly on the card only after the
+  readiness and migration workflows are safe; delegate PIN and touch policy
+  to GnuPG/pinentry.
+- Never make key generation, private-key transfer, recipient-policy changes,
+  or loss of the previous recipient an implicit one-click action.
+
 ### Manual store backup and restore
 
 This is an after-v1, non-blocking feature. It will provide an explicit
