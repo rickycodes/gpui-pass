@@ -157,15 +157,17 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, verify its checksum, install it in a temporary runner prefix, smoke-test CLI and GUI startup, publish the assets, then download and verify the published assets again. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
 
-To run a release from GitHub's Actions UI, choose **Release → Run workflow**,
-enter a new `vMAJOR.MINOR.PATCH` tag in `release_tag`, and start it from the
-branch or commit to release. Before starting either release path, set the
-version in both Cargo manifests to match the tag and refresh both lockfiles.
-The workflow rejects a tag that does not match the manifests and lockfiles;
-it does not modify the release commit. The workflow builds the selected
-revision, creates the tag and GitHub Release only after verification passes,
-then downloads and verifies the published assets again. It refuses an
-existing tag.
+Before either release path, run `scripts/prepare-release.sh vMAJOR.MINOR.PATCH`
+from a clean tracked worktree. It updates both Cargo package versions and
+lockfiles, verifies them against the requested tag, and creates a commit with
+the message `chore(release): prepare vMAJOR.MINOR.PATCH`. The script refuses
+tracked changes and existing local tags. The workflow independently checks
+that the selected commit's manifests and lockfiles match the release tag; it
+does not modify the release commit. For a UI release, choose **Release → Run
+workflow**, enter the same tag in `release_tag`, and select the commit created
+by the script. For a pushed release, create and push a signed annotated tag
+pointing to that commit. The workflow creates the GitHub Release only after
+artifact verification and refuses an existing remote tag.
 
 The published archive also receives a GitHub artifact provenance attestation.
 After downloading it, verify the build origin with:
