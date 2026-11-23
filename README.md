@@ -3,7 +3,7 @@
 [![CI](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/rickycodes/gpui-pass/actions/workflows/ci.yml)
 [![Release](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/rickycodes/gpui-pass/actions/workflows/release.yml)
 
-A Rust/GPUI desktop client for existing or newly initialized [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
+A Rust/[GPUI](https://gpui.rs/) desktop client for existing or newly initialized [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
 **Status: v1 release verification in progress.** The supported Linux desktop
 workflows, onboarding, YubiKey handling, release artifact, and checksum flow
