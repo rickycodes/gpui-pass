@@ -91,8 +91,9 @@ hardware.
 
 ### 2. Final release verification
 
-- [ ] Confirm the same checks pass in GitHub Actions from a clean checkout after
-  the serialized core-test change.
+- [x] The clean-checkout GitHub Actions run passed after the serialized
+  core-test change; path-filtered jobs and the manual workflow-dispatch path
+  are both documented by the workflow configuration.
 - [x] Final GUI pass completed at normal and compact sizes with light and dark
   themes, fictional data, search/keyboard navigation, focus transitions, the
   empty-store create-entry action, and no-results handling.

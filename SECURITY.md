@@ -82,9 +82,10 @@ confirmed hidden copy, reveal/hide, edit, delete, confirmed replacement, signed
 onboarding with a hardware-backed store and YubiKey, the final GUI matrix at
 normal/compact sizes and light/dark themes, keyboard/focus behavior, explicit
 PIN-cancellation and reconnect cases, and genuinely tampered OpenPGP
-ciphertext handling. Remaining v1 verification is the clean-checkout GitHub
-Actions run and keeping the maintainer's real-store workflow current as
-features change.
+ciphertext handling. The clean-checkout GitHub Actions verification is complete;
+remaining limitations are environment-specific coverage across other Linux
+setups, pinentry implementations, hardware models, or concurrent external
+GnuPG operations.
 
 YubiKey verification on the maintainer's setup covers insertion/removal,
 PIN/touch, reveal, hidden copy, retry, and device verification. This does not
