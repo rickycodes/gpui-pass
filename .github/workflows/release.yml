@@ -22,6 +22,10 @@ jobs:
   build-linux:
     name: Optimized Linux x86_64 binary
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -83,6 +87,10 @@ jobs:
           EOF
           tar -czf dist/gpui-pass-linux-x86_64.tar.gz -C dist gpui-pass INSTALL.txt
           (cd dist && sha256sum gpui-pass-linux-x86_64.tar.gz > gpui-pass-linux-x86_64.tar.gz.sha256)
+      - name: Generate release provenance attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/${{ env.RELEASE_ARCHIVE }}
       - name: Upload release artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
@@ -162,6 +170,7 @@ jobs:
     needs: publish-release
     runs-on: ubuntu-24.04
     permissions:
+      attestations: read
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -178,6 +187,11 @@ jobs:
             --pattern "$RELEASE_ARCHIVE" \
             --pattern "$RELEASE_CHECKSUM" \
             --dir dist
+      - name: Verify release provenance attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ARCHIVE: ${{ env.RELEASE_ARCHIVE }}
+        run: gh attestation verify "dist/$RELEASE_ARCHIVE" --repo "$GITHUB_REPOSITORY"
       - uses: ./.github/actions/verify-release
         with:
           archive: dist/${{ env.RELEASE_ARCHIVE }}
