@@ -5,10 +5,7 @@
 
 A Rust/[GPUI](https://gpui.rs/) desktop client for existing or newly initialized [pass](https://www.passwordstore.org/) stores. Linux first, with a separate backend so other desktop platforms can be added without changing the store format.
 
-**Status: v1 release verification in progress.** The supported Linux desktop
-workflows, onboarding, YubiKey handling, release artifact, and checksum flow
-are implemented. See the [roadmap](ROADMAP.md) for completed verification,
-remaining release checks, and explicit post-v1 scope.
+**Status: v1.0.0 released.** Download the [Linux x86_64 release](https://github.com/rickycodes/gpui-pass/releases/tag/v1.0.0). The supported workflows, onboarding, YubiKey handling, artifact checksum, and provenance verification have been exercised. See the [roadmap](ROADMAP.md) for post-v1 work.
 
 The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
 
@@ -26,7 +23,7 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 
 ![Compose view showing new entry UI](docs/screenshots/compose.png)
 
-## Initial scope
+## Core capabilities
 
 - Browse nested `.gpg` entries in an existing store.
 - Initialize a new local store from existing GPG recipient IDs through a one-screen onboarding flow; no key management or `pass` CLI is required.
@@ -49,11 +46,11 @@ The flat design uses square edges, paper tones, dark ink, restrained green, fine
 
 Generated entries are encrypted by GnuPG to the recipients resolved from the nearest `.gpg-id` (or `PASSWORD_STORE_KEY`) and created without overwriting an existing entry. When recipients come from `.gpg-id` and `PASSWORD_STORE_SIGNING_KEY` is set, writes require a valid detached signature from one of its configured full fingerprints. The explicit `PASSWORD_STORE_KEY` override bypasses `.gpg-id` lookup, matching `pass`. A detected policy change cancels the write. The editor supports up to 16 KiB and 512 lines and rejects oversized input without truncating it. Saves detect changes to the encrypted entry since reveal and leave conflicting edits unsaved; the editor offers explicit overwrite or discard-and-reveal choices. A bounded per-entry lock in the user runtime directory serializes saves across `gpui-pass` instances. Other writers such as `pass` do not participate and can still race the final revision check and rename. Individual entries can be removed after confirmation; this does not erase Git history or backups. The random mode follows `pass` defaults: 25 characters from punctuation and alphanumeric characters, with `PASSWORD_STORE_GENERATED_LENGTH` and `PASSWORD_STORE_CHARACTER_SET` overrides. The character-set parser supports common POSIX classes and safe literal ASCII characters. Automatic Git commits/sync, export, and key management are deferred. Saving a generated password copies it to the clipboard automatically; the displayed generated password hides after 30 seconds, while its clipboard copy follows `PASSWORD_STORE_CLIP_TIME` and restores the previous clipboard contents. The bundled EFF Short Word List #2 is attributed in [assets/EFF-WORDLIST-LICENSE.md](assets/EFF-WORDLIST-LICENSE.md).
 
-Copying an existing entry decrypts it in the background and copies its complete contents, including all lines; the entry never enters the revealed-entry view. The app restores the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), matching `pass`'s default timeout. If the clipboard changes before timeout, the app leaves the newer contents alone. Generated-password and editor-selection copies use the same policy. Normal app exit restores a tracked copy if it still owns the clipboard; crashes or forced termination cannot guarantee cleanup. Set the variable in the desktop launch environment to change the delay. Invalid or clock-overflowing values fall back to 45 seconds.
+Copying a hidden entry decrypts it in the background and copies its complete contents, including all lines, without displaying it. If the entry is already revealed, copying reuses the in-memory contents instead of decrypting again. The app restores the prior clipboard item after `PASSWORD_STORE_CLIP_TIME` seconds (45 by default), matching `pass`'s default timeout, and shows the remaining time. If another app changes the clipboard before timeout, the app leaves the newer contents alone. Generated-password and editor-selection copies use the same policy. Normal app exit restores a tracked copy if it still owns the clipboard; crashes or forced termination cannot guarantee cleanup. Set the variable in the desktop launch environment to change the delay. Invalid or clock-overflowing values fall back to 45 seconds.
 
 Manual hardware and signed-onboarding checks have been exercised on the
-maintainer's setup. The remaining release verification work is tracked in the
-[roadmap](ROADMAP.md).
+maintainer's setup. The [roadmap](ROADMAP.md) records completed v1 verification
+and post-v1 follow-ups.
 
 ## Linux build and run
 
@@ -155,7 +152,13 @@ Drag the dark title bar to move the window. Double-click it to enter or leave fu
 
 ## Verification
 
-GitHub Actions detects the changed areas and runs the affected Rust checks, Python helper tests, and disposable real `pass`/GnuPG integration fixture; use `workflow_dispatch` to run every check. Compiler warnings, including dependency future-incompatibility warnings, fail CI alongside Clippy warnings. Push a `v*` tag to build an optimized Linux x86_64 binary, verify its checksum, install it in a temporary runner prefix, smoke-test CLI and GUI startup, publish the assets, then download and verify the published assets again. Since this repository is private, workflow badges and release downloads are available only to users with repository access.
+GitHub Actions detects changed areas and runs the affected Rust checks, Python
+helper tests, and disposable real `pass`/GnuPG integration fixture; use
+`workflow_dispatch` to run every check. Compiler warnings, including dependency
+future-incompatibility warnings, fail CI alongside Clippy warnings. The v1.0.0
+release includes a Linux x86_64 archive, checksum, and GitHub artifact
+provenance attestation. The public repository and its release assets are
+available to everyone.
 
 Before either release path, run `scripts/prepare-release.sh vMAJOR.MINOR.PATCH`
 from a clean tracked worktree. It updates both Cargo package versions and
@@ -174,10 +177,10 @@ After downloading it, verify the build origin with:
 
 ```sh
 gh attestation verify gpui-pass-linux-x86_64.tar.gz \
-  --repo OWNER/REPOSITORY
+  --repo rickycodes/gpui-pass
 ```
 
-This requires repository access because the project is private.
+Anyone can verify this public repository's attestation with the GitHub CLI.
 
 Pushed releases require a GitHub-verified signed annotated tag. Create one
 with `git tag -s vX.Y.Z -m "Release vX.Y.Z"` using the configured YubiKey-backed
@@ -210,7 +213,7 @@ bash scripts/verify-release.sh \
   gpui-pass-linux-x86_64.tar.gz.sha256
 ```
 
-For a local smoke check, build and run `--demo`, then check keyboard/mouse/IME search, navigation, resizing, Escape, focus loss, cancellation, and timeout. The real `pass` integration fixture passed outside the sandbox during the latest review. The user has manually confirmed that both generated and custom entries warn before replacement and save the confirmed replacement. Visual verification must use fictional data.
+For a local visual smoke check, run `--demo` and use fictional data. The v1 manual pass covered keyboard/mouse/IME search, navigation, resizing, focus transitions, cancellation, timeout, and entry replacement on the maintainer's setup.
 
 ## YubiKey / OpenPGP smartcards
 
@@ -280,7 +283,7 @@ The shared status types live in `src/operation.rs` (`OperationStatus`, `StatusKi
 
 Existing stores require no migration, database, recipient changes, or new entry schema. The client uses `GNUPGHOME`, your normal keyring, and agent configuration. It deliberately ignores `gpg.conf` so configuration cannot redirect plaintext into files, and does not run extensions or accept `PASSWORD_STORE_GPG_OPTS`.
 
-The prototype rejects symlinks, multiply linked files, traversal, backslashes, and non-UTF-8/control/bidirectional-formatting filenames. Unsupported filenames are omitted. Limits: 1 MiB decrypted text, 50,000 entries, 100,000 directory nodes, and 32 directory levels. Displayed content is capped separately.
+The store reader rejects symlinks, multiply linked files, traversal, backslashes, and non-UTF-8/control/bidirectional-formatting filenames. Unsupported filenames are omitted. Limits: 1 MiB decrypted text, 50,000 entries, 100,000 directory nodes, and 32 directory levels. Displayed content is capped separately.
 
 Secure file access and process I/O currently use Unix APIs through `rustix`, with Linux-only process hardening gated separately. Non-Unix access fails closed. macOS still needs native build/pinentry, font, executable discovery, and shortcut validation. Native Windows needs reviewed reparse-point/file-handle and subprocess adapters plus GnuPG packaging. WSL is a separate option to investigate, not currently a supported target.
 

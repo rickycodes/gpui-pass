@@ -1,8 +1,8 @@
-# Roadmap to v1
+# Roadmap
 
-The goal is a dependable Linux desktop client for an existing or newly initialized `pass` store. A v1 release should make the supported workflows clear, protect against ordinary data loss, and be straightforward to install and verify. There are no target dates.
+Version 1.0.0 has been released. This document records the delivered v1 scope and the post-v1 backlog; remaining candidates are not release blockers. There are no target dates.
 
-## v1 scope
+## v1.0.0 scope (released)
 
 - Linux desktop, using the user's existing GnuPG keyring, `gpg-agent`, and optional OpenPGP smartcard/YubiKey.
 - Existing `pass` store format and commands remain usable alongside the app.
@@ -12,14 +12,17 @@ The goal is a dependable Linux desktop client for an existing or newly initializ
 
 Git integration, remote sync, cross-platform support, key management, and additional credential-management features are outside the v1 target.
 
-## Current baseline
+## Delivered capabilities
 
 Implemented:
 
 - Group entries by their existing store folders in an expandable sidebar. Search
   remains global and expands matching folder paths; keyboard navigation follows
   visible folders and entries.
-- Copy the complete entry without displaying it. `PASSWORD_STORE_CLIP_TIME` controls the timeout (45 seconds by default); the app restores the previous clipboard contents when it still owns the clipboard and shows a countdown.
+- Copy a hidden entry without displaying it; if already revealed, reuse the
+  in-memory contents. `PASSWORD_STORE_CLIP_TIME` controls the timeout (45
+  seconds by default); restore the previous clipboard only while the app still
+  owns it, and show the countdown.
 - Create entries in one composer with explicit New (manual), Pass default
   (pass-compatible random password generated on save), and Memorable phrase
   (editable generated content); manual and memorable text is encrypted exactly
@@ -27,7 +30,7 @@ Implemented:
   completes; the composer stays open for the next entry.
 - Edit and delete individual entries. The editor is bounded and preserves supported text exactly. Revision checks, explicit conflict choices, and a per-entry lock protect app writes; other store writers do not participate in that lock and may still race the final check and rename.
 - Use the existing GnuPG agent and card flow, show operation feedback in a shared notification bar, and report card status. YubiKey model and verification support are available where dependencies and hardware permit.
-- Load optional TOML theme settings, with square corners in the default theme. User-facing text is being moved into an embedded `en-US` Fluent catalog.
+- Load the English source catalog from Fluent. Completing string migration and adding other languages remain post-v1 work.
 - Share titlebar and window-control construction across the main and create
   views; input hit testing and IME cursor placement use measured GPUI text
   layout rather than a fixed character advance.
@@ -38,97 +41,53 @@ Implemented:
   one onboarding surface. Missing stores open onboarding; valid stores bypass it.
   The same flow is available as a non-destructive `--onboarding-demo` preview.
 
-The maintainer reports having exercised the normal workflows against a real
-password store throughout development and confirms they work as expected so
-far. This includes store selection, nested search, reveal/hide, hidden copy and
-clipboard restoration, create and replacement, edit conflicts, delete,
-generation, operation feedback, cleanup during navigation and shutdown, and
-handling of GnuPG errors and failed writes. This is hands-on validation on the
-maintainer's setup, not a claim of coverage across all Linux environments or
-hardware.
+## v1.0.0 verification record
 
-## Completed v1 verification
+The v1 acceptance and release checks are complete:
 
-- [x] The disposable compatibility fixture verifies that `Store::initialize`
-  creates a store readable by `pass`, preserves existing entries, and writes a
-  detached recipient signature when supplied.
-- [x] Missing-store onboarding, empty-directory onboarding, cancellation,
-  invalid recipients, preview mode, valid existing-store selection, and
-  non-empty-target protection were manually exercised.
-- [x] Preview mode traverses setup and existing-store selection without writing
-  files or invoking GnuPG, Git, clipboard, or network activity.
-- [x] Real initialization loaded without restarting; the first entry encrypted
-  and saved with restrictive permissions, and upstream `pass show` returned the
-  exact plaintext.
-- [x] Hardware workflows were exercised with a real YubiKey: insertion,
-  removal, PIN/touch, reveal, hidden copy, retry, and device verification.
-- [x] The optimized release artifact, checksum, temporary-prefix installation,
-  published assets, and headless Lavapipe launch were verified.
-- [x] Core tests pass serially in CI to avoid scheduler-sensitive failures from
-  subprocess-heavy cancellation tests; desktop tests remain parallel.
-- [x] The GUI onboarding path was exercised with the configured signing
-  policy; `.gpg-id.sig` validated against the configured fingerprint and the
-  first signed entry was created successfully.
-- [x] Current-worktree CI-equivalent verification passed: formatting, warning
-  checks, clippy, serial core tests, desktop tests, Blade presentation tests,
-  and the disposable real `pass` compatibility fixture.
+- [x] The disposable compatibility fixture verified that initialized stores
+  work with `pass`, preserve existing entries, and support detached recipient
+  signatures.
+- [x] Onboarding, non-destructive preview mode, empty-store creation,
+  existing-store loading, non-empty-target protection, and signed initialization
+  were exercised.
+- [x] Real-store workflows and YubiKey hardware behavior were exercised by the
+  maintainer, including reveal, hidden copy, PIN/touch, retry, and verification.
+- [x] GUI checks covered normal and compact sizes, themes, search, keyboard
+  navigation, empty/no-results states, and styled GnuPG errors.
+- [x] CI checks, release artifact installation, checksum verification,
+  headless GUI launch, and published provenance verification passed.
+- [x] README and security documentation describe the tested Ubuntu 24.04
+  x86_64 baseline and known limits.
 
-## Remaining work before v1
+Manual validation reflects the maintainer's hardware and Linux setup; it is not
+a claim of coverage across all distributions or devices.
 
-### 1. Close reliability and documentation gaps
+## Post-v1 backlog
 
-- [ ] Keep the maintainer's real-store workflow validation current as features
-  change; record environment-specific gaps rather than treating one setup as
-  universal coverage.
-- [x] Updated the 2026-11-14 source review and 2026-11-15 follow-up with
-  historical-status notices and current roadmap links so their old findings and
-  validation counts are not mistaken for the current state.
-- [x] Documented the remaining narrow race with non-cooperating external
-  writers in `SECURITY.md`.
-- [x] Reviewed `SECURITY.md` against current clipboard, crash cleanup, logging,
-  permissions, GnuPG/card-probe, signing-policy, and local-authentication
-  behavior; remaining GUI and tampered-ciphertext limits are explicit.
+These are future improvements, not commitments or release blockers.
 
-### 2. Final release verification
+### Code quality and maintainability
 
-- [x] The clean-checkout GitHub Actions run passed after the serialized
-  core-test change; path-filtered jobs and the manual workflow-dispatch path
-  are both documented by the workflow configuration.
-- [x] Final GUI pass completed at normal and compact sizes with light and dark
-  themes, fictional data, search/keyboard navigation, focus transitions, the
-  empty-store create-entry action, and no-results handling.
-- [x] Tampered ciphertext produced a styled GnuPG error without displaying
-  plaintext; PIN cancellation and YubiKey removal/reconnect were also verified.
-- [x] README and the supported Ubuntu 24.04 x86_64 runtime requirements match
-  the tested release artifact. There is no separate release-notes file in the
-  repository.
+The earlier splits reduced several large modules, but these Rust files still
+exceed 300 lines. Split only where a cohesive responsibility boundary improves
+readability; 300 lines is a guideline, not a target that justifies fragmentation.
 
-### 3. Code quality and maintainability
-
-- [x] CI checks formatting, Clippy, compiler/dependency warnings, RustSec
-  advisories, Cargo dependency policy, and unused Cargo dependencies.
-- [ ] Split the remaining oversized Rust modules into cohesive units and keep
-  application source files below 300 lines where practical. Candidates are
-  `desktop/src/security/yubikey_detection.rs`, `src/decrypt.rs`, `src/store.rs`,
-  `desktop/src/app/app_lifecycle.rs`, `desktop/src/input/search.rs`,
-  `desktop/src/ui/theme.rs`, `desktop/src/app/entry_operations.rs`,
-  `desktop/src/input/text_input_views.rs`, `desktop/src/views/card_status_view.rs`,
-  `desktop/src/lib.rs`, `desktop/src/views/entry_detail_view.rs`, and
-  `desktop/src/ui/sidebar_scroll.rs`.
-- [x] Renamed the desktop's internal `generator_*` modules and state symbols
-  to `composer_*`; the core `src/generator.rs` API remains generation-specific.
-
-## After v1
-
-These are worthwhile follow-ups but are not release blockers:
+- `src/decrypt.rs`
+- `desktop/src/app/entry_operations.rs`
+- `desktop/src/input/text_input_views.rs`
+- `desktop/src/views/card_status_view.rs`
+- `desktop/src/lib.rs`
+- `desktop/src/views/entry_detail_view.rs`
+- `desktop/src/ui/sidebar_scroll.rs`
 
 ### GnuPG smart-card coexistence
 
 The app currently keeps a GnuPG smart-card watcher alive and performs
 background `--card-status all` probes. These can contend with an external
 GnuPG operation, such as Git commit signing, and may leave `gpg-agent` or
-`scdaemon` needing a card replug before the operation succeeds. This is an
-after-v1 reliability follow-up, not a v1 feature requirement.
+`scdaemon` needing a card replug before the operation succeeds. This is a
+post-v1 reliability follow-up, not a v1 feature requirement.
 
 - On Linux, prefer the existing udev/USB watcher for card insertion and
   removal instead of maintaining a persistent GnuPG smart-card connection.
@@ -139,8 +98,8 @@ after-v1 reliability follow-up, not a v1 feature requirement.
 
 ### YubiKey setup and store migration
 
-This is a later after-v1 feature. V1 consumes an existing GnuPG/YubiKey setup
-and does not create, import, transfer, or provision private keys or PIN policy.
+This is a post-v1 feature. V1 consumes an existing GnuPG/YubiKey setup and does
+not create, import, transfer, or provision private keys or PIN policy.
 Any future workflow must make the distinction between hardware verification,
 GnuPG readiness, and store migration explicit.
 
@@ -277,7 +236,7 @@ QR payloads, QR import/scanning, OTP-specific parsing, and QR export to files.
 
 ### Broader Linux distribution support
 
-Support beyond the Ubuntu 24.04 x86_64 release baseline after v1:
+Support beyond the Ubuntu 24.04 x86_64 release baseline is a post-v1 candidate:
 
 - Define supported distro families, minimum glibc, CPU architectures, desktop
   sessions, and host graphics requirements.
@@ -291,7 +250,6 @@ Support beyond the Ubuntu 24.04 x86_64 release baseline after v1:
   desktop portals explicit as host requirements rather than hiding them behind
   unsupported bundling.
 
-
 ## Ideas to revisit
 
 These are exploratory and not current targets:
@@ -299,7 +257,10 @@ These are exploratory and not current targets:
 - Extract read-only USB/udev CCID detection into a standalone FOSS crate after checking existing Rust crates and defining a useful, narrow API. It must not open PC/SC or take over GnuPG card access.
 - Search decrypted entry contents, only with clear opt-in behavior and a reviewed secret-lifetime model.
 
-## Explicitly out of scope for v1
+## v1 scope boundaries
+
+These items were deliberately excluded from v1; relevant follow-ups are listed
+above:
 
 - Git history management, remotes, push/pull, or automatic synchronization.
 - Automatic cloud backup or synchronization.
@@ -307,6 +268,8 @@ These are exploratory and not current targets:
 - Windows or macOS release support.
 - Full localization beyond the maintained English catalog.
 
-## Release completion checklist
+## v1 release status
 
-V1 is ready when all advertised local workflows, including new-store onboarding and its non-destructive preview, pass the documented checks; detected edit conflicts preserve the user's work; the narrow race with non-cooperating external writers is documented; the supported Linux release installs and runs from its published artifact; and the README, security notes, and hardware-validation record accurately describe the release and its limits.
+Version 1.0.0 is published. The release artifact, checksum, installation,
+headless GUI launch, and provenance verification passed. There are no remaining
+v1 release gates; future work is tracked in the post-v1 backlog.
