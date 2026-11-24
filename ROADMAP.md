@@ -242,8 +242,11 @@ Support beyond the Ubuntu 24.04 x86_64 release baseline is a post-v1 candidate:
   sessions, and host graphics requirements.
 - Build against the oldest supported glibc baseline so newer symbol versions do
   not make the binary unusable on older distributions.
-- Decide between distro-native packages, an AppImage, or Flatpak; do not bundle
-  the host GnuPG, pinentry, smartcard services, or GPU drivers.
+- Prototype an AppImage alongside the tarball and assess which user-space
+  libraries it can bundle versus host requirements such as GnuPG, pinentry,
+  GPU drivers, and desktop portals. Compare maintenance and portability with
+  distro-native packages and Flatpak before choosing a primary format; keep the
+  tarball until the alternative is verified.
 - Test installation and normal workflows across representative Debian/Ubuntu,
   Fedora, and Arch environments under both X11 and Wayland where supported.
 - Keep GnuPG, graphical pinentry, YubiKey permissions, Vulkan drivers, and
