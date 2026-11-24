@@ -101,6 +101,23 @@ The app uses GnuPG's smartcard path and does not require `pcscd` for its
 YubiKey flow. Follow the distribution's USB permissions guidance if the
 current user cannot access the device.
 
+### Launcher and task-switcher icon
+
+Future release archives include an XDG desktop entry and scalable icon that
+match the window's `dev.gpui-pass` application ID, allowing the desktop shell
+to associate it with the icon. If you install a locally built binary
+in `$HOME/.local/bin`, register the desktop entry and icon from the repository
+root:
+
+```sh
+install -Dm644 packaging/dev.gpui-pass.desktop \
+  "$HOME/.local/share/applications/dev.gpui-pass.desktop"
+install -Dm644 assets/gpui-pass.svg \
+  "$HOME/.local/share/icons/hicolor/scalable/apps/gpui-pass.svg"
+```
+
+The desktop session must be able to find `gpui-pass` through `PATH`.
+
 The desktop is a separate Cargo package so security tests do not depend on GPUI:
 
 ```sh

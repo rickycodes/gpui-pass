@@ -68,13 +68,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes build-essential clang cmake pkg-config libclang-dev \
             libasound2-dev libfontconfig1-dev libfreetype6-dev libssl-dev \
-            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev
+            libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libvulkan-dev \
+            desktop-file-utils
       - name: Build optimized binary
         run: cargo build --release --locked --manifest-path desktop/Cargo.toml
-      - name: Package binary and checksum
+      - name: Package binary and desktop integration
         run: |
           mkdir -p dist
           install -m 755 desktop/target/release/gpui-pass dist/gpui-pass
+          install -m 644 packaging/dev.gpui-pass.desktop dist/dev.gpui-pass.desktop
+          install -m 644 assets/gpui-pass.svg dist/gpui-pass.svg
+          desktop-file-validate packaging/dev.gpui-pass.desktop
           cat > dist/INSTALL.txt <<'EOF'
           gpui-pass Linux x86_64
 
@@ -88,8 +92,11 @@ jobs:
 
           Install for the current user:
             install -Dm755 gpui-pass "$HOME/.local/bin/gpui-pass"
+            install -Dm644 dev.gpui-pass.desktop "$HOME/.local/share/applications/dev.gpui-pass.desktop"
+            install -Dm644 gpui-pass.svg "$HOME/.local/share/icons/hicolor/scalable/apps/gpui-pass.svg"
           EOF
-          tar -czf dist/gpui-pass-linux-x86_64.tar.gz -C dist gpui-pass INSTALL.txt
+          tar -czf dist/gpui-pass-linux-x86_64.tar.gz -C dist \
+            gpui-pass INSTALL.txt dev.gpui-pass.desktop gpui-pass.svg
           (cd dist && sha256sum gpui-pass-linux-x86_64.tar.gz > gpui-pass-linux-x86_64.tar.gz.sha256)
       - name: Generate release provenance attestation
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4

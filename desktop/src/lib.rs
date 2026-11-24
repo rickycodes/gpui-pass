@@ -247,7 +247,7 @@ pub fn run() {
                         title: Some(SharedString::from("pass — Password store")),
                         ..Default::default()
                     }),
-                    app_id: Some("dev.gpui-pass.desktop".into()),
+                    app_id: Some("dev.gpui-pass".into()),
                     ..Default::default()
                 },
                 move |window, cx| {

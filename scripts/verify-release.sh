@@ -20,12 +20,21 @@ printf 'Verifying checksum: %s\n' "$archive_name"
 
 tar -tzf "$archive" | grep -Fx 'gpui-pass' >/dev/null
 tar -tzf "$archive" | grep -Fx 'INSTALL.txt' >/dev/null
+tar -tzf "$archive" | grep -Fx 'dev.gpui-pass.desktop' >/dev/null
+tar -tzf "$archive" | grep -Fx 'gpui-pass.svg' >/dev/null
 
 tar -xzf "$archive" --directory "$workdir" --no-same-owner
 install_root="$workdir/install"
 install -d "$install_root"
 install -m 755 "$workdir/gpui-pass" "$install_root/gpui-pass"
 install -m 644 "$workdir/INSTALL.txt" "$install_root/INSTALL.txt"
+install -Dm644 "$workdir/dev.gpui-pass.desktop" \
+    "$install_root/share/applications/dev.gpui-pass.desktop"
+install -Dm644 "$workdir/gpui-pass.svg" \
+    "$install_root/share/icons/hicolor/scalable/apps/gpui-pass.svg"
+grep -Fxq 'Icon=gpui-pass' "$install_root/share/applications/dev.gpui-pass.desktop"
+grep -Fxq 'StartupWMClass=dev.gpui-pass' \
+    "$install_root/share/applications/dev.gpui-pass.desktop"
 
 printf 'Verifying installed binary: %s\n' "$install_root/gpui-pass"
 "$install_root/gpui-pass" --help >/dev/null
