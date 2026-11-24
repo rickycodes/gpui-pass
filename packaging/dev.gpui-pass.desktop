@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=gpui-pass
+GenericName=Password Manager
+Comment=Desktop client for pass password stores
+Exec=gpui-pass
+Icon=gpui-pass
+Terminal=false
+StartupNotify=true
+StartupWMClass=dev.gpui-pass
+Categories=Utility;
+Keywords=password;pass;GnuPG;
