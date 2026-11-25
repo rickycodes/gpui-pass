@@ -64,9 +64,18 @@ The v1 release artifact is built and tested on Ubuntu 24.04 LTS, x86_64. The
 desktop can run under either Wayland or X11; the release smoke test uses X11
 through Xvfb and Mesa's software Vulkan driver, so CI does not require a
 physical GPU. Other recent Linux distributions may work, but their package
-names and graphics/pinentry setup are not release-gated.
+names and graphics/pinentry setup are not release-gated. Future Linux releases
+will also offer `gpui-pass-linux-x86_64.AppImage`, bundling the app's detected
+shared-library dependencies and launcher metadata. Make it executable and run
+it directly; GnuPG, pinentry, smartcard support, and graphics drivers remain
+system requirements.
 
-For a published binary on Ubuntu 24.04, install the runtime libraries and a
+```sh
+chmod +x gpui-pass-linux-x86_64.AppImage
+./gpui-pass-linux-x86_64.AppImage
+```
+
+For the standalone archive on Ubuntu 24.04, install the runtime libraries and
 graphical GnuPG pinentry:
 
 ```sh
@@ -113,22 +122,20 @@ and GnuPG workflows remain available, but those optional features do not.
 provides the Linux folder picker; these are system integrations, not part of
 the password-store format.
 
-An AppImage could bundle the app's desktop entry, icon, and some user-space
-libraries, but it would not make GnuPG, pinentry, smartcard support, device
-permissions, or graphics drivers self-contained. Keep those as documented
-system requirements; consider replacing optional helpers only if eliminating
-their runtime dependencies is worth maintaining equivalent native
-functionality.
+The AppImage bundles the app's detected shared-library dependencies and
+launcher files, but does not bundle GnuPG, pinentry, smartcard support, device
+permissions, or graphics drivers. Keep these as documented system
+requirements. Replacing optional helpers to eliminate their runtime
+dependencies would require maintaining equivalent native functionality.
 
 ### Launcher and task-switcher icon
 
-Future release archives include an XDG desktop entry and scalable icon that
-match the window's `dev.gpui-pass` application ID, allowing the desktop shell
-to associate it with the icon. Bundling these files in an AppImage would make
-the launcher icon available alongside the app, without requiring a separate
-per-user icon installation. If you install a locally built binary in
-`$HOME/.local/bin`, register the desktop entry and icon from the repository
-root:
+Release archives include an XDG desktop entry and scalable icon that match
+the window's `dev.gpui-pass` application ID. The AppImage carries those files
+inside its bundle; installing the desktop entry into the user's applications
+directory may still require an AppImage integration tool or manual setup. If
+you install a locally built binary in `$HOME/.local/bin`, register the desktop
+entry and icon from the repository root:
 
 ```sh
 install -Dm644 packaging/dev.gpui-pass.desktop \

@@ -13,9 +13,8 @@ on:
 permissions:
   contents: read
 env:
-  RELEASE_ARTIFACT_NAME: gpui-pass-linux-x86_64
-  RELEASE_ARCHIVE: gpui-pass-linux-x86_64.tar.gz
-  RELEASE_CHECKSUM: gpui-pass-linux-x86_64.tar.gz.sha256
+  APP_NAME: gpui-pass
+  PLATFORM: linux-x86_64
 
 
 jobs:
@@ -72,6 +71,24 @@ jobs:
             desktop-file-utils
       - name: Build optimized binary
         run: cargo build --release --locked --manifest-path desktop/Cargo.toml
+      # Pin tool releases and the AppImage runtime by SHA-256; refresh intentionally.
+      - name: Download pinned AppImage tooling
+        run: |
+          tool_dir="$RUNNER_TEMP/appimage-tools"
+          mkdir -p "$tool_dir"
+          curl -fsSL --retry 3 -o "$tool_dir/linuxdeploy.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          echo "c20cd71a3e4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  $tool_dir/linuxdeploy.AppImage" | sha256sum --check
+          curl -fsSL --retry 3 -o "$tool_dir/linuxdeploy-plugin-appimage.AppImage" \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
+          echo "992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3  $tool_dir/linuxdeploy-plugin-appimage.AppImage" | sha256sum --check
+          curl -fsSL --retry 3 -o "$tool_dir/runtime-x86_64" \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
+          echo "617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46  $tool_dir/runtime-x86_64" | sha256sum --check
+          chmod 755 "$tool_dir"/*.AppImage
+          ln -s "$tool_dir/linuxdeploy-plugin-appimage.AppImage" \
+            "$tool_dir/linuxdeploy-plugin-appimage"
+          echo "$tool_dir" >> "$GITHUB_PATH"
       - name: Package binary and desktop integration
         run: |
           mkdir -p dist
@@ -95,20 +112,35 @@ jobs:
             install -Dm644 dev.gpui-pass.desktop "$HOME/.local/share/applications/dev.gpui-pass.desktop"
             install -Dm644 gpui-pass.svg "$HOME/.local/share/icons/hicolor/scalable/apps/gpui-pass.svg"
           EOF
-          tar -czf dist/gpui-pass-linux-x86_64.tar.gz -C dist \
+          archive="$APP_NAME-$PLATFORM.tar.gz"
+          checksum="$archive.sha256"
+          tar -czf "dist/$archive" -C dist \
             gpui-pass INSTALL.txt dev.gpui-pass.desktop gpui-pass.svg
-          (cd dist && sha256sum gpui-pass-linux-x86_64.tar.gz > gpui-pass-linux-x86_64.tar.gz.sha256)
+          (cd dist && sha256sum "$archive" > "$checksum")
+      - name: Package AppImage
+        env:
+          LDAI_RUNTIME_FILE: ${{ runner.temp }}/appimage-tools/runtime-x86_64
+        run: |
+          appimage="$APP_NAME-$PLATFORM.AppImage"
+          checksum="$appimage.sha256"
+          bash scripts/package-appimage.sh desktop/target/release/gpui-pass \
+            "dist/$appimage"
+          (cd dist && sha256sum "$appimage" > "$checksum")
       - name: Generate release provenance attestation
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
-          subject-path: dist/${{ env.RELEASE_ARCHIVE }}
+          subject-path: |
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.AppImage
       - name: Upload release artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          name: ${{ env.APP_NAME }}-${{ env.PLATFORM }}
           path: |
-            dist/${{ env.RELEASE_ARCHIVE }}
-            dist/${{ env.RELEASE_CHECKSUM }}
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz.sha256
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.AppImage
+            dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.AppImage.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -122,12 +154,19 @@ jobs:
           ref: ${{ github.ref }}
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          name: ${{ env.APP_NAME }}-${{ env.PLATFORM }}
           path: dist
       - uses: ./.github/actions/verify-release
         with:
-          archive: dist/${{ env.RELEASE_ARCHIVE }}
-          checksum: dist/${{ env.RELEASE_CHECKSUM }}
+          archive: dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz
+          checksum: dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz.sha256
+      - name: Verify AppImage
+        env:
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.json
+        run: |
+          bash scripts/verify-appimage.sh \
+            "dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.AppImage" \
+            "dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.AppImage.sha256"
 
 
   publish-release:
@@ -145,7 +184,7 @@ jobs:
           ref: ${{ github.ref }}
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
         with:
-          name: ${{ env.RELEASE_ARTIFACT_NAME }}
+          name: ${{ env.APP_NAME }}-${{ env.PLATFORM }}
           path: dist
       - name: Create release and upload binary
         env:
@@ -169,8 +208,10 @@ jobs:
               gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --generate-notes
           fi
           gh release upload "$RELEASE_TAG" \
-            "dist/$RELEASE_ARCHIVE" \
-            "dist/$RELEASE_CHECKSUM" \
+            "dist/$APP_NAME-$PLATFORM.tar.gz" \
+            "dist/$APP_NAME-$PLATFORM.tar.gz.sha256" \
+            "dist/$APP_NAME-$PLATFORM.AppImage" \
+            "dist/$APP_NAME-$PLATFORM.AppImage.sha256" \
             --clobber
 
   verify-published-release:
@@ -195,15 +236,18 @@ jobs:
           mkdir -p dist
           gh release download "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
-            --pattern "$RELEASE_ARCHIVE" \
-            --pattern "$RELEASE_CHECKSUM" \
+            --pattern "$APP_NAME-$PLATFORM.tar.gz" \
+            --pattern "$APP_NAME-$PLATFORM.tar.gz.sha256" \
+            --pattern "$APP_NAME-$PLATFORM.AppImage" \
+            --pattern "$APP_NAME-$PLATFORM.AppImage.sha256" \
             --dir dist
       - name: Verify release provenance attestation
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ARCHIVE: ${{ env.RELEASE_ARCHIVE }}
-        run: gh attestation verify "dist/$RELEASE_ARCHIVE" --repo "$GITHUB_REPOSITORY"
+        run: |
+          gh attestation verify "dist/$APP_NAME-$PLATFORM.tar.gz" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "dist/$APP_NAME-$PLATFORM.AppImage" --repo "$GITHUB_REPOSITORY"
       - uses: ./.github/actions/verify-release
         with:
-          archive: dist/${{ env.RELEASE_ARCHIVE }}
-          checksum: dist/${{ env.RELEASE_CHECKSUM }}
+          archive: dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz
+          checksum: dist/${{ env.APP_NAME }}-${{ env.PLATFORM }}.tar.gz.sha256
