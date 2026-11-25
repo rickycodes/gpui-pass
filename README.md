@@ -7,8 +7,6 @@ A Rust/[GPUI](https://gpui.rs/) desktop client for existing or newly initialized
 
 **Status: v1.0.0 released.** Download the [Linux x86_64 release](https://github.com/rickycodes/gpui-pass/releases/tag/v1.0.0). The supported workflows, onboarding, YubiKey handling, artifact checksum, and provenance verification have been exercised. See the [roadmap](ROADMAP.md) for post-v1 work.
 
-The flat design uses square edges, paper tones, dark ink, restrained green, fine dividers, and generous spacing. [Design preview](docs/design-preview.svg) — an illustration with fictional data, not an application screenshot.
-
 ## Screenshots
 
 ### Entries
@@ -101,12 +99,35 @@ The app uses GnuPG's smartcard path and does not require `pcscd` for its
 YubiKey flow. Follow the distribution's USB permissions guidance if the
 current user cannot access the device.
 
+### Dependency portability
+
+GnuPG and its user-configured `gpg-agent`, graphical pinentry, and (for
+smartcards) `scdaemon` are required system components. The app uses the
+existing keyring and agent; bundling GnuPG would not replace the user's
+key/agent setup or provide a suitable pinentry.
+
+Python 3 and the libraries above are optional: they provide extra YubiKey
+details and the **Verify Device** action. Without them, core password-store
+and GnuPG workflows remain available, but those optional features do not.
+`udevadm` and `gpg-connect-agent` support device/card watching, and `zenity`
+provides the Linux folder picker; these are system integrations, not part of
+the password-store format.
+
+An AppImage could bundle the app's desktop entry, icon, and some user-space
+libraries, but it would not make GnuPG, pinentry, smartcard support, device
+permissions, or graphics drivers self-contained. Keep those as documented
+system requirements; consider replacing optional helpers only if eliminating
+their runtime dependencies is worth maintaining equivalent native
+functionality.
+
 ### Launcher and task-switcher icon
 
 Future release archives include an XDG desktop entry and scalable icon that
 match the window's `dev.gpui-pass` application ID, allowing the desktop shell
-to associate it with the icon. If you install a locally built binary
-in `$HOME/.local/bin`, register the desktop entry and icon from the repository
+to associate it with the icon. Bundling these files in an AppImage would make
+the launcher icon available alongside the app, without requiring a separate
+per-user icon installation. If you install a locally built binary in
+`$HOME/.local/bin`, register the desktop entry and icon from the repository
 root:
 
 ```sh
