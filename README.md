@@ -60,15 +60,15 @@ Use a current stable Rust toolchain, GnuPG 2.2+, Wayland or X11, and Vulkan grap
 
 ### Supported Linux baseline
 
-The v1 release artifact is built and tested on Ubuntu 24.04 LTS, x86_64. The
-desktop can run under either Wayland or X11; the release smoke test uses X11
-through Xvfb and Mesa's software Vulkan driver, so CI does not require a
-physical GPU. Other recent Linux distributions may work, but their package
-names and graphics/pinentry setup are not release-gated. Future Linux releases
-will also offer `gpui-pass-linux-x86_64.AppImage`, bundling the app's detected
-shared-library dependencies and launcher metadata. Make it executable and run
-it directly; GnuPG, pinentry, smartcard support, and graphics drivers remain
-system requirements.
+The v1.0.1 AppImage was built on Ubuntu 24.04 LTS, x86_64. It includes
+components requiring GLIBC 2.38/2.39, so it will not run on Ubuntu 22.04 or
+older. Future releases will be built and smoke-tested on
+Ubuntu 22.04 to lower the GLIBC baseline. The desktop runs under Wayland or
+X11; CI smoke tests use X11 through Xvfb and Mesa software Vulkan. Other
+distributions may work, but package names and graphics/pinentry setup are not
+release-gated. GnuPG, pinentry, smartcard support, and graphics drivers remain
+system requirements; the AppImage bundles the app's detected shared libraries
+and launcher metadata.
 
 ```sh
 chmod +x gpui-pass-linux-x86_64.AppImage
