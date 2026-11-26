@@ -271,6 +271,11 @@ bash scripts/verify-release.sh \
   gpui-pass-linux-x86_64.tar.gz.sha256
 ```
 
+CI forces Mesa's software Vulkan driver with `VK_ICD_FILENAMES`. Ubuntu 22.04
+installs `lvp_icd.x86_64.json`; Ubuntu 24.04 installs `lvp_icd.json`. When
+running the smoke test on a headless machine, use the manifest installed under
+`/usr/share/vulkan/icd.d/` for that machine.
+
 For a local visual smoke check, run `--demo` and use fictional data. The v1 manual pass covered keyboard/mouse/IME search, navigation, resizing, focus transitions, cancellation, timeout, and entry replacement on the maintainer's setup.
 
 ## YubiKey / OpenPGP smartcards
