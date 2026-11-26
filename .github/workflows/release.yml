@@ -76,15 +76,38 @@ jobs:
         run: |
           tool_dir="$RUNNER_TEMP/appimage-tools"
           mkdir -p "$tool_dir"
-          curl -fsSL --retry 3 -o "$tool_dir/linuxdeploy.AppImage" \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
-          echo "c20cd71a3e4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  $tool_dir/linuxdeploy.AppImage" | sha256sum --check
-          curl -fsSL --retry 3 -o "$tool_dir/linuxdeploy-plugin-appimage.AppImage" \
-            https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
-          echo "992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3  $tool_dir/linuxdeploy-plugin-appimage.AppImage" | sha256sum --check
-          curl -fsSL --retry 3 -o "$tool_dir/runtime-x86_64" \
-            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64
-          echo "617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46  $tool_dir/runtime-x86_64" | sha256sum --check
+          fetch_verified() {
+            local url=$1 expected=$2 output=$3 attempt actual
+            for attempt in 1 2 3; do
+              rm -f "$output"
+              if curl -fsSL --retry 2 -o "$output" "$url"; then
+                if printf '%s  %s\n' "$expected" "$output" | sha256sum --check --status; then
+                  echo "Verified download: $output"
+                  return 0
+                fi
+                actual=$(sha256sum "$output" | cut -d' ' -f1)
+                echo "SHA-256 mismatch for $output (attempt $attempt/3): expected $expected, got $actual" >&2
+              else
+                echo "Download failed for $url (attempt $attempt/3)." >&2
+              fi
+              rm -f "$output"
+              sleep "$attempt"
+            done
+            echo "Could not download a verified copy of $output." >&2
+            return 1
+          }
+          fetch_verified \
+            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
+            c20cd71a3e4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d \
+            "$tool_dir/linuxdeploy.AppImage"
+          fetch_verified \
+            https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage \
+            992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3 \
+            "$tool_dir/linuxdeploy-plugin-appimage.AppImage"
+          fetch_verified \
+            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 \
+            617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 \
+            "$tool_dir/runtime-x86_64"
           chmod 755 "$tool_dir"/*.AppImage
           ln -s "$tool_dir/linuxdeploy-plugin-appimage.AppImage" \
             "$tool_dir/linuxdeploy-plugin-appimage"
