@@ -217,6 +217,19 @@ by the script. For a pushed release, create and push a signed annotated tag
 pointing to that commit. The workflow creates the GitHub Release only after
 artifact verification and refuses an existing remote tag.
 
+To check AppImage packaging locally before cutting a release, run the
+same commands as CI from the repository root (use Ubuntu 22.04 to match
+the release baseline):
+
+```sh
+cargo build --release --locked --manifest-path desktop/Cargo.toml
+bash scripts/package-appimage.sh
+```
+
+The script uses `curl`, `sha256sum`, and `file`, checks the pinned tools
+even when cached, and runs `--help` on the resulting AppImage in `dist/`.
+Set `APPIMAGE_TOOLS_DIR` to a fresh directory to test the download path.
+
 The published archive also receives a GitHub artifact provenance attestation.
 After downloading it, verify the build origin with:
 

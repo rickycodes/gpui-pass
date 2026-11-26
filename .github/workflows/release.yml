@@ -71,48 +71,6 @@ jobs:
             desktop-file-utils file
       - name: Build optimized binary
         run: cargo build --release --locked --manifest-path desktop/Cargo.toml
-      # Pin tool releases and the AppImage runtime by SHA-256; refresh intentionally.
-      - name: Download pinned AppImage tooling
-        run: |
-          tool_dir="$RUNNER_TEMP/appimage-tools"
-          mkdir -p "$tool_dir"
-          fetch_verified() {
-            local url=$1 expected=$2 output=$3 attempt actual
-            for attempt in 1 2 3; do
-              rm -f "$output"
-              if curl -fsSL --retry 2 -o "$output" "$url"; then
-                if printf '%s  %s\n' "$expected" "$output" | sha256sum --check --status; then
-                  echo "Verified download: $output"
-                  return 0
-                fi
-                actual=$(sha256sum "$output" | cut -d' ' -f1)
-                echo "SHA-256 mismatch for $output (attempt $attempt/3): expected $expected, got $actual" >&2
-              else
-                echo "Download failed for $url (attempt $attempt/3)." >&2
-              fi
-              rm -f "$output"
-              sleep "$attempt"
-            done
-            echo "Could not download a verified copy of $output." >&2
-            return 1
-          }
-          fetch_verified \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage \
-            c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d \
-            "$tool_dir/linuxdeploy.AppImage"
-          fetch_verified \
-            https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage \
-            992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3 \
-            "$tool_dir/linuxdeploy-plugin-appimage.AppImage"
-          fetch_verified \
-            https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64 \
-            617aa77314d57c8b8e4fae9c3f0b35af7b30d5529cb69e98f64f92510ed98a46 \
-            "$tool_dir/runtime-x86_64"
-          chmod 755 "$tool_dir"/*.AppImage
-          ln -s "$tool_dir/linuxdeploy.AppImage" "$tool_dir/linuxdeploy"
-          ln -s "$tool_dir/linuxdeploy-plugin-appimage.AppImage" \
-            "$tool_dir/linuxdeploy-plugin-appimage"
-          echo "$tool_dir" >> "$GITHUB_PATH"
       - name: Package binary and desktop integration
         run: |
           mkdir -p dist
@@ -123,7 +81,7 @@ jobs:
           cat > dist/INSTALL.txt <<'EOF'
           gpui-pass Linux x86_64
 
-          This binary was built on Ubuntu 24.04. It requires GnuPG and the system
+          This binary was built on Ubuntu 22.04. It requires GnuPG and the system
           graphics/audio libraries used by GPUI; those shared libraries are not
           bundled in this archive. See the project README for the Ubuntu package
           list and GnuPG setup notes.
@@ -142,8 +100,6 @@ jobs:
             gpui-pass INSTALL.txt dev.gpui-pass.desktop gpui-pass.svg
           (cd dist && sha256sum "$archive" > "$checksum")
       - name: Package AppImage
-        env:
-          LDAI_RUNTIME_FILE: ${{ runner.temp }}/appimage-tools/runtime-x86_64
         run: |
           appimage="$APP_NAME-$PLATFORM.AppImage"
           checksum="$appimage.sha256"
