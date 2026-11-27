@@ -465,7 +465,7 @@ impl PassApp {
                     Ok(Some(path)) => on_selected(app, path, cx),
                     Ok(None) => {}
                     Err(()) => {
-                        app.set_error(i18n::text("store-folder-picker-error").into());
+                        app.set_error(i18n::text("store-folder-picker-error"));
                         cx.notify();
                     }
                 }
