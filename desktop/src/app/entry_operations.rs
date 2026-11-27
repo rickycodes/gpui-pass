@@ -395,7 +395,7 @@ impl PassApp {
     }
 
     pub(super) fn open_store(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.state.saving.is_some() {
+        if self.state.saving.is_some() || self.state.onboarding_pending.is_some() {
             return;
         }
         let preview = self
@@ -406,55 +406,92 @@ impl PassApp {
         if !preview {
             self.hide(cx);
         }
+        self.pick_store_folder("open-password-store", window, cx, move |app, path, cx| {
+            app.apply_open_store_selection(path, preview, cx);
+        });
+    }
+
+    pub(super) fn choose_store_location(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.onboarding.is_none() || self.state.onboarding_pending.is_some() {
+            return;
+        }
+        self.pick_store_folder("choose-store-location", window, cx, |app, path, cx| {
+            if let Some(onboarding) = app.state.onboarding.as_mut() {
+                onboarding.path = path;
+                app.clear_message();
+                cx.notify();
+            }
+        });
+    }
+
+    fn pick_store_folder(
+        &mut self,
+        prompt: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        on_selected: impl FnOnce(&mut Self, PathBuf, &mut Context<Self>) + 'static,
+    ) {
+        if self.state.store_picker_open {
+            return;
+        }
+        self.state.store_picker_open = true;
+        let label = i18n::text(prompt);
         window.activate_window();
         let picker = cx.prompt_for_paths(gpui::PathPromptOptions {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some(i18n::text("open-password-store").into()),
+            prompt: Some(label.clone().into()),
         });
         cx.spawn_in(window, async move |entity, cx| {
-            let path = match picker.await {
-                Ok(Ok(Some(paths))) => paths.into_iter().next(),
-                Ok(Ok(None)) => None,
+            let result = match picker.await {
+                Ok(Ok(Some(paths))) => paths.into_iter().next().map(Some).ok_or(()),
+                Ok(Ok(None)) => Ok(None),
                 Ok(Err(_)) | Err(_) => {
                     #[cfg(target_os = "linux")]
                     {
-                        cx.background_spawn(async { pick_folder_with_zenity() })
+                        cx.background_spawn(async move { pick_folder_with_zenity(&label) })
                             .await
                     }
                     #[cfg(not(target_os = "linux"))]
                     {
-                        None
+                        Err(())
                     }
                 }
             };
-            if let Some(path) = path {
-                let _ = entity.update(cx, |app, cx| {
-                    app.apply_open_store_selection(path, preview, cx);
-                });
-            } else {
-                let _ = entity.update(cx, |app, cx| {
-                    app.set_error("Unable to open the folder picker.".into());
-                    cx.notify();
-                });
-            }
+            let _ = entity.update(cx, |app, cx| {
+                app.state.store_picker_open = false;
+                match result {
+                    Ok(Some(path)) => on_selected(app, path, cx),
+                    Ok(None) => {}
+                    Err(()) => {
+                        app.set_error(i18n::text("store-folder-picker-error").into());
+                        cx.notify();
+                    }
+                }
+            });
         })
         .detach();
     }
 }
 
 #[cfg(target_os = "linux")]
-fn pick_folder_with_zenity() -> Option<PathBuf> {
-    let title = i18n::text("open-password-store");
+fn pick_folder_with_zenity(title: &str) -> Result<Option<PathBuf>, ()> {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
     let output = Command::new("zenity")
-        .args(["--file-selection", "--directory", "--title", title.as_str()])
+        .args(["--file-selection", "--directory", "--title", title])
         .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+        .map_err(|_| ())?;
+    match output.status.code() {
+        Some(0) => {
+            let path = output.stdout.strip_suffix(b"\n").unwrap_or(&output.stdout);
+            if path.is_empty() {
+                return Err(());
+            }
+            Ok(Some(PathBuf::from(OsStr::from_bytes(path))))
+        }
+        Some(1) => Ok(None),
+        _ => Err(()),
     }
-    let path = String::from_utf8(output.stdout).ok()?;
-    let path = path.trim();
-    (!path.is_empty()).then(|| PathBuf::from(path))
 }

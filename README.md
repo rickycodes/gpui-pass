@@ -172,6 +172,11 @@ cargo run --manifest-path desktop/Cargo.toml -- \
   --store /path/to/password-store --gpg /usr/bin/gpg
 ```
 
+In new-store setup, use **Choose location…** to select an empty folder
+(or create one in the folder picker). The app writes the store's `.gpg-id`
+only after you click **Initialize store**. To browse an initialized store
+instead, use **Open existing store**.
+
 GPUI is pinned to published version 0.2.2. Linux builds require native compiler, X11/Wayland, font, audio, and SSL development packages. A starting set on Ubuntu is:
 
 ```sh

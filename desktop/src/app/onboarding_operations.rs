@@ -45,7 +45,7 @@ impl PassApp {
     }
 
     pub(super) fn initialize_onboarding(&mut self, cx: &mut Context<Self>) {
-        if self.state.onboarding_pending.is_some() {
+        if self.state.onboarding_pending.is_some() || self.state.store_picker_open {
             return;
         }
         let Some(onboarding) = self.state.onboarding.as_ref() else {

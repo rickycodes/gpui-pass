@@ -49,7 +49,25 @@ impl PassApp {
                     .text_color(rgb(self.state.theme.colors.muted))
                     .child("This creates a standard pass store using existing GPG keys. No keys are generated, imported, or changed."),
             )
-            .child(self.state.theme.label(i18n::text("store-location")))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child(self.state.theme.label(i18n::text("store-location")))
+                    .child(
+                        self.state
+                            .theme
+                            .button(
+                                "onboarding-choose-location",
+                                i18n::text("choose-store-location"),
+                                false,
+                            )
+                            .on_click(cx.listener(|app, _, window, cx| {
+                                app.choose_store_location(window, cx)
+                            })),
+                    ),
+            )
             .child(
                 div()
                     .w_full()
@@ -62,6 +80,12 @@ impl PassApp {
                     .text_size(px(12.))
                     .text_color(rgb(self.state.theme.colors.ink))
                     .child(onboarding.path.display().to_string()),
+            )
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(rgb(self.state.theme.colors.muted))
+                    .child(i18n::text("store-location-help")),
             )
             .child(self.state.theme.label(i18n::text("gpg-recipients")))
             .child(self.custom_entry_name_field(window, cx))
