@@ -177,6 +177,13 @@ In new-store setup, use **Choose location…** to select an empty folder
 only after you click **Initialize store**. To browse an initialized store
 instead, use **Open existing store**.
 
+After a store is successfully initialized or opened from the folder picker, its
+absolute path is saved in
+`${XDG_CONFIG_HOME:-~/.config}/gpui-pass/config.toml`. On later launches, path
+selection precedence is `--store`, `PASSWORD_STORE_DIR`, the saved path, then
+`~/.password-store`. A missing saved store returns to setup for that same path;
+gpui-pass does not silently switch stores.
+
 GPUI is pinned to published version 0.2.2. Linux builds require native compiler, X11/Wayland, font, audio, and SSL development packages. A starting set on Ubuntu is:
 
 ```sh

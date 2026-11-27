@@ -390,6 +390,7 @@ impl PassApp {
         self.state.demo = false;
         self.state.demo_empty_store = false;
         self.state.preview_store_load = preview;
+        self.state.persist_path_on_open = (!preview).then(|| path.clone());
         self.state.path = Some(path);
         self.refresh(cx);
     }

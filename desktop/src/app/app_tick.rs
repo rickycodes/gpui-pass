@@ -57,6 +57,13 @@ impl PassApp {
                     } else {
                         self.filter(cx);
                     }
+                    if let Some(path) = self.state.persist_path_on_open.take() {
+                        if let Err(error) = store_config::save_store_path(&path) {
+                            self.set_error(format!(
+                                "Store opened, but its location could not be saved: {error}"
+                            ));
+                        }
+                    }
                 }
                 Err(error) => {
                     self.state.saving_edit = false;
@@ -69,7 +76,9 @@ impl PassApp {
                         if let Some(path) = self.state.path.clone() {
                             self.open_onboarding(path, false, cx);
                         }
+                        self.state.persist_path_on_open = None;
                     } else {
+                        self.state.persist_path_on_open = None;
                         self.set_error(error.to_string());
                     }
                 }

@@ -103,8 +103,16 @@ impl PassApp {
                 self.state.custom_entry_name.clear();
                 self.state.custom_entry_name_selection = 0..0;
                 self.state.custom_entry_name_cursor = 0;
-                self.state.path = path;
+                self.state.path = path.clone();
+                self.state.persist_path_on_open = None;
                 self.refresh(cx);
+                if let Some(path) = path {
+                    if let Err(error) = store_config::save_store_path(&path) {
+                        self.set_error(format!(
+                            "Store initialized, but its location could not be saved: {error}"
+                        ));
+                    }
+                }
             }
             Err(error) => self.set_error(error.to_string()),
         }

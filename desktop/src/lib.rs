@@ -7,6 +7,8 @@ use device_verification::{DeviceVerification, State as VerificationState};
 #[path = "system/diagnostics.rs"]
 mod diagnostics;
 use diagnostics::trace;
+#[path = "system/store_config.rs"]
+mod store_config;
 
 #[path = "security/card_refresh.rs"]
 mod card_refresh;
@@ -96,8 +98,7 @@ use gpui_pass_core::{
     Cancellation, CardEvent, CardObservation, ENTRY_SUFFIX, Entry, EntryRevision, Error,
     GeneratorOptions, Gpg, MAX_MEMORABLE_WORDS, MIN_MEMORABLE_WORDS, OperationProgress,
     OperationStatus, RevealRequest, Secret, Session, Store, configured_signing_keys,
-    default_store_path, generate_memorable_password, generate_pass_default_password,
-    harden_process,
+    generate_memorable_password, generate_pass_default_password, harden_process,
 };
 use loading_spinner::loading_spinner;
 use std::{
@@ -206,7 +207,7 @@ impl PassApp {
 }
 
 pub fn run() {
-    let options = match Options::parse() {
+    let mut options = match Options::parse() {
         Ok(Some(options)) => options,
         Ok(None) => return,
         Err(message) => {
@@ -214,6 +215,15 @@ pub fn run() {
             std::process::exit(2);
         }
     };
+    if !options.demo && !options.loading_demo {
+        options.store = match store_config::resolve_store_path(options.store.take()) {
+            Ok(path) => path,
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        };
+    }
     if harden_process().is_err() {
         eprintln!("Could not disable process dumps; refusing to open the password client.");
         std::process::exit(1);
