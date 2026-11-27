@@ -16,7 +16,51 @@ impl PassApp {
         } else {
             i18n::text("initialize-store")
         };
-        let recipient_hint = "Use one or more existing GPG key IDs, separated by spaces.";
+        let recipient_hint = concat!(
+            "If no email is suggested, run `gpg --list-secret-keys --keyid-format LONG` and enter a key's email or ID. ",
+            "If no key is listed, create or import one first; gpui-pass doesn't manage keys."
+        );
+        let mut recipient_choices = div()
+            .id("onboarding-recipient-choices")
+            .overflow_y_scroll()
+            .max_h(px(160.))
+            .flex()
+            .flex_col()
+            .gap(px(6.));
+        for (index, choice) in self.state.onboarding_recipient_choices.iter().enumerate() {
+            let label = choice.label.clone();
+            let fingerprint = choice.fingerprint.clone();
+            let hover_color = self.state.theme.colors.hover;
+            let surface_color = self.state.theme.colors.surface;
+            let border_color = self.state.theme.colors.border;
+            let muted_color = self.state.theme.colors.muted;
+            let mono_font = self.state.theme.mono_font;
+            recipient_choices =
+                recipient_choices.child(
+                    div()
+                        .id(("onboarding-recipient-choice", index))
+                        .w_full()
+                        .p(px(8.))
+                        .rounded(px(self.state.theme.radii.control))
+                        .border_1()
+                        .border_color(rgb(border_color))
+                        .bg(rgb(surface_color))
+                        .cursor_pointer()
+                        .hover(move |style| style.bg(rgb(hover_color)))
+                        .on_click(cx.listener(move |app, _, _, cx| {
+                            app.select_onboarding_recipient(index, cx)
+                        }))
+                        .child(
+                            div().flex().flex_col().gap(px(2.)).child(label).child(
+                                div()
+                                    .font_family(mono_font)
+                                    .text_size(px(10.))
+                                    .text_color(rgb(muted_color))
+                                    .child(fingerprint),
+                            ),
+                        ),
+                );
+        }
         let panel = self
             .state
             .theme
@@ -89,6 +133,19 @@ impl PassApp {
             )
             .child(self.state.theme.label(i18n::text("gpg-recipients")))
             .child(self.custom_entry_name_field(window, cx))
+            .when(
+                !self.state.onboarding_recipient_choices.is_empty(),
+                |panel| {
+                    panel
+                        .child(
+                            div()
+                                .text_size(px(12.))
+                                .text_color(rgb(self.state.theme.colors.muted))
+                                .child(i18n::text("gpg-recipient-choices")),
+                        )
+                        .child(recipient_choices)
+                },
+            )
             .child(
                 div()
                     .text_size(px(12.))

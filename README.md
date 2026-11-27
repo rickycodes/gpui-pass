@@ -177,6 +177,14 @@ In new-store setup, use **Choose location…** to select an empty folder
 only after you click **Initialize store**. To browse an initialized store
 instead, use **Open existing store**.
 
+If GnuPG finds exactly one secret key with one email address, setup suggests
+that email as the recipient. If it finds multiple keys or email addresses, or a
+key with no email address, setup lists the available choices so you can choose
+one; the selected entry fills in that key's fingerprint. You can also enter an
+email or key ID manually. To inspect keys, run
+`gpg --list-secret-keys --keyid-format LONG`. If no key is listed, create or
+import one first; gpui-pass does not manage keys.
+
 After a store is successfully initialized or opened from the folder picker, its
 absolute path is saved in
 `${XDG_CONFIG_HOME:-~/.config}/gpui-pass/config.toml`. On later launches, path

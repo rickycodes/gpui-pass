@@ -4,6 +4,7 @@ impl PassApp {
     pub(crate) fn tick(&mut self, cx: &mut Context<Self>) {
         diagnostics::performance_tick(self.store_is_loading(), self.state.active);
         self.poll_onboarding(cx);
+        self.poll_onboarding_recipient(cx);
         if self
             .state
             .device_verification

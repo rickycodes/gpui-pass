@@ -68,6 +68,8 @@ mod onboarding_operations;
 mod onboarding_view;
 #[path = "views/overwrite_view.rs"]
 mod overwrite_view;
+#[path = "security/recipient_suggestion.rs"]
+mod recipient_suggestion;
 #[path = "input/search.rs"]
 mod search;
 #[path = "ui/sidebar_scroll.rs"]
@@ -84,7 +86,6 @@ mod titlebar_view;
 mod window_control_glyph;
 #[path = "security/yubikey_detection.rs"]
 mod yubikey_detection;
-
 use app_state::{AppState, SidebarRow};
 use composer_mode::{ComposerMode, OverwriteConfirmation};
 use fluent_bundle::FluentArgs;

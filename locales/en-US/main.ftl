@@ -51,6 +51,7 @@ choose-store-location = Choose location…
 store-location-help = Choose an empty folder or create a folder in the picker.
 store-folder-picker-error = Unable to open the folder picker.
 gpg-recipients = GPG RECIPIENTS
+gpg-recipient-choices = GPG keys found — choose one to fill in its fingerprint.
 remove-password-entry = REMOVE PASSWORD ENTRY
 demo-store = DEMO STORE
 current-store = CURRENT STORE

@@ -23,15 +23,68 @@ impl PassApp {
     pub(super) fn open_onboarding(&mut self, path: PathBuf, preview: bool, cx: &mut Context<Self>) {
         self.clear_create_entry();
         self.state.onboarding = Some(OnboardingState { path, preview });
+        self.state.onboarding_pending = None;
+        self.state.onboarding_recipient_pending = None;
+        self.state.onboarding_recipient_edited = false;
+        self.state.onboarding_recipient_choices.clear();
         if preview {
             self.state.custom_entry_name = constants::DEMO_RECIPIENT.into();
             self.state.custom_entry_name_selection =
                 self.state.custom_entry_name.len()..self.state.custom_entry_name.len();
             self.state.custom_entry_name_cursor = self.state.custom_entry_name.len();
+        } else {
+            let executable = self.state.gpg.clone();
+            let (sender, receiver) = mpsc::sync_channel(1);
+            std::thread::spawn(move || {
+                let choices = recipient_suggestion::discover_recipients(&executable);
+                let _ = sender.send(choices);
+            });
+            self.state.onboarding_recipient_pending = Some(receiver);
         }
-        self.state.onboarding_pending = None;
         self.clear_message();
         cx.notify();
+    }
+
+    pub(super) fn poll_onboarding_recipient(&mut self, cx: &mut Context<Self>) {
+        let Some(choices) = self
+            .state
+            .onboarding_recipient_pending
+            .as_ref()
+            .and_then(|receiver| receiver.try_recv().ok())
+        else {
+            return;
+        };
+        self.state.onboarding_recipient_pending = None;
+        if self.state.onboarding.is_none()
+            || self.state.onboarding_pending.is_some()
+            || choices.is_empty()
+        {
+            return;
+        }
+        if let Some(email) = recipient_suggestion::single_email_suggestion(&choices) {
+            if !self.state.onboarding_recipient_edited {
+                self.replace_custom_entry_name(None, email, cx);
+            }
+        } else {
+            self.state.onboarding_recipient_choices = choices;
+            cx.notify();
+        }
+    }
+
+    pub(super) fn select_onboarding_recipient(&mut self, index: usize, cx: &mut Context<Self>) {
+        if self.state.onboarding_pending.is_some() {
+            return;
+        }
+        let Some(fingerprint) = self
+            .state
+            .onboarding_recipient_choices
+            .get(index)
+            .map(|choice| choice.fingerprint.clone())
+        else {
+            return;
+        };
+        self.state.onboarding_recipient_choices.clear();
+        self.replace_custom_entry_name(None, &fingerprint, cx);
     }
     pub(super) fn finish_onboarding_preview(&mut self, cx: &mut Context<Self>) {
         self.state.onboarding = None;
@@ -67,6 +120,8 @@ impl PassApp {
             self.finish_onboarding_preview(cx);
             return;
         }
+        self.state.onboarding_recipient_pending = None;
+        self.state.onboarding_recipient_choices.clear();
         let path = onboarding.path.clone();
         let executable = self.state.gpg.clone();
         let (sender, receiver) = mpsc::sync_channel(1);

@@ -25,6 +25,9 @@ impl PassApp {
             .filter(|c| !c.is_control())
             .take(room)
             .collect();
+        if self.state.onboarding.is_some() {
+            self.state.onboarding_recipient_edited = true;
+        }
         self.state
             .custom_entry_name
             .replace_range(start..end, &text);
