@@ -131,11 +131,20 @@ dependencies would require maintaining equivalent native functionality.
 ### Launcher and task-switcher icon
 
 Release archives include an XDG desktop entry and scalable icon that match
-the window's `dev.gpui-pass` application ID. The AppImage carries those files
-inside its bundle; installing the desktop entry into the user's applications
-directory may still require an AppImage integration tool or manual setup. If
-you install a locally built binary in `$HOME/.local/bin`, register the desktop
-entry and icon from the repository root:
+the window's `dev.gpui-pass` application ID. The AppImage bundles both files,
+but running it directly does not register them with your desktop. To install
+the launcher and task-switcher icon for your user, keep the AppImage in a
+stable location and run this from the repository root:
+
+```sh
+bash scripts/install-appimage-launcher.sh /path/to/gpui-pass-linux-x86_64.AppImage
+```
+
+Close any running gpui-pass window, then open **gpui-pass** from the
+applications menu. Run the installer again if you move or rename the AppImage.
+
+If you install a locally built binary in `$HOME/.local/bin`, register the
+desktop entry and icon from the repository root instead:
 
 ```sh
 install -Dm644 packaging/dev.gpui-pass.desktop \
