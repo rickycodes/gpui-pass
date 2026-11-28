@@ -7,7 +7,7 @@ publish = false
 description = "Pass store backend, independent of the desktop UI"
 
 [dependencies]
-zeroize = "=1.8.2"
+zeroize = "=1.9.2"
 getrandom = "=0.4.3"
 
 [target.'cfg(unix)'.dependencies]
