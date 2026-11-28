@@ -27,11 +27,29 @@ impl PassApp {
         self.state.onboarding_recipient_pending = None;
         self.state.onboarding_recipient_edited = false;
         self.state.onboarding_recipient_choices.clear();
+        self.state.onboarding_recipient_picker_open = false;
+        self.state.onboarding_recipient_picker_bounds = None;
         if preview {
-            self.state.custom_entry_name = constants::DEMO_RECIPIENT.into();
-            self.state.custom_entry_name_selection =
-                self.state.custom_entry_name.len()..self.state.custom_entry_name.len();
-            self.state.custom_entry_name_cursor = self.state.custom_entry_name.len();
+            if self.state.onboarding_demo {
+                self.state.custom_entry_name.clear();
+                self.state.custom_entry_name_selection = 0..0;
+                self.state.custom_entry_name_cursor = 0;
+                self.state.onboarding_recipient_choices = (1..=10)
+                    .map(|index| {
+                        let email = format!("key{index}@example.invalid");
+                        recipient_suggestion::RecipientChoice {
+                            label: format!("Demo Key {index} <{email}>"),
+                            email: Some(email),
+                            fingerprint: format!("{index:040X}"),
+                        }
+                    })
+                    .collect();
+            } else {
+                self.state.custom_entry_name = constants::DEMO_RECIPIENT.into();
+                self.state.custom_entry_name_selection =
+                    self.state.custom_entry_name.len()..self.state.custom_entry_name.len();
+                self.state.custom_entry_name_cursor = self.state.custom_entry_name.len();
+            }
         } else {
             let executable = self.state.gpg.clone();
             let (sender, receiver) = mpsc::sync_channel(1);
@@ -83,7 +101,7 @@ impl PassApp {
         else {
             return;
         };
-        self.state.onboarding_recipient_choices.clear();
+        self.state.onboarding_recipient_picker_open = false;
         self.replace_custom_entry_name(None, &fingerprint, cx);
     }
     pub(super) fn finish_onboarding_preview(&mut self, cx: &mut Context<Self>) {

@@ -157,7 +157,7 @@ impl Options {
                 }
                 Some("--help" | "-h") => {
                     println!(
-                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo | --loading-demo | --onboarding-demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store.\n--loading-demo holds the UI on its loading spinner without opening a password store.\n--onboarding-demo exercises new-store setup without writing files or invoking GnuPG."
+                        "gpui-pass [--store DIRECTORY] [--gpg /absolute/path/to/gpg] [--demo | --loading-demo | --onboarding-demo]\n\nBrowse and create encrypted entries in a pass store. Defaults to PASSWORD_STORE_DIR or ~/.password-store.\n--demo uses fictional entries in memory and never opens a password store.\n--loading-demo holds the UI on its loading spinner without opening a password store.\n--onboarding-demo previews setup with fictional selectable GPG keys; it does not write files or invoke GnuPG."
                     );
                     return Ok(None);
                 }

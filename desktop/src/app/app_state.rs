@@ -60,6 +60,8 @@ pub(crate) struct AppState {
     pub(super) onboarding_recipient_pending:
         Option<Receiver<Vec<crate::recipient_suggestion::RecipientChoice>>>,
     pub(super) onboarding_recipient_choices: Vec<crate::recipient_suggestion::RecipientChoice>,
+    pub(super) onboarding_recipient_picker_open: bool,
+    pub(super) onboarding_recipient_picker_bounds: Option<Bounds<gpui::Pixels>>,
     pub(super) onboarding_recipient_edited: bool,
     pub(super) reveal: Option<(RevealRequest, Receiver<VersionedSecretResult>)>,
     pub(super) copy_pending: Option<PendingCopy>,
@@ -171,6 +173,8 @@ impl AppState {
             onboarding_pending: None,
             onboarding_recipient_pending: None,
             onboarding_recipient_choices: Vec::new(),
+            onboarding_recipient_picker_open: false,
+            onboarding_recipient_picker_bounds: None,
             onboarding_recipient_edited: false,
             reveal: None,
             copy_pending: None,

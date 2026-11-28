@@ -164,7 +164,7 @@ cargo run --manifest-path desktop/Cargo.toml -- --demo
 # PASSWORD_STORE_DIR, falling back to ~/.password-store
 cargo run --manifest-path desktop/Cargo.toml
 
-# Step through onboarding without writing files or invoking GnuPG
+# Step through onboarding with ten fictional selectable keys; no writes/GnuPG
 cargo run --manifest-path desktop/Cargo.toml -- --onboarding-demo
 
 # Explicit store and optional GnuPG executable
